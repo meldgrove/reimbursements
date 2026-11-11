@@ -14,10 +14,15 @@ from portal.jobs import reclaim_stale_jobs, run_one
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent, Job, Operation
 from portal.services import delivery as deliveries
 from portal.services import mailersend
-from portal.services.delivery import ingest_event
 from portal.services.storage import path_for
 
 pytestmark = pytest.mark.django_db
+
+
+def ingest_event(data):
+    """A verified webhook, as the view hands it on."""
+    if evidence := mailersend.webhook_evidence(data):
+        deliveries.record_evidence(evidence)
 
 
 def mock_provider(monkeypatch, handler):
@@ -369,3 +374,26 @@ def test_duplicate_risk_is_what_a_retry_refuses_without_acknowledgment(delivery,
     assert deliveries.duplicate_risk(claim)
     with pytest.raises(deliveries.DuplicateRisk):
         deliveries.retry(claim)
+
+
+def test_mailersend_reads_back_the_attempt_tag_it_sends(delivery, settings, monkeypatch):
+    settings.MAIL_DELIVERY_MODE = "mailersend"
+    sent = []
+
+    def provider(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(202, headers={"x-message-id": "message-9"})
+
+    mock_provider(monkeypatch, provider)
+    attempt = DeliveryAttempt.objects.create(delivery=delivery)
+    deliveries.send(attempt)
+    webhook = {
+        "type": "activity.delivered",
+        "created_at": "2026-11-11T10:00:00Z",
+        "data": {"id": "event-9", "recipient": delivery.recipient, "tags": sent[0]["tags"]},
+    }
+    evidence = mailersend.webhook_evidence(webhook)
+    assert (evidence.attempt_id, evidence.message_id) == (str(attempt.pk), "")
+    deliveries.record_evidence(evidence)
+    attempt.refresh_from_db()
+    assert attempt.state == "delivered"

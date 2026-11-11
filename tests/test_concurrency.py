@@ -93,7 +93,7 @@ def test_operator_retry_and_delivery_evidence_do_not_deadlock(delivery, source):
 
     from portal.models import DeliveryAttempt, DeliveryEvent, Operation
     from portal.services import delivery as deliveries
-    from portal.services import operations
+    from portal.services import mailersend, operations
 
     if connection.vendor != "postgresql":
         pytest.skip("Row-lock behavior requires PostgreSQL.")
@@ -128,7 +128,7 @@ def test_operator_retry_and_delivery_evidence_do_not_deadlock(delivery, source):
                 cursor.execute("SELECT pg_backend_pid()")
                 backend.put(cursor.fetchone()[0])
             if source == "webhook":
-                deliveries.ingest_event(event)
+                deliveries.record_evidence(mailersend.webhook_evidence(event))
             else:
                 deliveries.reconcile_unmatched()
         finally:

@@ -1,7 +1,8 @@
 """Delivery of a claim's authoritative PDF to its approved Finance inbox.
 
 A Delivery's state is derived from its attempts. Attempts change only through send
-results, provider webhooks and reconciliation lookups recorded here. A send whose
+results and provider evidence (webhooks and reconciliation lookups, which the
+MailerSend adapter translates) recorded here. A send whose
 outcome is unknown is never repeated automatically: an operator retry has to
 acknowledge the duplicate risk. Failures before transmission are definite, because
 nothing reached the provider.
@@ -15,7 +16,6 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 from portal import app_settings
 from portal.i18n import t
@@ -42,24 +42,6 @@ NO_AUTOMATIC_SEND = frozenset({DELIVERED, ACCEPTED, PAUSED, UNKNOWN})
 FINAL_ATTEMPT = frozenset({DELIVERED, FAILED})
 # Attempts the provider can tell us more about.
 RECONCILABLE = frozenset({ACCEPTED, PAUSED, UNKNOWN})
-
-EVIDENCE_STATES = {
-    "activity.sent": ACCEPTED,
-    "activity.delivered": DELIVERED,
-    "activity.deferred": ACCEPTED,
-    "activity.soft_bounced": ACCEPTED,
-    "activity.hard_bounced": FAILED,
-    "activity.suppressed": FAILED,
-    "reconciliation.queued": ACCEPTED,
-    "reconciliation.sent": ACCEPTED,
-    "reconciliation.delivered": DELIVERED,
-    "reconciliation.soft_bounced": ACCEPTED,
-    "reconciliation.hard_bounced": FAILED,
-    "reconciliation.suppressed": FAILED,
-    "reconciliation.rejected": FAILED,
-}
-# Evidence that the provider has the message, without saying more than that.
-RESOLVES_UNKNOWN_ONLY = frozenset({"reconciliation.queued"})
 
 
 class DuplicateRisk(Exception):
@@ -216,58 +198,16 @@ def retry(claim, *, acknowledge_duplicate_risk=False):
 
 
 @transaction.atomic
-def ingest_event(data):
-    """Record a verified MailerSend webhook as delivery evidence."""
-    body = data.get("data", {})
-    timestamp = parse_datetime(data.get("created_at", ""))
-    provider_id = body.get("id")
-    recipient = body.get("recipient")
-    if data.get("type") not in EVIDENCE_STATES or data["type"].startswith("reconciliation."):
-        return
-    if (
-        not isinstance(provider_id, str)
-        or not 1 <= len(provider_id) <= 100
-        or not isinstance(recipient, str)
-        or len(recipient) > 254
-        or not timestamp
-        or timezone.is_naive(timestamp)
-    ):
-        raise ValueError("invalid_event")
-    tags = body.get("tags", [])
-    attempt_tag = (
-        next(
-            (
-                tag[8:]
-                for tag in tags
-                if isinstance(tag, str) and tag.startswith("attempt-") and len(tag) == 44
-            ),
-            "",
-        )
-        if isinstance(tags, list)
-        else ""
-    )
-    message_id = body.get("message_id", "")
-    if not isinstance(message_id, str) or len(message_id) > 100:
-        raise ValueError("invalid_event")
-    _record_evidence(
-        kind=data["type"],
-        provider_id=provider_id,
-        timestamp=timestamp,
-        message_id=message_id,
-        recipient=recipient,
-        attempt_tag=attempt_tag,
-    )
-
-
-def _record_evidence(*, kind, provider_id, timestamp, message_id, recipient, attempt_tag=""):
+def record_evidence(evidence):
+    """Record what the provider says about an attempt; it applies once the attempt is known."""
     event, _ = DeliveryEvent.objects.get_or_create(
-        provider_id=provider_id,
+        provider_id=evidence.provider_id,
         defaults={
-            "kind": kind,
-            "provider_timestamp": timestamp,
-            "message_id": message_id,
-            "recipient_hash": _recipient_hash(recipient),
-            "attempt_tag": attempt_tag,
+            "kind": evidence.kind,
+            "provider_timestamp": evidence.timestamp,
+            "message_id": evidence.message_id,
+            "recipient_hash": _recipient_hash(evidence.recipient),
+            "attempt_tag": evidence.attempt_id,
         },
     )
     _apply(event)
@@ -300,16 +240,13 @@ def _apply(event):
         return
     if not attempt.message_id and event.message_id:
         attempt.message_id = event.message_id
-    state = EVIDENCE_STATES[event.kind]
-    if event.kind in RESOLVES_UNKNOWN_ONLY and attempt.state != UNKNOWN:
+    state, error_code, resolves_unknown_only = mailersend.outcome(event.kind)
+    if resolves_unknown_only and attempt.state != UNKNOWN:
         state = None
     # Terminal success/failure cannot regress on a late sent/deferred callback.
     if state and (state in FINAL_ATTEMPT or attempt.state not in FINAL_ATTEMPT):
         if not (attempt.state == FAILED and state == DELIVERED):
-            attempt.state = state
-            attempt.error_code = (
-                f"provider_{event.kind.rsplit('.', 1)[-1]}" if state == FAILED else ""
-            )
+            attempt.state, attempt.error_code = state, error_code
     attempt.save()
     event.attempt, event.applied = attempt, True
     event.save(update_fields=["attempt", "applied"])
@@ -343,20 +280,13 @@ def reconcile(batch_size):
     for attempt in list(attempts):
         DeliveryAttempt.objects.filter(pk=attempt.pk).update(last_checked_at=timezone.now())
         counts["checked"] += 1
-        message = mailersend.retrieve_message(attempt.message_id)
-        if message is None:
+        try:
+            evidence = mailersend.lookup(attempt.id, attempt.message_id)
+        except mailersend.LookupFailed:
             counts["failed"] += 1
             continue
-        snapshot = mailersend.message_snapshot(message)
-        if not snapshot or not snapshot.get("recipient"):
+        if evidence is None:
             counts["deferred"] += 1
             continue
-        with transaction.atomic():
-            _record_evidence(
-                kind=f"reconciliation.{snapshot['status']}",
-                provider_id=f"reconcile-{attempt.id}-{snapshot['status']}",
-                timestamp=timezone.now(),
-                message_id=attempt.message_id,
-                recipient=snapshot["recipient"],
-            )
+        record_evidence(evidence)
     return counts

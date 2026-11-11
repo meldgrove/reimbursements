@@ -22,7 +22,7 @@ from portal.roles import manages
 from portal.services import claim_status, claim_validation, delivery, drafts, uploads
 from portal.services.capacity import storage_available
 from portal.services.drafts import open_draft
-from portal.services.mailersend import verify_webhook
+from portal.services.mailersend import verify_webhook, webhook_evidence
 from portal.services.readiness import dependencies
 from portal.services.storage import check_writable
 from portal.services.submissions import submit_claim
@@ -259,8 +259,8 @@ def mailersend_webhook(request):
         test = data.get("type") == "webhook.test"
         if not verify_webhook(raw, request.headers.get("Signature", ""), test=test):
             return JsonResponse({"error": "invalid_signature"}, status=401)
-        if not test:
-            delivery.ingest_event(data)
+        if not test and (evidence := webhook_evidence(data)):
+            delivery.record_evidence(evidence)
     except (ValueError, TypeError, AttributeError, KeyError):
         return JsonResponse({"error": "invalid_event"}, status=400)
     return JsonResponse({"received": True})
