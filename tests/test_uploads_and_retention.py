@@ -9,7 +9,7 @@ from django.utils import timezone
 from PIL import Image
 
 from portal.jobs import run_one
-from portal.models import Form, Job, Upload
+from portal.models import Claim, Confirmation, Delivery, DeliveryEvent, Expense, Form, Job, Upload
 from portal.services.retention import cleanup, purge_claim
 from portal.services.storage import path_for
 from tests.conftest import camera_jpeg_bytes, image_bytes
@@ -126,25 +126,28 @@ def test_spoofed_image_never_becomes_ready(prepared):
     assert Upload.objects.get(pk=response.json()["id"]).state == "failed"
 
 
-def test_purge_removes_all_sensitive_fields_and_files(accepted):
+def test_purge_deletes_the_claim_with_all_its_records_and_files(accepted):
     while run_one():
         pass
     accepted.refresh_from_db()
+    assert accepted.delivery.attempts.exists()
+    DeliveryEvent.objects.create(
+        provider_id="synthetic",
+        attempt=accepted.delivery.attempts.get(),
+        kind="delivered",
+        recipient_hash="0" * 64,
+        provider_timestamp=timezone.now(),
+    )
     files = [path_for(accepted.pdf_key)] + [
         path_for(upload.source_key) for upload in accepted.uploads.all()
     ]
     purge_claim(accepted.pk)
-    accepted.refresh_from_db()
-    assert accepted.state == "purged"
     assert all(not path.exists() for path in files)
-    assert not accepted.iban and not accepted.email and not accepted.purpose
-    assert accepted.snapshot == {} and accepted.total is None
-    assert not accepted.street and not accepted.account_holder
-    assert accepted.bookkeeping_reference is None
-    assert accepted.reference == str(accepted.pk)
-    assert not accepted.expenses.exists() and not accepted.uploads.exists()
-    assert accepted.delivery.recipient == ""
-    assert not accepted.delivery.attempts.exists()
+    assert not Claim.objects.exists() and not Delivery.objects.exists()
+    assert not Expense.objects.exists() and not Upload.objects.exists()
+    assert not Confirmation.objects.exists() and not DeliveryEvent.objects.exists()
+    assert not Job.objects.exists()
+    purge_claim(accepted.pk)  # A claim that is already gone needs nothing more.
 
 
 def test_interrupted_purge_resumes_from_manifest(accepted):
@@ -159,8 +162,7 @@ def test_interrupted_purge_resumes_from_manifest(accepted):
     assert accepted.state == "purging"
     assert accepted.uploads.count() == 2
     cleanup(execute=True)
-    accepted.refresh_from_db()
-    assert accepted.state == "purged"
+    assert not Claim.objects.exists() and not Upload.objects.exists()
 
 
 def test_unresolved_claim_is_alerted_not_silently_deleted(accepted):
@@ -169,7 +171,7 @@ def test_unresolved_claim_is_alerted_not_silently_deleted(accepted):
     result = cleanup(execute=True)
     accepted.refresh_from_db()
     assert result["unresolved_near_expiry"] == 1
-    assert accepted.state != "purged"
+    assert accepted.state == "received"
     assert accepted.uploads.exists()
 
 
@@ -207,8 +209,7 @@ def test_content_is_deleted_once_due_without_any_setting(accepted):
     accepted.retention_due = timezone.now() - timedelta(seconds=1)
     accepted.save()
     cleanup(execute=True)
-    accepted.refresh_from_db()
-    assert accepted.state == "purged" and not accepted.iban
+    assert not Claim.objects.exists()
 
 
 def test_purged_claim_does_not_match_an_anonymous_session(accepted):

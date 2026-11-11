@@ -51,18 +51,18 @@ def retry(claim_id, *, actor, reason, acknowledge_duplicate_risk=False):
 
 
 def delete(claim_id, *, actor, reason):
-    """Delete a claim's content now instead of at its retention date.
+    """Delete a claim now instead of at its retention date.
 
-    Pending processing and sending stop. The purge keeps the minimal reference record,
-    which shows this audited operation until retention removes it. A copy Finance
+    Pending processing and sending stop, and the claim's record is deleted with its
+    content. The audited operation remains without a link to the claim. A copy Finance
     already received stays with Finance. An OSError or ClaimBusy after the purge has
     begun leaves the claim purging, and the worker's cleanup finishes it.
     """
     with transaction.atomic():
-        claim = Claim.objects.select_for_update().for_reference(claim_id).get()
+        claim = Claim.objects.select_for_update().for_reference(claim_id).first()
         if not reason.strip():
             raise ActionRefused("reason_missing", "Bitte gib einen Grund an.")
-        if claim.state in {Claim.State.PURGING, Claim.State.PURGED}:
+        if claim is None or claim.state == Claim.State.PURGING:
             raise ActionRefused("already_deleted", "Dieser Antrag wurde bereits gelöscht.")
         try:
             retention.begin_purge(claim)

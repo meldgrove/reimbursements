@@ -3,7 +3,7 @@
 {% block content_title %}
 <div class="grid gap-1">
   <h1 class="page-title">{{ title }}</h1>
-  <p class="text-sm text-muted-foreground">Name, Anschrift, Bankverbindung, Ausgaben, Belege, Unterschrift und PDF werden sofort und endgültig gelöscht. Das kann nicht rückgängig gemacht werden.</p>
+  <p class="text-sm text-muted-foreground">Der Antrag wird mit Name, Anschrift, Bankverbindung, Ausgaben, Belegen, Unterschrift und PDF sofort und endgültig gelöscht und erscheint nicht mehr in der Liste. Das kann nicht rückgängig gemacht werden.</p>
 </div>
 {% endblock %}
 {% block content %}
@@ -38,7 +38,7 @@
       <div class="form-row{% if form.reason.errors %} errors{% endif %}">
         <div class="field-grid">
           <label class="field-label required" for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label>
-          <div class="field-input">{{ form.reason }}{{ form.reason.errors }}<div class="help">Wird mit deinem Namen protokolliert. Nenne keine Namen, Kontodaten oder Belegdetails. Referenz, Formular, Status und das Protokoll bleiben noch {{ record_days }} Tage sichtbar.</div></div>
+          <div class="field-input">{{ form.reason }}{{ form.reason.errors }}<div class="help">Wird mit deinem Namen protokolliert. Nenne keine Namen, Kontodaten oder Belegdetails.</div></div>
         </div>
       </div>
     </fieldset>

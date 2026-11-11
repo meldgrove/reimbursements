@@ -9,7 +9,6 @@ from django.utils import timezone
 
 from portal.models import (
     Claim,
-    Confirmation,
     DeliveryEvent,
     Draft,
     DraftAdmission,
@@ -22,12 +21,16 @@ from portal.services.storage import outbox_key, remove_keys, sweep_orphans
 
 logger = logging.getLogger(__name__)
 
-# How long the minimal reference/status record of a purged claim remains.
-PURGED_RECORD_DAYS = 30
-
 
 class ClaimBusy(Exception):
     """A job or execution workspace still uses the claim; purge later."""
+
+
+def _in_use(claim):
+    return (
+        queue.claim_has_running_job(claim)
+        or WorkspaceReservation.objects.filter(Q(claim=claim) | Q(upload__claim=claim)).exists()
+    )
 
 
 def begin_purge(claim):
@@ -36,10 +39,7 @@ def begin_purge(claim):
     Raises ClaimBusy while a job or execution workspace still uses it. Once marked, the
     worker's cleanup finishes the purge even if the caller is interrupted.
     """
-    if (
-        queue.claim_has_running_job(claim)
-        or WorkspaceReservation.objects.filter(Q(claim=claim) | Q(upload__claim=claim)).exists()
-    ):
+    if _in_use(claim):
         raise ClaimBusy
     claim.state = Claim.State.PURGING
     claim.save(update_fields=["state"])
@@ -47,9 +47,14 @@ def begin_purge(claim):
 
 
 def purge_claim(claim_id):
+    """Delete a claim with its files and every record that belongs to it.
+
+    Nothing of the claim remains in the database. Only operator actions stay in the
+    log, without a link to the claim.
+    """
     with transaction.atomic():
-        claim = Claim.objects.select_for_update().get(pk=claim_id)
-        if claim.state == Claim.State.PURGED:
+        claim = Claim.objects.select_for_update().filter(pk=claim_id).first()
+        if claim is None:
             return
         begin_purge(claim)
     # Leave the manifest intact until every deletion succeeds, so a crash resumes safely.
@@ -64,48 +69,27 @@ def purge_claim(claim_id):
         for attempt in delivery.attempts.all():
             remove_keys(outbox_key(attempt.id))
     with transaction.atomic():
-        claim = Claim.objects.select_for_update().get(pk=claim_id)
-        Confirmation.objects.filter(claim=claim).delete()
-        if delivery:
-            DeliveryEvent.objects.filter(attempt__delivery=delivery).delete()
-            delivery.attempts.all().delete()
-            delivery.recipient = delivery.message_id = delivery.error_code = ""
-            delivery.save()
-        claim.uploads.all().delete()
-        claim.expenses.all().delete()
-        for field in [
-            "full_name",
-            "email",
-            "street",
-            "postal_code",
-            "city",
-            "country",
-            "account_holder",
-            "iban",
-            "bic",
-            "purpose",
-            "purpose_details",
-            "trip_destination",
-            "pdf_key",
-            "pdf_hash",
-            "error_code",
-        ]:
-            setattr(claim, field, "")
-        claim.snapshot, claim.total = {}, None
-        claim.bookkeeping_reference = None
-        claim.trip_start = claim.trip_end = None
-        claim.pdf_size = claim.pdf_page_count = 0
-        claim.state, claim.purged_at = Claim.State.PURGED, timezone.now()
-        claim.save()
-        Draft.objects.filter(claim=claim).update(session_hash="", token_hash="", payload_hash="")
+        claim = Claim.objects.select_for_update().filter(pk=claim_id).first()
+        if claim is None:
+            return
+        if _in_use(claim):
+            raise ClaimBusy
+        # Events would outlive their attempt; the claim's other records cascade.
+        DeliveryEvent.objects.filter(attempt__delivery__claim=claim).delete()
+        # Released and expired, the accepted draft goes with the next cleanup, together
+        # with any uploads it kept; it no longer counts as an active draft.
+        Draft.objects.filter(claim=claim).update(
+            session_hash="", token_hash="", payload_hash="", expires_at=timezone.now()
+        )
+        claim.delete()
 
 
 def remove_pdf(claim_id):
     """Delete a delivered claim's PDF and local email copies; the content stays."""
     with transaction.atomic():
         # The row lock keeps operator retries out until the PDF is gone.
-        claim = Claim.objects.select_for_update().get(pk=claim_id)
-        if not claim.pdf_key or claim.state in {Claim.State.PURGING, Claim.State.PURGED}:
+        claim = Claim.objects.select_for_update().filter(pk=claim_id).first()
+        if claim is None or not claim.pdf_key or claim.state == Claim.State.PURGING:
             return
         if queue.claim_has_active_job(claim):
             raise ClaimBusy
@@ -123,18 +107,13 @@ def cleanup(*, execute=False):
     pdfs = list(
         Claim.objects.filter(pdf_due__lte=now)
         .exclude(pdf_key="")
-        .exclude(state__in=[Claim.State.PURGING, Claim.State.PURGED])
+        .exclude(state=Claim.State.PURGING)
         .values_list("pk", flat=True)
     )
     due = list(
-        Claim.objects.filter(retention_due__lte=now)
-        .exclude(state=Claim.State.PURGED)
-        .values_list("pk", flat=True)
-    )
-    due += list(
-        Claim.objects.filter(state=Claim.State.PURGING)
-        .exclude(pk__in=due)
-        .values_list("pk", flat=True)
+        Claim.objects.filter(Q(retention_due__lte=now) | Q(state=Claim.State.PURGING)).values_list(
+            "pk", flat=True
+        )
     )
     drafts = list(
         Draft.objects.filter(claim__isnull=True, expires_at__lt=now).values_list("pk", flat=True)
@@ -143,7 +122,7 @@ def cleanup(*, execute=False):
         Claim.objects.filter(
             resolution_due__lte=now + timedelta(days=3), retention_due__isnull=True
         )
-        .exclude(state__in=[Claim.State.PURGED, Claim.State.PURGING])
+        .exclude(state=Claim.State.PURGING)
         .count()
     )
     result = {
@@ -175,14 +154,9 @@ def cleanup(*, execute=False):
             uploads.expire_draft(draft_id)
         except OSError:
             result["failures"] += 1
-    Draft.objects.filter(claim__state=Claim.State.PURGED, expires_at__lt=now).delete()
     result["failures"] += uploads.expire_unattached(now)
     DeliveryEvent.objects.filter(
         attempt__isnull=True, received_at__lt=now - timedelta(days=30)
-    ).delete()
-    # Minimal reference/status records have a bounded operational lifetime.
-    Claim.objects.filter(
-        state=Claim.State.PURGED, purged_at__lt=now - timedelta(days=PURGED_RECORD_DAYS)
     ).delete()
     orphan_cleanup()
     return result

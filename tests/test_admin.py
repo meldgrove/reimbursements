@@ -547,18 +547,17 @@ def test_admin_deletes_a_claim_only_after_confirmation(admin_client, accepted):
     assert accepted.state == Claim.State.RECEIVED and accepted.iban
     response = admin_client.post(purge_url, {"reason": "Testeinreichung"})
     assert response.status_code == 302 and response.url == "/admin/portal/claim/"
-    accepted.refresh_from_db()
-    assert accepted.state == Claim.State.PURGED and not accepted.iban
+    assert not Claim.objects.filter(pk=accepted.pk).exists()
     operation = Operation.objects.get()
-    assert (operation.action, operation.actor, operation.reason) == (
+    assert (operation.claim_id, operation.action, operation.actor, operation.reason) == (
+        None,
         "delete",
         "admin@example.invalid",
         "Testeinreichung",
     )
-    page = admin_client.get(f"/admin/portal/claim/{accepted.pk}/change/").content.decode()
-    assert purge_url not in page and "Erneut verarbeiten" not in page
-    assert "Testeinreichung" in page
-    assert admin_client.get(purge_url).status_code == 302
+    page = admin_client.get("/admin/portal/claim/").content.decode()
+    assert str(accepted.pk) not in page and "Gelöscht" not in page
+    assert admin_client.get(purge_url).status_code == 404
 
 
 def test_deletion_warns_when_finance_may_already_hold_the_pdf(admin_client, delivery):
@@ -606,14 +605,14 @@ def test_bulk_deletion_confirms_then_deletes_the_selected_claims(admin_client, a
     page = response.content.decode()
     assert response.status_code == 200 and "2 Anträge endgültig löschen" in page
     assert "Alex Beispiel" in page and "Sam Zweitens" in page
-    assert not Claim.objects.filter(state=Claim.State.PURGED).exists()
+    assert Claim.objects.count() == 2
     confirmation = {"action": "delete_claims", "_selected_action": selected, "post": "yes"}
     response = admin_client.post("/admin/portal/claim/", {**confirmation, "reason": ""})
     assert response.status_code == 200
-    assert not Claim.objects.filter(state=Claim.State.PURGED).exists()
+    assert Claim.objects.count() == 2
     response = admin_client.post("/admin/portal/claim/", {**confirmation, "reason": "Tests"})
     assert response.status_code == 302
-    assert Claim.objects.filter(state=Claim.State.PURGED).count() == 2
+    assert not Claim.objects.exists()
     assert Operation.objects.filter(action="delete", reason="Tests").count() == 2
 
 
@@ -645,9 +644,8 @@ def test_status_filter_lists_the_claims_its_status_column_shows(admin_client, ac
         (Claim.State.READY, "delivered"),
         (Claim.State.READY, "failed"),
         (Claim.State.READY, "send_unknown"),
+        (Claim.State.PURGING, None),
         (Claim.State.PURGING, "delivered"),
-        (Claim.State.PURGED, None),
-        (Claim.State.PURGED, "failed"),
     ]
     for claim_state, delivery_state in claim_states:
         claim = second_claim(accepted.form)

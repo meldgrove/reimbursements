@@ -43,8 +43,7 @@ def test_pdf_is_deleted_first_and_content_after_ninety_days(delivery):
     assert claim.state == Claim.State.READY and claim.iban and claim.uploads.count() == 2
     Claim.objects.filter(pk=claim.pk).update(retention_due=timezone.now() - timedelta(seconds=1))
     cleanup(execute=True)
-    claim.refresh_from_db()
-    assert claim.state == Claim.State.PURGED and not claim.iban
+    assert not Claim.objects.filter(pk=claim.pk).exists()
 
 
 def test_failed_delivery_keeps_the_pdf_for_resolution(delivery):

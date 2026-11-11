@@ -73,7 +73,7 @@ class Render:
     """Build and publish a claim's authoritative PDF, then schedule its delivery."""
 
     resumable = True
-    WITHDRAWN = (Claim.State.PURGING, Claim.State.PURGED)
+    WITHDRAWN = (Claim.State.PURGING,)
 
     def run(self, job, lease):
         with transaction.atomic():

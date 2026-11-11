@@ -482,7 +482,6 @@ DELIVERY_STATUS = {
 STATUS_TONES = {
     Claim.State.FAILED: "destructive",
     Claim.State.PURGING: "outline",
-    Claim.State.PURGED: "outline",
     "paused": "warning",
     "send_unknown": "warning",
     "failed": "destructive",
@@ -492,7 +491,8 @@ STATUS_TONES = {
 
 STATUS_LABELS = {**dict(Claim.State.choices), **DELIVERY_STATUS}
 
-DELETED_STATES = (Claim.State.PURGING, Claim.State.PURGED)
+# A deleted claim is gone; one still being deleted is left to the worker's cleanup.
+DELETED_STATES = (Claim.State.PURGING,)
 
 # Status filter options in the order a claim passes through them.
 STATUS_ORDER = [
@@ -815,7 +815,6 @@ class ClaimAdmin(admin.ModelAdmin):
                 "form": form,
                 "bulk": bulk,
                 "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
-                "record_days": retention.PURGED_RECORD_DAYS,
             },
         )
 

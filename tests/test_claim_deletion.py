@@ -1,7 +1,8 @@
 import pytest
+from django.utils import timezone
 
 from portal.jobs import run_one
-from portal.models import Claim, DeliveryAttempt, Job, Operation
+from portal.models import Claim, Delivery, DeliveryAttempt, Draft, Expense, Job, Operation, Upload
 from portal.services import delivery as deliveries
 from portal.services import operations
 from portal.services.retention import cleanup
@@ -14,22 +15,25 @@ def stored_files(claim):
     return [path_for(upload.source_key) for upload in claim.uploads.all()]
 
 
-def test_operator_deletion_purges_now_and_is_audited(accepted):
+def test_operator_deletion_removes_the_claim_for_good_and_is_audited(accepted):
     files = stored_files(accepted)
     assert files and all(path.exists() for path in files)
     assert Job.objects.filter(state="pending").exists()
 
     operations.delete(accepted.pk, actor="admin@example.invalid", reason=" Testeinreichung ")
 
-    accepted.refresh_from_db()
-    assert accepted.state == Claim.State.PURGED
+    assert not Claim.objects.exists()
     assert not any(path.exists() for path in files)
-    assert not accepted.iban and not accepted.full_name and accepted.snapshot == {}
-    assert not accepted.expenses.exists() and not accepted.uploads.exists()
-    assert not Job.objects.filter(state__in=["pending", "running"]).exists()
+    assert not Expense.objects.exists() and not Upload.objects.exists()
+    assert not Job.objects.exists()
+    draft = Draft.objects.get()
+    assert draft.claim_id is None and not draft.session_hash and not draft.token_hash
+    assert not Draft.objects.filter(claim__isnull=True, expires_at__gt=timezone.now()).exists()
     operation = Operation.objects.get()
-    assert (operation.claim_id, operation.action) == (accepted.pk, "delete")
+    assert (operation.claim_id, operation.action) == (None, "delete")
     assert (operation.actor, operation.reason) == ("admin@example.invalid", "Testeinreichung")
+    cleanup(execute=True)
+    assert not Draft.objects.exists() and Operation.objects.exists()
 
 
 def test_deletion_requires_a_reason(accepted):
@@ -72,15 +76,15 @@ def test_interrupted_deletion_is_finished_by_cleanup(accepted):
     assert accepted.state == Claim.State.PURGING
     assert Operation.objects.get().action == "delete"
     cleanup(execute=True)
-    accepted.refresh_from_db()
-    assert accepted.state == Claim.State.PURGED
+    assert not Claim.objects.exists()
+    assert Operation.objects.get().action == "delete"
 
 
 def test_a_deleted_claim_is_never_sent(delivery):
     Job.objects.create(key="send-test", kind="send", delivery=delivery)
     operations.delete(delivery.claim_id, actor="admin", reason="Test")
     assert not path_for("pdf/test.pdf").exists()
-    assert Job.objects.get().state == "cancelled"
+    assert not Job.objects.exists() and not Delivery.objects.exists()
     assert not run_one()
     assert not DeliveryAttempt.objects.exists()
 

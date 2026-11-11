@@ -256,7 +256,7 @@ class OperatorStatus:
     # The claim state, or the delivery state once a delivery exists, unless being purged.
     state: str
     error_code: str
-    # Unresolved past its resolution date: neither delivered nor purged.
+    # Unresolved past its resolution date: neither delivered nor being deleted.
     overdue: bool
     # A retry must acknowledge that Finance could receive the claim twice.
     duplicate_risk: bool
@@ -264,20 +264,20 @@ class OperatorStatus:
 
 def operator_status(claim, *, now=None):
     delivery = getattr(claim, "delivery", None)
-    purging = claim.state in {Claim.State.PURGING, Claim.State.PURGED}
+    purging = claim.state == Claim.State.PURGING
     return OperatorStatus(
         state=claim.state if delivery is None or purging else delivery.state,
         error_code=claim.error_code or (delivery.error_code if delivery else ""),
         overdue=claim.resolution_due <= (now or timezone.now())
         and not claim.retention_due
-        and claim.state != Claim.State.PURGED,
+        and not purging,
         duplicate_risk=bool(delivery and has_duplicate_risk(delivery)),
     )
 
 
 def operator_state_filter(state):
     """The claims whose `operator_status` state is `state`, as a queryset filter."""
-    purging = Q(state__in=(Claim.State.PURGING, Claim.State.PURGED))
+    purging = Q(state=Claim.State.PURGING)
     shows_claim_state = Q(delivery__isnull=True) | purging
     return (shows_claim_state & Q(state=state)) | (~purging & Q(delivery__state=state))
 
@@ -358,10 +358,10 @@ def _apply(event):
         return
     delivery = _lock_delivery(pk=attempt.delivery_id)
     attempt = DeliveryAttempt.objects.select_for_update().get(pk=attempt.pk)
-    if _recipient_hash(delivery.recipient) != event.recipient_hash or delivery.claim.state in {
-        Claim.State.PURGING,
-        Claim.State.PURGED,
-    }:
+    if (
+        _recipient_hash(delivery.recipient) != event.recipient_hash
+        or delivery.claim.state == Claim.State.PURGING
+    ):
         return
     if attempt.message_id and event.message_id and attempt.message_id != event.message_id:
         return
