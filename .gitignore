@@ -1,0 +1,28 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+var/
+staticfiles/
+.coverage
+htmlcov/
+*.egg-info/
+# Built by scripts/tailwind.py.
+portal/static/portal/ui.css
+
+# Local credentials, data and generated evidence.
+.env.*
+!.env.example
+!.env.coolify.example
+*.sqlite3
+*.sqlite3-*
+*.db
+*.dump
+*.eml
+*.log
+*.pem
+*.key
+playwright-report/
+test-results/

@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}{% load ui %}
+{% block title %}Kein Zugriff · Erstattungsportal{% endblock %}
+{% block content_title %}{% endblock %}
+{% block content %}
+<div class="flex flex-col items-center gap-4 text-center">
+  <span class="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">{% icon "lock" class="size-6" %}</span>
+  {% if unconfigured %}
+  <div class="grid gap-1.5"><h1 class="text-xl font-semibold tracking-tight">Anmeldung nicht verfügbar</h1>
+  <p class="text-sm text-muted-foreground">Die Anmeldung mit Keycloak ist für diese Umgebung nicht eingerichtet.</p></div>
+  {% else %}
+  <div class="grid gap-1.5"><h1 class="text-xl font-semibold tracking-tight">Kein Zugriff</h1>
+  <p class="text-sm text-muted-foreground">Dein Anmeldekonto ist nicht für die Verwaltung des Erstattungsportals freigeschaltet. Bitte wende dich an das IT-Team, wenn du Formulare anlegen möchtest.</p></div>
+  {% endif %}
+  {% component "button" variant="outline" href="/" class="w-full" %}Zur Startseite{% endcomponent %}
+</div>
+{% endblock %}

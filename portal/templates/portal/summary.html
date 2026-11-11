@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><style>
+@page { size: A4; margin: 15mm 15mm 18mm; @bottom-left { content: "Erstattungsportal · {{ claim.reference }}"; font-family: "DejaVu Sans", sans-serif; font-size: 7pt; color: #666; } @bottom-right { content: counter(page) " / " counter(pages); font-family: "DejaVu Sans", sans-serif; font-size: 8pt; } }
+* { box-sizing: border-box; }
+body { font-family: "DejaVu Sans", sans-serif; font-size: 9pt; color: #172033; line-height: 1.4; }
+h1 { color: #134e4a; font-size: 18pt; margin: 0; } h2 { color: #134e4a; font-size: 11pt; margin: 4mm 0 1.5mm; }
+.eyebrow { color: #004632; font-size: 8pt; text-transform: uppercase; letter-spacing: 1pt; }
+.meta { font-size: 8pt; color: #555; } .box { background: #f0f5f8; padding: 3mm; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; } thead { display: table-header-group; }
+th, td { text-align: left; padding: 2mm 1.5mm; border-bottom: 0.3mm solid #d9e1e8; overflow-wrap: anywhere; vertical-align: top; font-weight: normal; }
+thead th { background: #134e4a; color: white; font-size: 8pt; font-weight: bold; } .amount { text-align: right; white-space: nowrap; }
+table.details th { width: 34%; color: #555; } table.details td, table.details th { padding: 1mm 1.5mm; }
+.columns { width: 100%; table-layout: fixed; } .columns > tbody > tr > td { border: none; padding: 0; vertical-align: top; }
+.columns > tbody > tr > td + td { padding-left: 6mm; }
+.box { margin-top: 1.5mm; } .box table.details th, .box table.details td { border-bottom: none; padding: 0.5mm 1.5mm 0.5mm 0; }
+table.details th { overflow-wrap: break-word; } .box table.details th { width: 48%; }
+.total td { font-weight: bold; border-bottom: none; }
+.signature { max-width: 60mm; max-height: 16mm; } .declaration p { margin: 1.5mm 0; } .declaration { break-inside: avoid; } .multiline { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style></head>
+<body>
+<div class="eyebrow">Erstattung privat verauslagter Kosten</div>
+<h1>Erstattungsformular</h1>
+<p class="meta">Referenz {{ claim.reference }}<br>Eingereicht am {{ claim.submitted_at|date:"d.m.Y H:i T" }} · Formularversion {% firstof claim.snapshot.revision claim.snapshot.config_version %}</p>
+<table class="columns"><tr><td style="width: 58%">
+<h2>Angaben zur Person</h2>
+<table class="details">
+<tr><th>Name</th><td>{{ claim.full_name }}</td></tr>
+<tr><th>Anschrift</th><td class="multiline">{{ claim.postal_address }}</td></tr>
+<tr><th>E-Mail</th><td>{{ claim.email }}</td></tr>
+<tr><th>Kontoinhaber:in</th><td>{{ claim.account_holder }}</td></tr>
+<tr><th>IBAN</th><td>{{ claim.iban }}</td></tr>
+{% if claim.bic %}<tr><th>BIC</th><td>{{ claim.bic }}</td></tr>{% endif %}
+</table></td><td>
+<h2>Zuordnung</h2>
+<div class="box"><table class="details">
+<tr><th>Formular</th><td>{{ claim.snapshot.name }}</td></tr>
+<tr><th>Vorlage</th><td>{{ claim.snapshot.template }}</td></tr>
+{% for label, value in claim.snapshot.internal_values %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
+</table></div></td></tr></table>
+<h2>Anlass/Bezug zum Projekt oder der Veranstaltung</h2>
+<table class="details">
+<tr><th>Anlass/Projektbezug</th><td class="multiline">{{ claim.purpose }}</td></tr>
+{% if claim.purpose_details %}<tr><th>Ergänzung</th><td class="multiline">{{ claim.purpose_details }}</td></tr>{% endif %}
+{% if claim.trip_start %}<tr><th>Zielort</th><td>{{ claim.trip_destination }}</td></tr>
+<tr><th>Reisezeitraum</th><td>{{ claim.trip_start|date:"d.m.Y" }} bis {{ claim.trip_end|date:"d.m.Y" }}</td></tr>{% endif %}
+</table>
+<h2>Auslagenpositionen</h2>
+<table><colgroup><col style="width: 6%"><col style="width: 24%"><col style="width: 33%"><col style="width: 19%"><col style="width: 18%"></colgroup><thead><tr><th>Nr.</th><th>Geschäftspartner / Fahrt</th><th>Anlass/Zweck</th><th>Referenz</th><th class="amount">Betrag</th></tr></thead><tbody>
+{% for expense in expenses %}<tr><td>{{ forloop.counter }}</td>{% if expense.kind == "mileage" %}<td>Kilometerpauschale<br>{{ expense.travel_date|date:"d.m.Y" }}: {{ expense.route_from }} – {{ expense.route_to }}{% if expense.round_trip %}<br>Rückfahrt{% if expense.return_date %} am {{ expense.return_date|date:"d.m.Y" }}{% endif %}{% endif %}{% if expense.vehicle_registration %}<br>Kennzeichen: {{ expense.vehicle_registration }}{% endif %}</td><td>{{ expense.purpose }}<br>{{ expense.billed_km }} km × {{ expense.mileage_rate|floatformat:2 }} EUR</td><td>—</td>{% else %}<td>{{ expense.merchant }}</td><td>{{ expense.purpose }}</td><td>{{ expense.receipt_reference|default:"—" }}</td>{% endif %}<td class="amount">{{ expense.amount|floatformat:2 }} EUR</td></tr>{% endfor %}
+<tr class="total"><td></td><td colspan="3">Summe</td><td class="amount">{{ claim.total|floatformat:2 }} EUR</td></tr>
+</tbody></table>
+<p class="meta">Die Belege folgen in Positionsreihenfolge und innerhalb jeder Position in der gewählten Dateireihenfolge. PDF-Lesezeichen ordnen die Seiten den Positionen zu.</p>
+<div class="declaration"><h2>Erklärung und Unterschrift</h2><p>{{ claim.snapshot.declaration }}</p><img class="signature" src="{{ signature_uri }}" alt="Unterschrift"><p>{{ claim.full_name }} · {{ claim.submitted_at|date:"d.m.Y" }}</p><p class="meta">Erklärung {{ claim.snapshot.declaration_version }} bestätigt. Datenschutzhinweis Version {{ claim.snapshot.privacy_version }} zur Kenntnis genommen.</p></div>
+</body></html>

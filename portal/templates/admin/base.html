@@ -1,0 +1,121 @@
+{% load static ui %}<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex,nofollow">
+<title>{% block title %}{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="{% static 'portal/brand/logo.svg' %}">
+<link rel="stylesheet" href="{% static 'admin/css/widgets.css' %}">
+<link rel="stylesheet" href="{% static 'portal/ui.css' %}">
+<script src="{% static 'portal/admin-sidebar-state.js' %}"></script>
+<script src="{% static 'portal/admin.js' %}" defer></script>
+<script src="{% static 'portal/admin-search.js' %}" defer></script>
+{% block extrahead %}{% endblock %}
+</head>
+{% with shell=has_permission %}
+<body class="admin-ui {% if is_popup %}popup {% endif %}{% block bodyclass %}{% endblock %}" data-admin-utc-offset="{% now "Z" %}">
+<a href="#content-start" class="sr-only z-[60] rounded-md bg-background px-3 py-2 text-sm font-medium shadow-md focus:not-sr-only focus:fixed focus:top-3 focus:left-3">Zum Inhalt</a>
+{% if shell and not is_popup %}
+<div class="flex min-h-dvh">
+  <aside id="admin-sidebar" data-sidebar aria-label="Seitenleiste" class="fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out sidebar-open:translate-x-0 sidebar-open:shadow-xl md:sticky md:top-0 md:h-dvh md:w-(--sidebar-width) md:shrink-0 md:translate-x-0 md:transition-[width] md:collapsed:w-(--sidebar-width-collapsed)">
+    <div class="flex flex-col gap-2 p-2">
+      <a href="{% url 'admin:index' %}" class="flex items-center gap-2 rounded-md p-2 outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring md:collapsed:p-0" title="Erstattungsportal">
+        <img src="{% static 'portal/brand/logo.svg' %}" alt="" width="32" height="32" class="size-8 shrink-0 rounded-md">
+        <span class="grid min-w-0 leading-tight md:collapsed:hidden">
+          <span class="truncate text-sm font-semibold text-sidebar-accent-foreground">{{ portal_name }}</span>
+          <span class="truncate text-xs text-muted-foreground">Verwaltung</span>
+        </span>
+      </a>
+      <button type="button" data-search-trigger aria-haspopup="dialog" aria-controls="search-dialog" aria-keyshortcuts="Meta+K Control+K /" title="Suchen" class="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-2.5 text-sm text-muted-foreground shadow-xs outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring md:collapsed:size-8 md:collapsed:justify-center md:collapsed:px-0 dark:bg-input/30">
+        {% icon "search" class="size-4 shrink-0" %}
+        <span class="md:collapsed:hidden">Suchen …</span>
+        <span class="ml-auto md:collapsed:hidden">{% component "kbd" data_search_shortcut=True %}Ctrl K{% endcomponent %}</span>
+      </button>
+    </div>
+    <nav class="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-2" aria-label="Bereiche">
+      <ul class="flex flex-col gap-1" data-sidebar-navigation>
+        {% for section in nav_sections %}
+        <li{% if section.separated %} class="mt-3 border-t border-sidebar-border pt-3"{% endif %}>
+          <a href="{{ section.url }}" title="{{ section.label }}" data-nav-shortcut{% if section.active %} aria-current="page"{% endif %} class="flex h-8 items-center gap-2 overflow-hidden rounded-md p-2 text-sm outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground md:collapsed:size-8">
+            {% icon section.icon class="size-4 shrink-0" %}
+            <span class="truncate md:collapsed:hidden">{{ section.label }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    <div class="p-2">
+      <details class="group/profile" data-popover>
+        <summary title="{% firstof user.get_full_name user.email user.get_username %}" class="flex h-12 w-full items-center gap-2 rounded-md p-2 text-left text-sm outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring group-open/profile:bg-sidebar-accent md:collapsed:size-8 md:collapsed:p-0">
+          {% include "admin/portal/avatar.html" %}
+          <span class="grid min-w-0 flex-1 leading-tight md:collapsed:hidden">
+            <span class="truncate font-medium text-sidebar-accent-foreground">{% firstof user.get_full_name user.get_username %}</span>
+            <span class="truncate text-xs text-muted-foreground">{{ user.email }}</span>
+          </span>
+          {% icon "chevrons-up-down" class="ml-auto size-4 shrink-0 text-muted-foreground md:collapsed:hidden" %}
+        </summary>
+        <div class="ui-dropdown-content fixed bottom-16 left-2 w-64 md:bottom-2 md:left-[calc(var(--sidebar-width)+0.5rem)] md:collapsed:left-[calc(var(--sidebar-width-collapsed)+0.5rem)]">
+          <div class="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+            {% include "admin/portal/avatar.html" %}
+            <span class="grid min-w-0 flex-1 leading-tight">
+              <span class="truncate font-medium">{% firstof user.get_full_name user.get_username %}</span>
+              <span class="truncate text-xs text-muted-foreground">{{ user.email }}</span>
+            </span>
+          </div>
+          <div class="ui-dropdown-separator"></div>
+          <a class="ui-dropdown-item" href="{{ account_url }}">{% icon "user-round" %} Anmeldekonto</a>
+          <div class="ui-dropdown-separator"></div>
+          <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
+            <button type="submit" class="ui-dropdown-item">{% icon "log-out" %} Abmelden</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </aside>
+  <div class="fixed inset-0 z-40 hidden bg-black/50 sidebar-open:block md:sidebar-open:hidden" data-sidebar-close aria-hidden="true"></div>
+
+  <div class="flex min-w-0 flex-1 flex-col">
+    <header class="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      {% component "button" variant="ghost" size="icon-sm" type="button" class="-ml-1" data_sidebar_trigger=True aria_controls="admin-sidebar" aria_label="Seitenleiste umschalten" title="Seitenleiste umschalten" %}{% icon "panel-left" %}{% endcomponent %}
+      <span class="mr-2 h-4 w-px shrink-0 bg-border" aria-hidden="true"></span>
+      {% block nav-breadcrumbs %}
+      <nav aria-label="Brotkrumen" class="min-w-0">
+        {% block breadcrumbs %}<div class="breadcrumbs">{% if title %}{{ title }}{% endif %}</div>{% endblock %}
+      </nav>
+      {% endblock %}
+    </header>
+    <main id="content-start" tabindex="-1" class="flex-1 px-4 py-6 outline-none md:px-8 md:py-8">
+      <div id="content" class="mx-auto flex w-full max-w-6xl flex-col gap-6">
+{% else %}
+<div class="flex min-h-dvh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10">
+  {% if not is_popup %}
+  <a href="/" class="flex items-center gap-2 font-medium">
+    <img src="{% static 'portal/brand/logo.svg' %}" alt="" width="32" height="32" class="size-8 rounded-md">
+    Erstattungsportal
+  </a>
+  {% endif %}
+  <main id="content-start" tabindex="-1" class="w-full max-w-md outline-none">
+    <div id="content" class="flex flex-col gap-6 rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
+{% endif %}
+        {% block messages %}{% include "admin/portal/messages.html" %}{% endblock messages %}
+        {% if settings_tabs %}{% include "admin/portal/settings_tabs.html" %}{% endif %}
+        {% block pretitle %}{% endblock %}
+        {% block content_title %}{% if title %}<h1 class="page-title">{{ title }}</h1>{% endif %}{% endblock %}
+        {% block content_subtitle %}{% if subtitle %}<p class="-mt-4 text-muted-foreground">{{ subtitle }}</p>{% endif %}{% endblock %}
+        {% block content %}{% block object-tools %}{% endblock %}{{ content }}{% endblock %}
+        {% block sidebar %}{% endblock %}
+      </div>
+    </main>
+{% if shell and not is_popup %}
+  </div>
+</div>
+{% include "admin/portal/search_dialog.html" %}
+{% else %}
+</div>
+{% endif %}
+{% block extrabody %}{% endblock extrabody %}
+</body>
+{% endwith %}
+</html>

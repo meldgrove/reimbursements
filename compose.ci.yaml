@@ -1,0 +1,39 @@
+services:
+  database:
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    environment:
+      POSTGRES_DB: reimbursement
+      POSTGRES_USER: reimbursement
+      POSTGRES_PASSWORD: ci-only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reimbursement -d reimbursement"]
+      interval: 1s
+      timeout: 5s
+      retries: 20
+
+  checks:
+    build:
+      context: .
+      target: test
+    environment:
+      DJANGO_DEBUG: "1"
+      DATABASE_URL: postgresql://reimbursement:ci-only@database:5432/reimbursement
+      MAIL_DELIVERY_MODE: local
+      UPLOAD_SCANNER: disabled
+    tmpfs:
+      - /app/var/private/work:size=700m,mode=0700,uid=10001,gid=10001
+    depends_on:
+      database:
+        condition: service_healthy
+    command:
+      - sh
+      - -ec
+      - |
+        ruff check .
+        ruff format --check .
+        python manage.py check
+        python manage.py makemigrations --check --dry-run
+        python scripts/check_production.py
+        pytest -q

@@ -1,0 +1,3 @@
+{% extends "admin/object_history.html" %}{% load admin_urls %}
+{% block breadcrumbs %}{% url opts|admin_urlname:'change' object.pk|admin_urlquote as change_url %}{% include "admin/portal/breadcrumbs.html" with current="Verlauf" parent_label=object|truncatechars:40 parent_url=change_url %}{% endblock %}
+{% block content_title %}<div class="grid gap-1"><p class="text-sm font-medium text-muted-foreground">Verlauf</p><h1 class="page-title">{{ object }}</h1></div>{% endblock %}

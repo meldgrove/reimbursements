@@ -1,0 +1,25 @@
+{% extends "admin/change_form.html" %}{% load admin_urls ui %}
+{% block extrastyle %}{% endblock %}
+{% block breadcrumbs %}{% if add %}{% include "admin/portal/breadcrumbs.html" with current=adminform.model_admin.add_label|default:"Neu" %}{% else %}{% include "admin/portal/breadcrumbs.html" with current=original|truncatechars:60 %}{% endif %}{% endblock %}
+{% block content_title %}
+<div class="flex flex-wrap items-end justify-between gap-4">
+  <div class="grid min-w-0 gap-1">
+    {% if add %}
+    <h1 class="page-title">{{ adminform.model_admin.add_label|default:title }}</h1>
+    {% else %}
+    <p class="text-sm font-medium text-muted-foreground">{{ opts.verbose_name }}</p>
+    <h1 class="page-title break-words">{{ original }}</h1>
+    {% endif %}
+  </div>
+  {% if change and not is_popup %}
+  <div class="flex flex-wrap items-center gap-2">
+    {% block page-actions %}
+    {% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}
+    {% component "button" variant="outline" size="sm" href=history_url %}{% icon "history" %}Verlauf{% endcomponent %}
+    {% endblock %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block content_subtitle %}{% endblock %}
+{% block object-tools %}{% endblock %}

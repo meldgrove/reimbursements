@@ -1,0 +1,11 @@
+{% extends 'portal/base.html' %}{% load portal_text %}{% block title %}Datenschutz{% endblock %}{% block content %}
+<article class="rounded-xl border bg-card p-6 text-card-foreground shadow-sm sm:p-10">
+  {% if notice %}
+  <div class="prose-notice">{{ notice.text|paragraphs }}</div>
+  <p class="mt-8 border-t pt-4 text-sm text-muted-foreground">Version {{ notice.version }} vom {{ notice.created_at|date:"d.m.Y" }}</p>
+  {% else %}
+  <h1 class="text-2xl font-semibold tracking-tight">Datenschutz</h1>
+  <p class="mt-2 text-muted-foreground">Der Datenschutzhinweis ist derzeit nicht verfügbar.</p>
+  {% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% load ui %}<details class="relative" data-popover data-filter-title="{{ title }}">
+  <summary class="inline-flex h-8 items-center gap-2 rounded-md border border-dashed border-input bg-background px-3 text-xs font-medium shadow-xs outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30">
+    {% icon "circle-plus" class="size-3.5" %}{{ title|capfirst }}
+    {% for choice in choices %}{% if choice.selected and not forloop.first %}<span class="h-4 w-px bg-border" aria-hidden="true"></span>{% component "badge" class="rounded-sm px-1 font-normal" %}{{ choice.display }}{% endcomponent %}{% endif %}{% endfor %}
+  </summary>
+  <div class="ui-dropdown-content left-0 max-h-80 w-60 overflow-y-auto">
+    <div class="ui-dropdown-label">{{ title|capfirst }}</div>
+    <ul class="flex flex-col">
+      {% for choice in choices %}
+      <li><a class="ui-dropdown-item" href="{{ choice.query_string|iriencode }}"{% if choice.selected %} aria-current="true"{% endif %}>
+        <span class="flex size-4 items-center justify-center">{% if choice.selected %}{% icon "check" class="size-4 text-foreground" %}{% endif %}</span>{{ choice.display }}
+      </a></li>
+      {% endfor %}
+    </ul>
+  </div>
+</details>

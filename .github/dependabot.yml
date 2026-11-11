@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Images are pinned by digest; these updates keep the digests current and reviewed.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # pyproject.toml requires Python 3.13.
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+  # compose.yaml and its compose.<name>.yaml variants.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # A new PostgreSQL major version needs a data migration.
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major

@@ -1,0 +1,7 @@
+{% load ui %}<nav aria-label="Admin-Bereiche" class="-mb-2">
+  <div class="inline-flex h-9 items-center rounded-lg bg-muted p-[3px] text-muted-foreground">
+    {% for tab in settings_tabs %}
+    <a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %} class="inline-flex h-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium outline-none transition-[color,box-shadow] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-[current=page]:bg-background aria-[current=page]:text-foreground aria-[current=page]:shadow-sm dark:aria-[current=page]:bg-input/30">{% icon tab.icon %}{{ tab.label }}</a>
+    {% endfor %}
+  </div>
+</nav>

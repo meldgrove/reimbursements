@@ -1,0 +1,69 @@
+x-application: &application
+  build: .
+  env_file: .env
+  restart: unless-stopped
+  volumes:
+    - private_data:${PRIVATE_STORAGE_ROOT:-/app/var/private}
+  tmpfs:
+    - ${PRIVATE_STORAGE_ROOT:-/app/var/private}/work:size=700m,mode=0700,uid=10001,gid=10001
+  depends_on:
+    database:
+      condition: service_healthy
+    scanner:
+      condition: service_healthy
+
+services:
+  web:
+    <<: *application
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/-/readyz',headers={'X-Health-Token':os.getenv('HEALTHCHECK_TOKEN',''),'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r,timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 512m
+  worker:
+    <<: *application
+    pids_limit: 64
+    command: ["python", "manage.py", "run_jobs"]
+    mem_limit: 2g
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; import os,time; assert time.time()-(Path(os.environ.get('PRIVATE_STORAGE_ROOT','/app/var/private'))/'worker-heartbeat').stat().st_mtime < 420"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+  database:
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    environment:
+      POSTGRES_DB: reimbursement
+      POSTGRES_USER: reimbursement
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reimbursement -d reimbursement"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+  scanner:
+    image: clamav/clamav:1.4@sha256:3bba6dd5ac6663d55b80f86a3126e146612d93b593cc2617188d13f637d91260
+    volumes:
+      - scanner_data:/var/lib/clamav
+    restart: unless-stopped
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      start_period: 180s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  private_data:
+  database_data:
+  scanner_data:
