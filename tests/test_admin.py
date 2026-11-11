@@ -10,8 +10,9 @@ from django.test import RequestFactory
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from portal import roles
+from portal.admin import STATUS_ORDER, claim_status_parts
 from portal.auth import KeycloakBackend, keycloak_logout_url
-from portal.models import Claim, DeliveryAttempt, Form, Job, Operation, PrivacyNotice
+from portal.models import Claim, Delivery, DeliveryAttempt, Form, Job, Operation, PrivacyNotice
 
 pytestmark = pytest.mark.django_db
 
@@ -635,6 +636,40 @@ def test_editors_cannot_delete_claims(client, editor, accepted):
     assert not Operation.objects.exists()
 
 
+def test_status_filter_lists_the_claims_its_status_column_shows(admin_client, accepted):
+    claim_states = [
+        (Claim.State.RENDERING, None),
+        (Claim.State.READY, None),
+        (Claim.State.FAILED, None),
+        (Claim.State.READY, "pending"),
+        (Claim.State.READY, "delivered"),
+        (Claim.State.READY, "failed"),
+        (Claim.State.READY, "send_unknown"),
+        (Claim.State.PURGING, "delivered"),
+        (Claim.State.PURGED, None),
+        (Claim.State.PURGED, "failed"),
+    ]
+    for claim_state, delivery_state in claim_states:
+        claim = second_claim(accepted.form)
+        Claim.objects.filter(pk=claim.pk).update(state=claim_state)
+        if delivery_state:
+            Delivery.objects.create(
+                claim=claim, recipient="finance@example.invalid", state=delivery_state
+            )
+    columns = {claim.pk: claim_status_parts(claim)[0] for claim in Claim.objects.all()}
+    assert set(columns.values()) <= set(STATUS_ORDER)
+
+    page = admin_client.get("/admin/portal/claim/")
+    html = page.content.decode()
+    assert 'data-filter-title="Status"' in html
+    assert 'data-filter-title="Verarbeitung"' not in html
+    assert 'data-filter-title="Versand"' not in html
+    for state in STATUS_ORDER:
+        page = admin_client.get("/admin/portal/claim/", {"status": state})
+        listed = {claim.pk for claim in page.context["cl"].result_list}
+        assert listed == {pk for pk, shown in columns.items() if shown == state}, state
+
+
 def test_claim_search_finds_a_full_reference(admin_client, accepted):
     page = admin_client.get(f"/admin/portal/claim/?q={accepted.reference}").content.decode()
     assert "Alex Beispiel" in page
@@ -694,10 +729,10 @@ def test_search_page_lists_all_results(admin_client, accepted):
 
 
 def test_list_search_box_sends_the_query_and_reset_clears_it(admin_client, accepted):
-    page = admin_client.get("/admin/portal/claim/", {"q": "Alex", "state": "received"})
+    page = admin_client.get("/admin/portal/claim/", {"q": "Alex", "status": "received"})
     html = page.content.decode()
     assert 'name="q" value="Alex"' in html
-    assert '<input type="hidden" name="state" value="received">' in html
+    assert '<input type="hidden" name="status" value="received">' in html
     assert '<input type="hidden" name="q"' not in html
     assert 'href="?"' in html
 

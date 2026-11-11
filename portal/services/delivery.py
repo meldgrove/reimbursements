@@ -15,7 +15,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -273,6 +273,13 @@ def operator_status(claim, *, now=None):
         and claim.state != Claim.State.PURGED,
         duplicate_risk=bool(delivery and has_duplicate_risk(delivery)),
     )
+
+
+def operator_state_filter(state):
+    """The claims whose `operator_status` state is `state`, as a queryset filter."""
+    purging = Q(state__in=(Claim.State.PURGING, Claim.State.PURGED))
+    shows_claim_state = Q(delivery__isnull=True) | purging
+    return (shows_claim_state & Q(state=state)) | (~purging & Q(delivery__state=state))
 
 
 @transaction.atomic

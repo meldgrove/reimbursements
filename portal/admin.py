@@ -494,6 +494,13 @@ STATUS_LABELS = {**dict(Claim.State.choices), **DELIVERY_STATUS}
 
 DELETED_STATES = (Claim.State.PURGING, Claim.State.PURGED)
 
+# Status filter options in the order a claim passes through them.
+STATUS_ORDER = [
+    *(state for state in Claim.State if state not in DELETED_STATES),
+    *DELIVERY_STATUS,
+    *DELETED_STATES,
+]
+
 
 def claim_status_parts(claim):
     state = delivery.operator_status(claim).state
@@ -507,6 +514,21 @@ def claim_status(claim):
 def claim_status_badge(claim):
     key, label = claim_status_parts(claim)
     return render_component("badge", label, variant=STATUS_TONES.get(key, "secondary"))
+
+
+class StatusFilter(admin.SimpleListFilter):
+    """Filters claims by the value of their Status column."""
+
+    title = "Status"
+    parameter_name = "status"
+
+    def lookups(self, request, model_admin):
+        return [(state, STATUS_LABELS[state]) for state in STATUS_ORDER]
+
+    def queryset(self, request, queryset):
+        if self.value() in STATUS_LABELS:
+            return queryset.filter(delivery.operator_state_filter(self.value()))
+        return queryset
 
 
 class RetryForm(forms.Form):
@@ -584,7 +606,7 @@ class ClaimAdmin(admin.ModelAdmin):
         "status",
         "overdue",
     ]
-    list_filter = [("form", admin.RelatedOnlyFieldListFilter), "state", "delivery__state"]
+    list_filter = [("form", admin.RelatedOnlyFieldListFilter), StatusFilter]
     search_fields = ["full_name", "email", "=bookkeeping_reference"]
     date_hierarchy = "submitted_at"
     inlines = [OperationInline]
