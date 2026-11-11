@@ -6,12 +6,13 @@ from django.utils import timezone
 from portal.intake import IntakeError
 from portal.models import Draft, Form, PrivacyNotice
 from portal.services import drafts
-from portal.services.drafts import READ, REMOVE, SUBMIT, UPLOAD
+from portal.services.drafts import READ, REMOVE, REVIEW, SUBMIT, UPLOAD
 from tests.conftest import Participant
 
 pytestmark = pytest.mark.django_db
-EDITS = [REMOVE, UPLOAD, SUBMIT]
-ACCEPTS = [UPLOAD, SUBMIT]
+# Actions on unsubmitted drafts only, and actions that need an accepting form.
+EDITS = [REVIEW, REMOVE, UPLOAD, SUBMIT]
+ACCEPTS = [REVIEW, UPLOAD, SUBMIT]
 
 
 @pytest.fixture

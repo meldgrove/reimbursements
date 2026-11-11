@@ -25,6 +25,8 @@ from portal.intake import (
 from portal.models import Expense
 
 CONSENT = frozenset({"declaration", "privacy_acknowledged"})
+# ClaimForm fields that are not stored on the Claim.
+NOT_STORED = CONSENT | {"is_trip"}
 REQUIRED_MESSAGES = {
     "merchant": t_lazy("Please enter the business partner."),
     "vehicle_registration": t_lazy("Please enter the vehicle registration."),
@@ -33,11 +35,23 @@ REQUIRED_MESSAGES = {
 }
 
 
+@dataclass(frozen=True)
+class Entries:
+    """Valid entries, in the parts acceptance stores."""
+
+    # Claim field values.
+    claim: dict
+    # Expense rows in order, each with its "id", "position" and receipt "uploads".
+    expenses: list
+    # The Signature's Upload ID; None in review.
+    signature: str | None
+    total: Decimal
+
+
 @dataclass
 class Validation:
     errors: dict = field(default_factory=dict)
-    payload: dict | None = None
-    total: Decimal | None = None
+    entries: Entries | None = None
 
     def add(self, key, text):
         self.errors.setdefault(key, []).append({"message": text, "code": "invalid"})
@@ -48,7 +62,7 @@ class Validation:
                 "__all__", [{"message": t("Please check the marked details.")}]
             )
             raise IntakeError(summary[0]["message"], errors=self.errors)
-        return self.payload, self.total
+        return self.entries
 
 
 def _uuid(value):
@@ -194,17 +208,17 @@ def _check(data, form, *, submitting):
             cleaned.append({**item, "id": row_id, "position": position, "uploads": ids})
     if total > MAX_CLAIM_TOTAL:
         result.add("__all__", t("The total of all items is too high. Please check the amounts."))
-    payload = dict(claim_form.cleaned_data)
-    if not submitting:
-        for key in CONSENT:
-            payload.pop(key, None)
-    else:
+    signature = None
+    if submitting:
         try:
-            payload["signature"] = _uuid(data.get("signature"))
+            signature = _uuid(data.get("signature"))
         except (ValueError, TypeError, AttributeError):
             result.add("signature", t("Please draw or upload a signature."))
     if not result.errors:
-        result.payload, result.total = {**payload, "expenses": cleaned}, total
+        claim = {
+            key: value for key, value in claim_form.cleaned_data.items() if key not in NOT_STORED
+        }
+        result.entries = Entries(claim, cleaned, signature, total)
     return result
 
 

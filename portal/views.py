@@ -19,10 +19,10 @@ from portal.intake import IntakeError
 from portal.models import Claim, Form, PrivacyNotice
 from portal.participants import RequestParticipant
 from portal.roles import manages
-from portal.services import claim_validation, delivery, drafts, uploads
+from portal.services import claim_status, claim_validation, delivery, drafts, uploads
 from portal.services.capacity import storage_available
 from portal.services.drafts import open_draft
-from portal.services.mailersend import verify_webhook
+from portal.services.mailersend import verify_webhook, webhook_evidence
 from portal.services.readiness import dependencies
 from portal.services.storage import check_writable
 from portal.services.submissions import submit_claim
@@ -171,15 +171,13 @@ def validate_claim(request, form_slug):
     data = json.loads(request.body)
     if not isinstance(data, dict):
         raise IntakeError(t("Invalid request."))
-    draft, form = drafts.gate(
+    _draft, form = drafts.gate(
         RequestParticipant(request),
         form_slug,
         data.get("draft_id"),
         draft_token(request),
-        drafts.Action(edits=False, accepts=True, locks_form=False),
+        drafts.REVIEW,
     )
-    if draft.claim_id:
-        raise drafts.AlreadySubmitted(draft)
     return JsonResponse({"fields": claim_validation.review(data, form).errors})
 
 
@@ -200,11 +198,12 @@ def submit(request, form_slug):
 @require_GET
 def received(request, claim_id):
     claim = get_object_or_404(
-        Claim.objects.select_related("form"),
+        claim_status.annotate(Claim.objects.select_related("form", "delivery")),
         pk=claim_id,
         accepted_draft__session_hash=RequestParticipant(request).binding(),
     )
-    status, final = delivery.participant_status(claim)
+    current = claim_status.of(claim)
+    status, final = current.outcome, current.final
     if request.GET.get("format") == "json":
         return JsonResponse({"reference": claim.reference, "state": status, "final": final})
     return render(
@@ -260,8 +259,8 @@ def mailersend_webhook(request):
         test = data.get("type") == "webhook.test"
         if not verify_webhook(raw, request.headers.get("Signature", ""), test=test):
             return JsonResponse({"error": "invalid_signature"}, status=401)
-        if not test:
-            delivery.ingest_event(data)
+        if not test and (evidence := webhook_evidence(data)):
+            delivery.record_evidence(evidence)
     except (ValueError, TypeError, AttributeError, KeyError):
         return JsonResponse({"error": "invalid_event"}, status=400)
     return JsonResponse({"received": True})

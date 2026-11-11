@@ -77,6 +77,17 @@ STATIC_MESSAGES = {
     "document_sandbox_unavailable": "The security check is temporarily unavailable. Please contact us.",
     "unsupported_type": "Please upload a PDF, JPG or PNG file.",
     "invalid_document": "The file could not be read. Please export it again.",
+    "invalid_pdf": "The file could not be read. Please export it again.",
+    "pdf_dimensions": (
+        "The PDF has a page size that cannot be processed. "
+        "Please export it in a standard paper size such as A4."
+    ),
+    "pdf_complexity": (
+        "The PDF is too complex to check. "
+        "Please export it again as a simpler PDF or upload a photo."
+    ),
+    "document_timeout": "Checking the file took too long. Please upload a smaller or simpler file.",
+    "scanner_configuration": "The security check is temporarily unavailable. Please contact us.",
     "encrypted_pdf": "The PDF is password-protected. Please upload an unprotected copy.",
     "pdf_active_content": "This PDF contains unsupported active content. Please export it as a plain PDF.",
     "empty_signature": "The signature is empty. Please sign again.",
@@ -90,6 +101,17 @@ STATIC_MESSAGES = {
     "draft_storage_limit": "The files need too much storage. Please remove files you do not need.",
     "upload_capacity": "Upload capacity is limited right now. Please wait a moment and try again.",
 }
+
+
+# Validation failures with no cause a participant can fix: they see "upload_unchecked".
+UNCHECKED_FAILURES = frozenset(
+    {
+        "document_process_failed",
+        "invalid_processing_output",
+        "processing_error",
+        "worker_interrupted",
+    }
+)
 
 
 def messages():

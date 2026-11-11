@@ -1,7 +1,8 @@
 """Delivery of a claim's authoritative PDF to its approved Finance inbox.
 
 A Delivery's state is derived from its attempts. Attempts change only through send
-results, provider webhooks and reconciliation lookups recorded here. A send whose
+results and provider evidence (webhooks and reconciliation lookups, which the
+MailerSend adapter translates) recorded here. A send whose
 outcome is unknown is never repeated automatically: an operator retry has to
 acknowledge the duplicate risk. Failures before transmission are definite, because
 nothing reached the provider.
@@ -10,19 +11,16 @@ nothing reached the provider.
 import hashlib
 import logging
 import uuid
-from dataclasses import dataclass
-from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 from portal import app_settings
 from portal.i18n import t
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent
-from portal.services import mailersend, queue
+from portal.services import mailersend, outbound, queue, retention
 from portal.services.storage import path_for
 from portal.services.transport import (
     ACCEPTED,
@@ -32,7 +30,6 @@ from portal.services.transport import (
     PENDING,
     SENDING,
     UNKNOWN,
-    LocalOutbox,
     Message,
     SendResult,
 )
@@ -46,28 +43,6 @@ FINAL_ATTEMPT = frozenset({DELIVERED, FAILED})
 # Attempts the provider can tell us more about.
 RECONCILABLE = frozenset({ACCEPTED, PAUSED, UNKNOWN})
 
-EVIDENCE_STATES = {
-    "activity.sent": ACCEPTED,
-    "activity.delivered": DELIVERED,
-    "activity.deferred": ACCEPTED,
-    "activity.soft_bounced": ACCEPTED,
-    "activity.hard_bounced": FAILED,
-    "activity.suppressed": FAILED,
-    "reconciliation.queued": ACCEPTED,
-    "reconciliation.sent": ACCEPTED,
-    "reconciliation.delivered": DELIVERED,
-    "reconciliation.soft_bounced": ACCEPTED,
-    "reconciliation.hard_bounced": FAILED,
-    "reconciliation.suppressed": FAILED,
-    "reconciliation.rejected": FAILED,
-}
-# Evidence that the provider has the message, without saying more than that.
-RESOLVES_UNKNOWN_ONLY = frozenset({"reconciliation.queued"})
-
-# Participant-facing status: one vocabulary over claim and delivery states.
-DELIVERY_FAILED = "delivery_failed"
-FINAL_PARTICIPANT_STATES = frozenset({DELIVERED, DELIVERY_FAILED, Claim.State.FAILED})
-
 
 class DuplicateRisk(Exception):
     """The previous send may have reached the provider."""
@@ -79,16 +54,6 @@ class Undeliverable(Exception):
 
 def _recipient_hash(address):
     return hashlib.sha256(address.lower().encode()).hexdigest()
-
-
-def recipient_approved(address):
-    return address.lower() in settings.APPROVED_DELIVERY_RECIPIENTS
-
-
-def configured_transport():
-    if settings.MAIL_DELIVERY_MODE == "local" and settings.DEBUG:
-        return LocalOutbox()
-    return mailersend.MailerSendTransport()
 
 
 def schedule(claim):
@@ -110,7 +75,7 @@ def _lock_delivery(**lookup):
 
 
 def refresh(delivery):
-    """Derive the delivery's state from its attempts, and the claim's retention from it."""
+    """Derive the delivery's state from its attempts, and report it to retention."""
     attempts = list(delivery.attempts.order_by("created_at"))
     if not attempts:
         return
@@ -122,13 +87,7 @@ def refresh(delivery):
     claim = Claim.objects.select_for_update().get(pk=delivery.claim_id)
     if current.state == DELIVERED:
         delivery.delivered_at = delivery.delivered_at or timezone.now()
-        claim.pdf_due = delivery.delivered_at + timedelta(days=settings.PDF_RETENTION_DAYS)
-        claim.retention_due = max(
-            claim.submitted_at + timedelta(days=settings.CONTENT_RETENTION_DAYS), claim.pdf_due
-        )
-    elif current.state in {FAILED, UNKNOWN}:
-        claim.pdf_due = claim.retention_due = None
-    claim.save(update_fields=["pdf_due", "retention_due"])
+    retention.follow_delivery(claim, current.state, delivery.delivered_at)
     delivery.save()
 
 
@@ -144,13 +103,8 @@ def start_attempt(delivery_id):
 
 def compose(attempt):
     delivery, claim = attempt.delivery, attempt.delivery.claim
-    if not recipient_approved(delivery.recipient):
+    if not outbound.recipient_approved(delivery.recipient):
         raise Undeliverable("unapproved_recipient")
-    if (
-        settings.TEST_RECIPIENT_ALLOWLIST
-        and delivery.recipient.lower() not in settings.TEST_RECIPIENT_ALLOWLIST
-    ):
-        raise Undeliverable("test_recipient_blocked")
     try:
         content = path_for(claim.pdf_key).read_bytes()
     except (OSError, ValueError) as exc:
@@ -183,8 +137,8 @@ def compose(attempt):
 def send(attempt):
     """Compose and transmit one attempt. No database writes; call outside a transaction.
 
-    Anything that fails while composing is a definite failure. An exception from the
-    transport itself propagates: the provider may have accepted the message.
+    Anything that fails while composing is a definite failure. An exception from
+    `outbound.send` propagates: the provider may have accepted the message.
     """
     try:
         message = compose(attempt)
@@ -193,7 +147,7 @@ def send(attempt):
     except Exception:
         logger.exception("delivery_compose_failed attempt=%s", attempt.pk)
         return SendResult(FAILED, error_code="message_unavailable")
-    return configured_transport().send(message)
+    return outbound.send(message)
 
 
 def record_result(attempt_id, result):
@@ -209,16 +163,8 @@ def record_result(attempt_id, result):
     refresh(delivery)
 
 
-def abandon(attempt_id, error_code):
-    """In a transaction: a retryable attempt that will not be retried has failed."""
-    attempt = DeliveryAttempt.objects.get(pk=attempt_id)
-    delivery = _lock_delivery(pk=attempt.delivery_id)
-    DeliveryAttempt.objects.filter(pk=attempt_id).update(state=FAILED, error_code=error_code)
-    refresh(delivery)
-
-
-def mark_interrupted(delivery_id, error_code):
-    """In a transaction: a sender died mid-attempt, so the outcome is unknown."""
+def mark_unknown(delivery_id, error_code):
+    """In a transaction: a send ended without a result, so its outcome is unknown."""
     delivery = _lock_delivery(pk=delivery_id)
     delivery.attempts.filter(state=SENDING).update(state=UNKNOWN, error_code=error_code)
     refresh(delivery)
@@ -227,6 +173,12 @@ def mark_interrupted(delivery_id, error_code):
 def has_duplicate_risk(delivery):
     """Sending again could reach Finance twice: only a definite failure is safe to repeat."""
     return delivery.state != FAILED
+
+
+def duplicate_risk(claim):
+    """A retry of the claim's delivery has to acknowledge that Finance may get it twice."""
+    delivery = getattr(claim, "delivery", None)
+    return bool(delivery and has_duplicate_risk(delivery))
 
 
 def may_have_reached_finance(claim):
@@ -245,102 +197,17 @@ def retry(claim, *, acknowledge_duplicate_risk=False):
     queue.enqueue("send", delivery, again=True)
 
 
-def participant_status(claim):
-    """The participant-visible state and whether it can still change."""
-    delivery = getattr(claim, "delivery", None)
-    if delivery is None:
-        state = claim.state
-    else:
-        state = DELIVERY_FAILED if delivery.state == FAILED else delivery.state
-    return state, state in FINAL_PARTICIPANT_STATES
-
-
-@dataclass(frozen=True)
-class OperatorStatus:
-    """What an operator sees of a claim in the admin area and in `claim_status`."""
-
-    # The claim state, or the delivery state once a delivery exists, unless being purged.
-    state: str
-    error_code: str
-    # Unresolved past its resolution date: neither delivered nor being deleted.
-    overdue: bool
-    # A retry must acknowledge that Finance could receive the claim twice.
-    duplicate_risk: bool
-
-
-def operator_status(claim, *, now=None):
-    delivery = getattr(claim, "delivery", None)
-    purging = claim.state == Claim.State.PURGING
-    return OperatorStatus(
-        state=claim.state if delivery is None or purging else delivery.state,
-        error_code=claim.error_code or (delivery.error_code if delivery else ""),
-        overdue=claim.resolution_due <= (now or timezone.now())
-        and not claim.retention_due
-        and not purging,
-        duplicate_risk=bool(delivery and has_duplicate_risk(delivery)),
-    )
-
-
-def operator_state_filter(state):
-    """The claims whose `operator_status` state is `state`, as a queryset filter."""
-    purging = Q(state=Claim.State.PURGING)
-    shows_claim_state = Q(delivery__isnull=True) | purging
-    return (shows_claim_state & Q(state=state)) | (~purging & Q(delivery__state=state))
-
-
 @transaction.atomic
-def ingest_event(data):
-    """Record a verified MailerSend webhook as delivery evidence."""
-    body = data.get("data", {})
-    timestamp = parse_datetime(data.get("created_at", ""))
-    provider_id = body.get("id")
-    recipient = body.get("recipient")
-    if data.get("type") not in EVIDENCE_STATES or data["type"].startswith("reconciliation."):
-        return
-    if (
-        not isinstance(provider_id, str)
-        or not 1 <= len(provider_id) <= 100
-        or not isinstance(recipient, str)
-        or len(recipient) > 254
-        or not timestamp
-        or timezone.is_naive(timestamp)
-    ):
-        raise ValueError("invalid_event")
-    tags = body.get("tags", [])
-    attempt_tag = (
-        next(
-            (
-                tag[8:]
-                for tag in tags
-                if isinstance(tag, str) and tag.startswith("attempt-") and len(tag) == 44
-            ),
-            "",
-        )
-        if isinstance(tags, list)
-        else ""
-    )
-    message_id = body.get("message_id", "")
-    if not isinstance(message_id, str) or len(message_id) > 100:
-        raise ValueError("invalid_event")
-    _record_evidence(
-        kind=data["type"],
-        provider_id=provider_id,
-        timestamp=timestamp,
-        message_id=message_id,
-        recipient=recipient,
-        attempt_tag=attempt_tag,
-    )
-
-
-def _record_evidence(*, kind, provider_id, timestamp, message_id, recipient, attempt_tag=""):
+def record_evidence(evidence):
+    """Record what the provider says about an attempt; it applies once the attempt is known."""
     event, _ = DeliveryEvent.objects.get_or_create(
-        provider_id=provider_id,
+        provider_id=evidence.provider_id,
         defaults={
-            "kind": kind,
-            "provider_timestamp": timestamp,
-            "message_id": message_id,
-            "recipient_hash": _recipient_hash(recipient),
-            "attempt_tag": attempt_tag,
+            "kind": evidence.kind,
+            "provider_timestamp": evidence.timestamp,
+            "message_id": evidence.message_id,
+            "recipient_hash": _recipient_hash(evidence.recipient),
+            "attempt_tag": evidence.attempt_id,
         },
     )
     _apply(event)
@@ -373,16 +240,13 @@ def _apply(event):
         return
     if not attempt.message_id and event.message_id:
         attempt.message_id = event.message_id
-    state = EVIDENCE_STATES[event.kind]
-    if event.kind in RESOLVES_UNKNOWN_ONLY and attempt.state != UNKNOWN:
+    state, error_code, resolves_unknown_only = mailersend.outcome(event.kind)
+    if resolves_unknown_only and attempt.state != UNKNOWN:
         state = None
     # Terminal success/failure cannot regress on a late sent/deferred callback.
     if state and (state in FINAL_ATTEMPT or attempt.state not in FINAL_ATTEMPT):
         if not (attempt.state == FAILED and state == DELIVERED):
-            attempt.state = state
-            attempt.error_code = (
-                f"provider_{event.kind.rsplit('.', 1)[-1]}" if state == FAILED else ""
-            )
+            attempt.state, attempt.error_code = state, error_code
     attempt.save()
     event.attempt, event.applied = attempt, True
     event.save(update_fields=["attempt", "applied"])
@@ -416,20 +280,13 @@ def reconcile(batch_size):
     for attempt in list(attempts):
         DeliveryAttempt.objects.filter(pk=attempt.pk).update(last_checked_at=timezone.now())
         counts["checked"] += 1
-        message = mailersend.retrieve_message(attempt.message_id)
-        if message is None:
+        try:
+            evidence = mailersend.lookup(attempt.id, attempt.message_id)
+        except mailersend.LookupFailed:
             counts["failed"] += 1
             continue
-        snapshot = mailersend.message_snapshot(message)
-        if not snapshot or not snapshot.get("recipient"):
+        if evidence is None:
             counts["deferred"] += 1
             continue
-        with transaction.atomic():
-            _record_evidence(
-                kind=f"reconciliation.{snapshot['status']}",
-                provider_id=f"reconcile-{attempt.id}-{snapshot['status']}",
-                timestamp=timezone.now(),
-                message_id=attempt.message_id,
-                recipient=snapshot["recipient"],
-            )
+        record_evidence(evidence)
     return counts

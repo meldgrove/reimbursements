@@ -2,12 +2,8 @@
 (() => {
   const target = document.getElementById("processing-status");
   const text = JSON.parse(document.getElementById("status-text").textContent);
-  // Participants see three outcomes; the detailed states stay internal.
-  const messages = {
-    delivered: text.delivered,
-    delivery_failed: text.problem,
-    processing_failed: text.problem,
-  };
+  // The server reports one of three outcomes: processing, problem or delivered.
+  const messages = { delivered: text.delivered, problem: text.problem };
   function show(state) {
     target.textContent = messages[state] || text.processing;
   }

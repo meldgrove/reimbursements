@@ -2,11 +2,12 @@
 
 `open_draft` gives a participant their editable draft of a form, or admits a new one.
 `gate` decides whether a participant may act on a draft now. Every participant action
-passes it, and its `Action` says which checks run:
+passes it with one of these actions, which says which checks run:
 
 | Action | session, token, expiry | unsubmitted | form accepting | locks            |
 |--------|------------------------|-------------|----------------|------------------|
 | READ   | yes                    |             |                |                  |
+| REVIEW | yes                    | yes         | yes            |                  |
 | REMOVE | yes                    | yes         |                | draft            |
 | UPLOAD | yes                    | yes         | yes            | draft            |
 | SUBMIT | yes                    | yes         | yes            | draft, then form |
@@ -30,26 +31,29 @@ from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Draft, Form, PrivacyNotice
 from portal.services import network_budget
-from portal.services.delivery import recipient_approved
+from portal.services.outbound import recipient_approved
 
 # New drafts one browser session may open per day.
 MAX_DRAFTS_PER_SESSION = 10
 
 
 @dataclass(frozen=True)
-class Action:
-    # The draft must still be unsubmitted; it stays locked until the transaction ends.
-    edits: bool
+class _Action:
+    # The draft must still be unsubmitted.
+    unsubmitted: bool
+    # The draft stays locked until the transaction ends.
+    locks_draft: bool
     # The form must be accepting: open, available and on the draft's revision.
     accepts: bool
     # The form cannot change until the transaction ends.
     locks_form: bool
 
 
-READ = Action(edits=False, accepts=False, locks_form=False)
-REMOVE = Action(edits=True, accepts=False, locks_form=False)
-UPLOAD = Action(edits=True, accepts=True, locks_form=False)
-SUBMIT = Action(edits=True, accepts=True, locks_form=True)
+READ = _Action(unsubmitted=False, locks_draft=False, accepts=False, locks_form=False)
+REVIEW = _Action(unsubmitted=True, locks_draft=False, accepts=True, locks_form=False)
+REMOVE = _Action(unsubmitted=True, locks_draft=True, accepts=False, locks_form=False)
+UPLOAD = _Action(unsubmitted=True, locks_draft=True, accepts=True, locks_form=False)
+SUBMIT = _Action(unsubmitted=True, locks_draft=True, accepts=True, locks_form=True)
 
 
 class AlreadySubmitted(IntakeError):
@@ -88,14 +92,17 @@ def gate(participant, form_slug, draft_id, token, action):
     """The participant's draft and its form, if `action` is allowed now.
 
     Raises IntakeError: 404 for another session or a wrong token, 410 for an expired
-    unsubmitted draft, AlreadySubmitted (409) when an editing action meets a claim, and
+    unsubmitted draft, AlreadySubmitted (409) when an action for unsubmitted drafts meets a
+    claim, and
     409 or 503 when an accepting action meets a form that is closed, unavailable or on
     another revision. Locks need an atomic transaction.
     """
     try:
         draft_id = uuid.UUID(str(draft_id))
         # Lock only the draft: the form slug join must not lock the form row as well.
-        drafts = Draft.objects.select_for_update(of=("self",)) if action.edits else Draft.objects
+        drafts = (
+            Draft.objects.select_for_update(of=("self",)) if action.locks_draft else Draft.objects
+        )
         draft = drafts.get(pk=draft_id, form__slug=form_slug, session_hash=participant.binding())
     except (Draft.DoesNotExist, ValueError, TypeError) as exc:
         raise IntakeError(t("The form was not found."), status=404) from exc
@@ -107,7 +114,7 @@ def gate(participant, form_slug, draft_id, token, action):
     if action.locks_form:
         forms = forms.select_for_update(of=("self",))
     form = forms.get(pk=draft.form_id)
-    if action.edits and draft.claim_id:
+    if action.unsubmitted and draft.claim_id:
         raise AlreadySubmitted(draft)
     if action.accepts:
         _ensure_accepting(form, draft.revision)

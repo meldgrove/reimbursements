@@ -1,3 +1,10 @@
+"""Retention: when a claim's PDF and content are deleted, and deleting them.
+
+A claim is resolved once Finance has its PDF. The PDF then goes after PDF_RETENTION_DAYS,
+everything else CONTENT_RETENTION_DAYS after submission, never before the PDF. An
+unresolved claim keeps everything until an operator resolves or deletes it.
+"""
+
 import logging
 from datetime import timedelta
 from importlib import import_module
@@ -9,17 +16,42 @@ from django.utils import timezone
 
 from portal.models import (
     Claim,
+    DeliveryAttempt,
     DeliveryEvent,
     Draft,
     DraftAdmission,
     Upload,
     WorkspaceReservation,
 )
-from portal.services import queue, uploads
+from portal.services import outbound, queue, uploads
 from portal.services.capacity import recover_abandoned_workspaces
-from portal.services.storage import outbox_key, remove_keys, sweep_orphans
+from portal.services.storage import remove_keys, sweep_orphans
+from portal.services.transport import DELIVERED, FAILED, UNKNOWN
 
 logger = logging.getLogger(__name__)
+
+
+def resolution_due(submitted_at):
+    """When an unresolved claim becomes overdue for an operator."""
+    return submitted_at + timedelta(days=settings.CONTENT_RETENTION_DAYS)
+
+
+def follow_delivery(claim, state, delivered_at):
+    """Set the deletion dates of a claim the caller locked from its Finance delivery's state.
+
+    A delivered claim is resolved. A failed or unclear delivery holds everything until an
+    operator resolves it. Any other state changes nothing.
+    """
+    if state == DELIVERED:
+        claim.pdf_due = delivered_at + timedelta(days=settings.PDF_RETENTION_DAYS)
+        claim.retention_due = max(
+            claim.submitted_at + timedelta(days=settings.CONTENT_RETENTION_DAYS), claim.pdf_due
+        )
+    elif state in {FAILED, UNKNOWN}:
+        claim.pdf_due = claim.retention_due = None
+    else:
+        return
+    claim.save(update_fields=["pdf_due", "retention_due"])
 
 
 class ClaimBusy(Exception):
@@ -31,6 +63,11 @@ def _in_use(claim):
         queue.claim_has_running_job(claim)
         or WorkspaceReservation.objects.filter(Q(claim=claim) | Q(upload__claim=claim)).exists()
     )
+
+
+def _finance_messages(claim):
+    """The claim's emails to Finance: they carry its PDF."""
+    return DeliveryAttempt.objects.filter(delivery__claim=claim).values_list("pk", flat=True)
 
 
 def begin_purge(claim):
@@ -62,12 +99,7 @@ def purge_claim(claim_id):
         uploads.remove_files(upload)
     remove_keys(claim.pdf_key)
     confirmation = getattr(claim, "confirmation", None)
-    if confirmation:
-        remove_keys(outbox_key(confirmation.pk))
-    delivery = getattr(claim, "delivery", None)
-    if delivery:
-        for attempt in delivery.attempts.all():
-            remove_keys(outbox_key(attempt.id))
+    outbound.remove_copies(*_finance_messages(claim), *([confirmation.pk] if confirmation else []))
     with transaction.atomic():
         claim = Claim.objects.select_for_update().filter(pk=claim_id).first()
         if claim is None:
@@ -94,10 +126,7 @@ def remove_pdf(claim_id):
         if queue.claim_has_active_job(claim):
             raise ClaimBusy
         remove_keys(claim.pdf_key)
-        delivery = getattr(claim, "delivery", None)
-        if delivery:
-            for attempt in delivery.attempts.all():
-                remove_keys(outbox_key(attempt.id))
+        outbound.remove_copies(*_finance_messages(claim))
         claim.pdf_key, claim.pdf_removed_at = "", timezone.now()
         claim.save(update_fields=["pdf_key", "pdf_removed_at"])
 

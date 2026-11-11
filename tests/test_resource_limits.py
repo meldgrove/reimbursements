@@ -233,6 +233,24 @@ def test_stale_pdf_validator_does_not_delete_its_source(prepared, monkeypatch):
     assert not WorkspaceReservation.objects.exists()
 
 
+def test_stale_image_validator_removes_its_unrecorded_output(prepared, monkeypatch):
+    item = Upload.objects.get(pk=upload_file(prepared).json()["id"])
+    old = acquire_job()
+    from portal.services.documents import inspect_upload
+
+    def expire_after_processing(*args, **kwargs):
+        result = inspect_upload(*args, **kwargs)
+        Job.objects.filter(pk=old.pk).update(lease_token=uuid.uuid4())
+        return result
+
+    monkeypatch.setattr("portal.services.documents.inspect_upload", expire_after_processing)
+    VALIDATE.run(old, Lease(old))
+    item.refresh_from_db()
+    assert item.state == Upload.State.PENDING and not item.normalized_key
+    assert path_for(item.source_key).is_file()
+    assert not list(path_for(item.source_key).parent.glob("*.jpg"))
+
+
 def test_validation_reservation_survives_until_metadata_publication(prepared, monkeypatch):
     response = upload_file(prepared)
     item = Upload.objects.get(pk=response.json()["id"])

@@ -18,7 +18,7 @@ from portal.services.capacity import temporary_workspace
 from portal.services.documents import ProcessingError, build_claim_pdf, validate_upload
 from portal.services.scanner import ScanError, scan_file
 from portal.services.storage import claim_pdf_key, path_for, publish_file, remove_keys
-from portal.services.transport import FAILED, PENDING, UNKNOWN
+from portal.services.transport import FAILED, PENDING, UNKNOWN, SendResult
 
 INTERRUPTED = "worker_interrupted"
 
@@ -44,12 +44,12 @@ class Validate:
             if not lease.live():
                 return
         scan_file(path_for(upload.source_key))
-        with validate_upload(upload) as result:
+        with validate_upload(upload) as output:
             with transaction.atomic():
-                if not lease.live() or not uploads.mark_ready(upload.pk, result):
-                    uploads.discard_output(upload, result)
+                if not lease.live() or not uploads.mark_ready(upload.pk, output):
                     return
                 lease.finish()
+            output.keep()
 
     def failure(self, exc):
         if isinstance(exc, ScanError):
@@ -131,8 +131,15 @@ class Render:
         return True
 
 
-class Send:
-    """One delivery attempt. Never retried when the provider may have the message."""
+class _Email:
+    """Send one email at most once: reserve it, transmit it outside any transaction, then
+    record the result. Only a send the provider refused before acceptance (PENDING) is
+    retried. Once the provider may hold the message, nothing is sent again automatically.
+
+    A sender names its record: `reserve(job)` returns what to send, or None when nothing may
+    be sent now; `send(reserved)`; `record(job, reserved, result)`; and `unknown(job, code)`
+    for a send that ended without a result.
+    """
 
     resumable = False
 
@@ -140,79 +147,77 @@ class Send:
         with transaction.atomic():
             if not lease.live():
                 return
-            attempt = delivery.start_attempt(job.delivery_id)
-            if not attempt:
+            reserved = self.reserve(job)
+            if not reserved:
                 lease.cancel()
                 return
-        result = delivery.send(attempt)
+        result = self.send(reserved)
         with transaction.atomic():
-            delivery.record_result(attempt.pk, result)
+            self.record(job, reserved, result)
             if result.state == PENDING:
                 if not lease.retry(result.error_code, minimum_delay=result.retry_after):
-                    delivery.abandon(attempt.pk, "retry_exhausted")
+                    self.record(job, reserved, SendResult(FAILED, error_code="retry_exhausted"))
                     lease.finish(queue.FAILED, "retry_exhausted")
             elif result.state in {FAILED, UNKNOWN}:
                 lease.finish(queue.FAILED, result.error_code)
             else:
                 lease.finish(queue.DONE, result.error_code)
-        delivery.reconcile_unmatched()
+        self.sent()
+
+    def sent(self):
+        """After a send's result is recorded."""
 
     def failure(self, exc):
         # Any exception around a provider call leaves the outcome unknown.
         return UNEXPECTED
 
     def retrying(self, job, code):
-        raise AssertionError("Sends are not retried after an unexpected failure")
+        raise AssertionError("Emails are not retried after an unexpected failure")
 
     def failed(self, job, code):
-        delivery.mark_interrupted(job.delivery_id, "unexpected_send_failure")
+        self.unknown(job, "unexpected_send_failure")
 
     def interrupted(self, job):
-        delivery.mark_interrupted(job.delivery_id, INTERRUPTED)
+        self.unknown(job, INTERRUPTED)
         return UNKNOWN
+
+
+class Send(_Email):
+    """One attempt to deliver a claim's PDF to Finance."""
+
+    def reserve(self, job):
+        return delivery.start_attempt(job.delivery_id)
+
+    def send(self, attempt):
+        return delivery.send(attempt)
+
+    def record(self, job, attempt, result):
+        delivery.record_result(attempt.pk, result)
+
+    def unknown(self, job, code):
+        delivery.mark_unknown(job.delivery_id, code)
+
+    def sent(self):
+        # Provider evidence can arrive before its attempt's send result.
+        delivery.reconcile_unmatched()
+
+
+class Confirm(_Email):
+    """The participant's confirmation of receipt, independent of Finance delivery."""
+
+    def reserve(self, job):
+        return confirmations.start(job.claim_id)
+
+    def send(self, confirmation):
+        return confirmations.send(confirmation)
+
+    def record(self, job, confirmation, result):
+        confirmations.record(job.claim_id, result)
+
+    def unknown(self, job, code):
+        confirmations.record(job.claim_id, SendResult(UNKNOWN, error_code=code))
 
 
 VALIDATE, RENDER, SEND = Validate(), Render(), Send()
-
-
-class Confirm:
-    """Send a receipt independently. Retry only known failures before acceptance."""
-
-    resumable = False
-
-    def run(self, job, lease):
-        with transaction.atomic():
-            if not lease.live():
-                return
-            confirmation = confirmations.start(job.claim_id)
-            if not confirmation:
-                lease.cancel()
-                return
-        result = confirmations.send(confirmation)
-        with transaction.atomic():
-            confirmations.mark(job.claim_id, result.state, result.error_code, result.message_id)
-            if result.state == PENDING:
-                if not lease.retry(result.error_code, minimum_delay=result.retry_after):
-                    confirmations.mark(job.claim_id, FAILED, "retry_exhausted")
-                    lease.finish(queue.FAILED, "retry_exhausted")
-            else:
-                lease.finish(
-                    queue.FAILED if result.state in {FAILED, UNKNOWN} else queue.DONE,
-                    result.error_code,
-                )
-
-    def failure(self, exc):
-        return UNEXPECTED
-
-    def retrying(self, job, code):
-        raise AssertionError("Confirmation outcome is unknown after an unexpected failure")
-
-    def failed(self, job, code):
-        confirmations.mark(job.claim_id, UNKNOWN, code)
-
-    def interrupted(self, job):
-        self.failed(job, INTERRUPTED)
-        return UNKNOWN
-
 
 KINDS = {"validate": VALIDATE, "render": RENDER, "send": SEND, "confirm": Confirm()}

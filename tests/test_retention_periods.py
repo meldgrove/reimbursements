@@ -8,6 +8,7 @@ from django.utils import timezone
 from portal.models import Claim, DeliveryAttempt, PrivacyNotice
 from portal.privacy_notice import DEFAULT_PRIVACY_NOTICE
 from portal.services import delivery as deliveries
+from portal.services import retention
 from portal.services.retention import cleanup
 from portal.services.storage import path_for
 
@@ -29,6 +30,26 @@ def test_delivery_schedules_pdf_and_content_deletion(delivery, settings):
     assert claim.retention_due == claim.submitted_at + timedelta(
         days=settings.CONTENT_RETENTION_DAYS
     )
+
+
+@pytest.mark.parametrize(
+    ("state", "dated"),
+    [("delivered", True), ("failed", False), ("send_unknown", False), ("provider_accepted", None)],
+)
+def test_retention_follows_the_finance_delivery(accepted, settings, state, dated):
+    accepted.pdf_due = accepted.retention_due = earlier = timezone.now()
+    delivered_at = accepted.submitted_at + timedelta(days=100)
+    retention.follow_delivery(accepted, state, delivered_at)
+    accepted.refresh_from_db()
+    if dated is None:
+        # Not resolved either way: the stored dates stay as they were.
+        assert accepted.pdf_due == accepted.retention_due != earlier
+    elif dated:
+        assert accepted.pdf_due == delivered_at + timedelta(days=settings.PDF_RETENTION_DAYS)
+        # Content stays at least as long as the PDF.
+        assert accepted.retention_due == accepted.pdf_due
+    else:
+        assert accepted.pdf_due is None and accepted.retention_due is None
 
 
 def test_pdf_is_deleted_first_and_content_after_ninety_days(delivery):

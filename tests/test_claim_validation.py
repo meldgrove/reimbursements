@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from portal.forms import ClaimForm
 from portal.intake import IntakeError
 from portal.models import Claim, Job
 from portal.services import claim_validation
@@ -47,7 +48,7 @@ def test_checks_collect_fields_from_multiple_rows_even_when_claim_fields_fail(pr
         f"expense-{first['id']}-route_from",
         f"expense-{second['id']}-return_date",
     }
-    assert result.payload is None and result.total is None
+    assert result.entries is None
     with pytest.raises(IntakeError):
         result.require_valid()
 
@@ -64,10 +65,11 @@ def test_valid_review_returns_exact_values_without_consent_or_signature_or_io(
     original = deepcopy(data)
     with django_assert_num_queries(0):
         reviewed = claim_validation.review(data, prepared["form"])
-    payload, total = reviewed.require_valid()
-    assert total == Decimal("73.80")
-    assert payload["expenses"][0]["vehicle_registration"] == "B-AB 123"
-    assert payload["trip_destination"] == "" and payload["trip_start"] is None
+    entries = reviewed.require_valid()
+    assert entries.total == Decimal("73.80") and entries.signature is None
+    assert entries.expenses[0]["vehicle_registration"] == "B-AB 123"
+    assert entries.claim["trip_destination"] == "" and entries.claim["trip_start"] is None
+    assert not entries.claim.keys() & {"declaration", "privacy_acknowledged", "is_trip"}
     assert data == original
     assert set(claim_validation.submission(data, prepared["form"]).errors) == {
         "signature",
@@ -108,3 +110,9 @@ def test_reordered_rows_keep_their_error_identity(prepared):
     errors = validate(prepared).json()["fields"]
     prepared["data"]["expenses"].reverse()
     assert validate(prepared).json()["fields"] == errors
+
+
+def test_every_stored_claim_form_field_is_a_claim_column(form):
+    columns = {field.name for field in Claim._meta.concrete_fields}
+    stored = set(ClaimForm(form=form).fields) - claim_validation.NOT_STORED
+    assert stored <= columns, stored - columns

@@ -14,10 +14,15 @@ from portal.jobs import reclaim_stale_jobs, run_one
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent, Job, Operation
 from portal.services import delivery as deliveries
 from portal.services import mailersend
-from portal.services.delivery import ingest_event
 from portal.services.storage import path_for
 
 pytestmark = pytest.mark.django_db
+
+
+def ingest_event(data):
+    """A verified webhook, as the view hands it on."""
+    if evidence := mailersend.webhook_evidence(data):
+        deliveries.record_evidence(evidence)
 
 
 def mock_provider(monkeypatch, handler):
@@ -340,16 +345,14 @@ def test_failed_render_is_requeued_without_duplicate_risk(accepted):
 @pytest.mark.parametrize(
     ("claim_state", "delivery_state", "status", "final"),
     [
-        (Claim.State.RENDERING, None, "rendering", False),
-        (Claim.State.FAILED, None, "processing_failed", True),
-        (Claim.State.READY, "send_unknown", "send_unknown", False),
-        (Claim.State.READY, "failed", "delivery_failed", True),
+        (Claim.State.RENDERING, None, "processing", False),
+        (Claim.State.FAILED, None, "problem", True),
+        (Claim.State.READY, "send_unknown", "processing", False),
+        (Claim.State.READY, "failed", "problem", True),
         (Claim.State.READY, "delivered", "delivered", True),
     ],
 )
-def test_participant_sees_one_status_vocabulary(
-    prepared, claim_state, delivery_state, status, final
-):
+def test_participant_sees_three_outcomes(prepared, claim_state, delivery_state, status, final):
     client = prepared["client"]
     response = client.post(
         "/f/test/submit/", data=json.dumps(prepared["data"]), content_type="application/json"
@@ -364,44 +367,33 @@ def test_participant_sees_one_status_vocabulary(
     assert (result["state"], result["final"]) == (status, final)
 
 
-def test_operator_status_shows_the_delivery_until_content_is_purged(accepted, delivery):
-    accepted.refresh_from_db()
-    assert deliveries.operator_status(accepted).state == "pending"
-    Delivery.objects.filter(pk=delivery.pk).update(state="failed", error_code="hard_bounce")
-    accepted.refresh_from_db()
-    status = deliveries.operator_status(accepted)
-    assert (status.state, status.error_code, status.duplicate_risk) == (
-        "failed",
-        "hard_bounce",
-        False,
-    )
-    accepted.state = Claim.State.PURGING
-    assert deliveries.operator_status(accepted).state == Claim.State.PURGING
-
-
-def test_operator_status_without_delivery_shows_the_claim_and_its_error(accepted):
-    accepted.state, accepted.error_code = Claim.State.FAILED, "document_process_failed"
-    status = deliveries.operator_status(accepted)
-    assert (status.state, status.error_code) == (Claim.State.FAILED, "document_process_failed")
-    assert not status.duplicate_risk
-
-
 @pytest.mark.parametrize("state", ["pending", "provider_accepted", "send_unknown", "delivered"])
 def test_duplicate_risk_is_what_a_retry_refuses_without_acknowledgment(delivery, state):
     Delivery.objects.filter(pk=delivery.pk).update(state=state)
     claim = Claim.objects.select_related("delivery").get(pk=delivery.claim_id)
-    assert deliveries.operator_status(claim).duplicate_risk
+    assert deliveries.duplicate_risk(claim)
     with pytest.raises(deliveries.DuplicateRisk):
         deliveries.retry(claim)
 
 
-def test_unresolved_claims_are_overdue_until_delivered_or_deleted(accepted):
-    later = accepted.resolution_due + timedelta(seconds=1)
-    assert not deliveries.operator_status(
-        accepted, now=accepted.resolution_due - timedelta(1)
-    ).overdue
-    assert deliveries.operator_status(accepted, now=later).overdue
-    accepted.retention_due = later
-    assert not deliveries.operator_status(accepted, now=later).overdue
-    accepted.retention_due, accepted.state = None, Claim.State.PURGING
-    assert not deliveries.operator_status(accepted, now=later).overdue
+def test_mailersend_reads_back_the_attempt_tag_it_sends(delivery, settings, monkeypatch):
+    settings.MAIL_DELIVERY_MODE = "mailersend"
+    sent = []
+
+    def provider(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(202, headers={"x-message-id": "message-9"})
+
+    mock_provider(monkeypatch, provider)
+    attempt = DeliveryAttempt.objects.create(delivery=delivery)
+    deliveries.send(attempt)
+    webhook = {
+        "type": "activity.delivered",
+        "created_at": "2026-11-11T10:00:00Z",
+        "data": {"id": "event-9", "recipient": delivery.recipient, "tags": sent[0]["tags"]},
+    }
+    evidence = mailersend.webhook_evidence(webhook)
+    assert (evidence.attempt_id, evidence.message_id) == (str(attempt.pk), "")
+    deliveries.record_evidence(evidence)
+    attempt.refresh_from_db()
+    assert attempt.state == "delivered"

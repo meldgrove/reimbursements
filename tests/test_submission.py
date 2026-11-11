@@ -5,7 +5,9 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from portal.models import Claim, Form, Job, Upload
@@ -145,3 +147,21 @@ def test_csrf_is_required_for_upload_and_submission(form):
         client.post("/f/test/submit/", data="{}", content_type="application/json").status_code
         == 403
     )
+
+
+def test_a_signature_listed_as_a_receipt_is_refused_with_its_reason(prepared):
+    prepared["data"]["expenses"][0]["uploads"].append(prepared["data"]["signature"])
+    response = post(prepared)
+    assert response.status_code == 400
+    assert response.json()["error"] == "Ein Beleg gehört nicht zu dieser Auslagenposition."
+    assert not Claim.objects.exists()
+
+
+def test_files_are_checked_before_the_claim_is_created(
+    prepared, django_capture_on_commit_callbacks
+):
+
+    prepared["data"]["expenses"][0]["id"] = str(uuid.uuid4())
+    with CaptureQueriesContext(connection) as queries:
+        assert post(prepared).status_code == 400
+    assert not [q for q in queries if 'INSERT INTO "portal_claim"' in q["sql"]]
