@@ -1,7 +1,5 @@
 import json
-from datetime import timedelta
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
@@ -9,7 +7,7 @@ from django.utils.crypto import constant_time_compare
 from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Claim, Expense
-from portal.services import claim_validation, confirmations, drafts, queue, uploads
+from portal.services import claim_validation, confirmations, drafts, queue, retention, uploads
 from portal.services.drafts import digest
 from portal.services.references import allocate_reference
 
@@ -51,7 +49,7 @@ def submit_claim(participant, form_slug, data):
         ),
         snapshot=snapshot,
         total=entries.total,
-        resolution_due=timezone.now() + timedelta(days=settings.CONTENT_RETENTION_DAYS),
+        resolution_due=retention.resolution_due(submitted_at),
         **entries.claim,
     )
     for row in entries.expenses:

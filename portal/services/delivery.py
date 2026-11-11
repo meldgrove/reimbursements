@@ -10,7 +10,6 @@ nothing reached the provider.
 import hashlib
 import logging
 import uuid
-from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -21,7 +20,7 @@ from django.utils.dateparse import parse_datetime
 from portal import app_settings
 from portal.i18n import t
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent
-from portal.services import mailersend, outbound, queue
+from portal.services import mailersend, outbound, queue, retention
 from portal.services.storage import path_for
 from portal.services.transport import (
     ACCEPTED,
@@ -94,7 +93,7 @@ def _lock_delivery(**lookup):
 
 
 def refresh(delivery):
-    """Derive the delivery's state from its attempts, and the claim's retention from it."""
+    """Derive the delivery's state from its attempts, and report it to retention."""
     attempts = list(delivery.attempts.order_by("created_at"))
     if not attempts:
         return
@@ -106,13 +105,7 @@ def refresh(delivery):
     claim = Claim.objects.select_for_update().get(pk=delivery.claim_id)
     if current.state == DELIVERED:
         delivery.delivered_at = delivery.delivered_at or timezone.now()
-        claim.pdf_due = delivery.delivered_at + timedelta(days=settings.PDF_RETENTION_DAYS)
-        claim.retention_due = max(
-            claim.submitted_at + timedelta(days=settings.CONTENT_RETENTION_DAYS), claim.pdf_due
-        )
-    elif current.state in {FAILED, UNKNOWN}:
-        claim.pdf_due = claim.retention_due = None
-    claim.save(update_fields=["pdf_due", "retention_due"])
+    retention.follow_delivery(claim, current.state, delivery.delivered_at)
     delivery.save()
 
 
