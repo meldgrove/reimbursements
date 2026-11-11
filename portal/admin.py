@@ -119,7 +119,7 @@ class GeneralSettingsForm(forms.ModelForm):
     favicon_file = forms.FileField(
         label="New favicon",
         required=False,
-        help_text="PNG, ICO or SVG, at most 100 KB. Square images of at least 32 × 32 pixels "
+        help_text="PNG, ICO, SVG or WebP, at most 100 KB. Square images of at least 32 × 32 pixels "
         "look best.",
     )
     remove_favicon = forms.BooleanField(label="Use the standard favicon", required=False)
@@ -144,7 +144,7 @@ class GeneralSettingsForm(forms.ModelForm):
         content = upload.read()
         media_type = app_settings.favicon_type(content)
         if media_type is None:
-            raise forms.ValidationError("Upload a PNG, ICO or SVG file.")
+            raise forms.ValidationError("Upload a PNG, ICO, SVG or WebP file.")
         return content, media_type
 
     def save(self, commit=True):

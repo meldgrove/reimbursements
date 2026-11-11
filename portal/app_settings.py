@@ -46,7 +46,7 @@ def for_claim(claim):
 
 
 def favicon_type(content):
-    """The media type of a PNG, ICO or SVG favicon, or None for anything else.
+    """The media type of a PNG, ICO, SVG or WebP favicon, or None for anything else.
 
     Browsers decode favicons themselves, so the server only checks the format and never
     parses the image.
@@ -55,6 +55,8 @@ def favicon_type(content):
         return "image/png"
     if content.startswith(b"\x00\x00\x01\x00"):
         return "image/x-icon"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp"
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
