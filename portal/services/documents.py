@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from portal.services.storage import (
     normalized_upload_key,
     path_for,
     publish_file,
+    remove_keys,
     workspace_root,
 )
 
@@ -171,15 +173,35 @@ def execute(arguments, *, readonly, workspace):
     return payload
 
 
+@dataclass
+class NormalizedUpload:
+    """A validated upload's published output. A PDF is its own output: its source."""
+
+    key: str
+    size: int
+    media_type: str
+    pages: int
+    kept: bool = False
+
+    def keep(self):
+        """The output was recorded; it outlives `validate_upload`."""
+        self.kept = True
+
+
 @contextlib.contextmanager
 def validate_upload(upload):
+    """Validate the upload's source in a temporary workspace and publish its output.
+
+    Yields a `NormalizedUpload`. Unless `keep()` is called once it is recorded, the
+    output is removed on exit; a PDF's source is never removed here.
+    """
     source = path_for(upload.source_key)
     with temporary_workspace(upload=upload) as workspace:
         result = inspect_upload(source, workspace, kind=upload.kind)
-        normalized = Path(result.pop("normalized")).resolve()
+        normalized = Path(result["normalized"]).resolve()
         if result.get("media_type") == "application/pdf" and normalized == source:
-            result.update(normalized_key=upload.source_key, normalized_size=0)
-            yield result
+            output = NormalizedUpload(upload.source_key, 0, result["media_type"], result["pages"])
+            yield output
             return
         suffix = ".png" if upload.kind == "signature" else ".jpg"
         expected = Path(workspace) / f"normalized{suffix}"
@@ -190,8 +212,12 @@ def validate_upload(upload):
             raise ProcessingError("normalized_size_limit")
         key = normalized_upload_key(upload.pk, suffix)
         publish_file(normalized, key, settings.MAX_NORMALIZED_FILE_BYTES)
-        result.update(normalized_key=key, normalized_size=size)
-        yield result
+        output = NormalizedUpload(key, size, result["media_type"], result["pages"])
+        try:
+            yield output
+        finally:
+            if not output.kept:
+                remove_keys(key)
 
 
 def build_claim_pdf(claim, workspace):

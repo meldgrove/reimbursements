@@ -213,24 +213,17 @@ def attach(upload, claim, *, expense_id=None, position=0):
     upload.save(update_fields=["claim", "position"])
 
 
-def mark_ready(upload_id, result):
-    """Publish a validation result. False when the upload was discarded meanwhile."""
+def mark_ready(upload_id, output):
+    """Record a validation's `NormalizedUpload`. False when the upload was discarded meanwhile."""
     upload = Upload.objects.select_for_update().filter(pk=upload_id).first()
     if not upload:
         return False
-    upload.normalized_key = result["normalized_key"]
-    upload.normalized_size = result["normalized_size"]
-    upload.media_type, upload.pages = result["media_type"], result["pages"]
+    upload.normalized_key, upload.normalized_size = output.key, output.size
+    upload.media_type, upload.pages = output.media_type, output.pages
     upload.state, upload.error_code = Upload.State.READY, ""
     upload.save()
     release_upload(upload.pk)
     return True
-
-
-def discard_output(upload, result):
-    """Remove a validation output that was never published."""
-    if result["normalized_key"] != upload.source_key:
-        remove_keys(result["normalized_key"])
 
 
 def mark_retrying(upload_id, error_code):

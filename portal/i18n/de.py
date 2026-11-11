@@ -28,6 +28,19 @@ TEXT = {
         "Die Sicherheitsprüfung ist vorübergehend nicht verfügbar. Bitte kontaktiere uns."
     ),
     "Please upload a PDF, JPG or PNG file.": "Bitte lade eine PDF-, JPG- oder PNG-Datei hoch.",
+    "The PDF has a page size that cannot be processed. "
+    "Please export it in a standard paper size such as A4.": (
+        "Das PDF hat ein Seitenformat, das nicht verarbeitet werden kann. "
+        "Bitte exportiere es in einem üblichen Papierformat wie A4."
+    ),
+    "The PDF is too complex to check. Please export it again as a simpler PDF or upload a photo.": (
+        "Das PDF ist für die Prüfung zu komplex. "
+        "Bitte exportiere es erneut als einfacheres PDF oder lade ein Foto hoch."
+    ),
+    "Checking the file took too long. Please upload a smaller or simpler file.": (
+        "Die Prüfung der Datei hat zu lange gedauert. "
+        "Bitte lade eine kleinere oder einfachere Datei hoch."
+    ),
     "The file could not be read. Please export it again.": (
         "Die Datei konnte nicht gelesen werden. Bitte exportiere sie erneut."
     ),

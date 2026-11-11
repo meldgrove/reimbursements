@@ -44,12 +44,12 @@ class Validate:
             if not lease.live():
                 return
         scan_file(path_for(upload.source_key))
-        with validate_upload(upload) as result:
+        with validate_upload(upload) as output:
             with transaction.atomic():
-                if not lease.live() or not uploads.mark_ready(upload.pk, result):
-                    uploads.discard_output(upload, result)
+                if not lease.live() or not uploads.mark_ready(upload.pk, output):
                     return
                 lease.finish()
+            output.keep()
 
     def failure(self, exc):
         if isinstance(exc, ScanError):
