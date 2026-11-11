@@ -79,3 +79,90 @@ def test_concurrent_references_get_distinct_numbers_even_on_first_use():
         "000003",
         "000004",
     ]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("source", ["webhook", "reconciliation"])
+def test_operator_retry_and_delivery_evidence_do_not_deadlock(delivery, source):
+    import hashlib
+    import time
+    from queue import Queue
+
+    from django.db import transaction
+    from django.utils import timezone
+
+    from portal.models import DeliveryAttempt, DeliveryEvent, Operation
+    from portal.services import delivery as deliveries
+    from portal.services import operations
+
+    if connection.vendor != "postgresql":
+        pytest.skip("Row-lock behavior requires PostgreSQL.")
+    delivery.state = "send_unknown"
+    delivery.save()
+    DeliveryAttempt.objects.create(
+        delivery=delivery, state="send_unknown", message_id="concurrent-message"
+    )
+    event = {
+        "type": "activity.delivered",
+        "created_at": timezone.now().isoformat(),
+        "data": {
+            "id": "concurrent-event",
+            "recipient": delivery.recipient,
+            "message_id": "concurrent-message",
+        },
+    }
+    if source == "reconciliation":
+        DeliveryEvent.objects.create(
+            provider_id=event["data"]["id"],
+            kind=event["type"],
+            provider_timestamp=timezone.now(),
+            recipient_hash=hashlib.sha256(delivery.recipient.encode()).hexdigest(),
+            message_id="concurrent-message",
+        )
+    backend = Queue()
+
+    def apply_evidence():
+        close_old_connections()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_backend_pid()")
+                backend.put(cursor.fetchone()[0])
+            if source == "webhook":
+                deliveries.ingest_event(event)
+            else:
+                deliveries.reconcile_unmatched()
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with transaction.atomic():
+            Claim.objects.select_for_update().get(pk=delivery.claim_id)
+            future = pool.submit(apply_evidence)
+            evidence_backend = backend.get(timeout=5)
+            deadline = time.monotonic() + 5
+            while True:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT pg_backend_pid() = ANY(pg_blocking_pids(%s))",
+                        [evidence_backend],
+                    )
+                    blocked = cursor.fetchone()[0]
+                if blocked:
+                    break
+                if future.done():
+                    future.result()
+                    pytest.fail("Evidence did not wait for the operator's claim lock.")
+                assert time.monotonic() < deadline, "Evidence did not reach its claim lock."
+                time.sleep(0.01)
+            operations.retry(
+                delivery.claim_id,
+                actor="admin@example.invalid",
+                reason="Concurrent delivery check",
+                acknowledge_duplicate_risk=True,
+            )
+        future.result(timeout=10)
+    delivery.refresh_from_db()
+    assert delivery.state == "delivered"
+    assert delivery.claim.retention_due is not None
+    assert DeliveryEvent.objects.get(provider_id="concurrent-event").applied
+    assert Operation.objects.filter(claim_id=delivery.claim_id, action="retry").count() == 1

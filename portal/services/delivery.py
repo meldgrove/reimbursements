@@ -98,6 +98,15 @@ def schedule(claim):
     return delivery
 
 
+def _lock_delivery(**lookup):
+    """In a transaction, lock Claim before Delivery, then any delivery attempts."""
+    claim_id = Delivery.objects.values_list("claim_id", flat=True).get(**lookup)
+    claim = Claim.objects.select_for_update().get(pk=claim_id)
+    delivery = Delivery.objects.select_for_update().get(**lookup)
+    delivery.claim = claim
+    return delivery
+
+
 def refresh(delivery):
     """Derive the delivery's state from its attempts, and the claim's retention from it."""
     attempts = list(delivery.attempts.order_by("created_at"))
@@ -123,7 +132,7 @@ def refresh(delivery):
 
 def start_attempt(delivery_id):
     """In a transaction: a new attempt, or None when no automatic send may happen."""
-    delivery = Delivery.objects.select_for_update().select_related("claim").get(pk=delivery_id)
+    delivery = _lock_delivery(pk=delivery_id)
     if delivery.state in NO_AUTOMATIC_SEND or delivery.claim.state != Claim.State.READY:
         return None
     attempt = DeliveryAttempt.objects.create(delivery=delivery, state=SENDING)
@@ -184,7 +193,7 @@ def send(attempt):
 def record_result(attempt_id, result):
     """In a transaction: store a send result unless provider evidence already settled it."""
     attempt = DeliveryAttempt.objects.get(pk=attempt_id)
-    delivery = Delivery.objects.select_for_update().get(pk=attempt.delivery_id)
+    delivery = _lock_delivery(pk=attempt.delivery_id)
     attempt = DeliveryAttempt.objects.select_for_update().get(pk=attempt_id)
     if attempt.state not in FINAL_ATTEMPT:
         attempt.state, attempt.error_code = result.state, result.error_code
@@ -197,14 +206,14 @@ def record_result(attempt_id, result):
 def abandon(attempt_id, error_code):
     """In a transaction: a retryable attempt that will not be retried has failed."""
     attempt = DeliveryAttempt.objects.get(pk=attempt_id)
-    delivery = Delivery.objects.select_for_update().get(pk=attempt.delivery_id)
+    delivery = _lock_delivery(pk=attempt.delivery_id)
     DeliveryAttempt.objects.filter(pk=attempt_id).update(state=FAILED, error_code=error_code)
     refresh(delivery)
 
 
 def mark_interrupted(delivery_id, error_code):
     """In a transaction: a sender died mid-attempt, so the outcome is unknown."""
-    delivery = Delivery.objects.select_for_update().get(pk=delivery_id)
+    delivery = _lock_delivery(pk=delivery_id)
     delivery.attempts.filter(state=SENDING).update(state=UNKNOWN, error_code=error_code)
     refresh(delivery)
 
@@ -222,7 +231,7 @@ def may_have_reached_finance(claim):
 
 def retry(claim, *, acknowledge_duplicate_risk=False):
     """Operator retry. Only a definite failure is retried without acknowledgment."""
-    delivery = Delivery.objects.select_for_update().get(claim=claim)
+    delivery = _lock_delivery(claim=claim)
     if has_duplicate_risk(delivery) and not acknowledge_duplicate_risk:
         raise DuplicateRisk
     delivery.state, delivery.error_code = PENDING, ""
@@ -340,7 +349,7 @@ def _apply(event):
             return
     if not attempt:
         return
-    delivery = Delivery.objects.select_for_update().get(pk=attempt.delivery_id)
+    delivery = _lock_delivery(pk=attempt.delivery_id)
     attempt = DeliveryAttempt.objects.select_for_update().get(pk=attempt.pk)
     if _recipient_hash(delivery.recipient) != event.recipient_hash or delivery.claim.state in {
         Claim.State.PURGING,
