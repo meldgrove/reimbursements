@@ -10,12 +10,11 @@ nothing reached the provider.
 import hashlib
 import logging
 import uuid
-from dataclasses import dataclass
 from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -63,10 +62,6 @@ EVIDENCE_STATES = {
 }
 # Evidence that the provider has the message, without saying more than that.
 RESOLVES_UNKNOWN_ONLY = frozenset({"reconciliation.queued"})
-
-# Participant-facing status: one vocabulary over claim and delivery states.
-DELIVERY_FAILED = "delivery_failed"
-FINAL_PARTICIPANT_STATES = frozenset({DELIVERED, DELIVERY_FAILED, Claim.State.FAILED})
 
 
 class DuplicateRisk(Exception):
@@ -229,6 +224,12 @@ def has_duplicate_risk(delivery):
     return delivery.state != FAILED
 
 
+def duplicate_risk(claim):
+    """A retry of the claim's delivery has to acknowledge that Finance may get it twice."""
+    delivery = getattr(claim, "delivery", None)
+    return bool(delivery and has_duplicate_risk(delivery))
+
+
 def may_have_reached_finance(claim):
     """Some send of the claim's PDF did not definitely fail, so Finance may hold a copy."""
     delivery = getattr(claim, "delivery", None)
@@ -243,49 +244,6 @@ def retry(claim, *, acknowledge_duplicate_risk=False):
     delivery.state, delivery.error_code = PENDING, ""
     delivery.save()
     queue.enqueue("send", delivery, again=True)
-
-
-def participant_status(claim):
-    """The participant-visible state and whether it can still change."""
-    delivery = getattr(claim, "delivery", None)
-    if delivery is None:
-        state = claim.state
-    else:
-        state = DELIVERY_FAILED if delivery.state == FAILED else delivery.state
-    return state, state in FINAL_PARTICIPANT_STATES
-
-
-@dataclass(frozen=True)
-class OperatorStatus:
-    """What an operator sees of a claim in the admin area and in `claim_status`."""
-
-    # The claim state, or the delivery state once a delivery exists, unless being purged.
-    state: str
-    error_code: str
-    # Unresolved past its resolution date: neither delivered nor being deleted.
-    overdue: bool
-    # A retry must acknowledge that Finance could receive the claim twice.
-    duplicate_risk: bool
-
-
-def operator_status(claim, *, now=None):
-    delivery = getattr(claim, "delivery", None)
-    purging = claim.state == Claim.State.PURGING
-    return OperatorStatus(
-        state=claim.state if delivery is None or purging else delivery.state,
-        error_code=claim.error_code or (delivery.error_code if delivery else ""),
-        overdue=claim.resolution_due <= (now or timezone.now())
-        and not claim.retention_due
-        and not purging,
-        duplicate_risk=bool(delivery and has_duplicate_risk(delivery)),
-    )
-
-
-def operator_state_filter(state):
-    """The claims whose `operator_status` state is `state`, as a queryset filter."""
-    purging = Q(state=Claim.State.PURGING)
-    shows_claim_state = Q(delivery__isnull=True) | purging
-    return (shows_claim_state & Q(state=state)) | (~purging & Q(delivery__state=state))
 
 
 @transaction.atomic

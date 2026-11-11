@@ -32,7 +32,7 @@ from portal.models import (
     timezone_names,
 )
 from portal.roles import is_form_editor, is_template_admin
-from portal.services import delivery, operations, publication, retention
+from portal.services import claim_status, delivery, operations, publication, retention
 from portal.templatetags.ui import render_component
 
 logger = logging.getLogger(__name__)
@@ -577,53 +577,9 @@ class FormAdmin(admin.ModelAdmin):
         publication.save(obj, request.user, creation_key=creation_key)
 
 
-DELIVERY_STATUS = {
-    "pending": "Waiting to send",
-    "sending": "Sending",
-    "provider_accepted": "Accepted by the email service",
-    "paused": "Sending delayed",
-    "delivered": "Delivered",
-    "failed": "Sending failed",
-    "send_unknown": "Delivery unclear",
-}
-
-
-# Badge tones of claim and delivery states.
-STATUS_TONES = {
-    Claim.State.FAILED: "destructive",
-    Claim.State.PURGING: "outline",
-    "paused": "warning",
-    "send_unknown": "warning",
-    "failed": "destructive",
-    "delivered": "success",
-}
-
-
-STATUS_LABELS = {**dict(Claim.State.choices), **DELIVERY_STATUS}
-
-# A deleted claim is gone; one still being deleted is left to the worker's cleanup.
-DELETED_STATES = (Claim.State.PURGING,)
-
-# Status filter options in the order a claim passes through them.
-STATUS_ORDER = [
-    *(state for state in Claim.State if state not in DELETED_STATES),
-    *DELIVERY_STATUS,
-    *DELETED_STATES,
-]
-
-
-def claim_status_parts(claim):
-    state = delivery.operator_status(claim).state
-    return state, STATUS_LABELS.get(state, state)
-
-
-def claim_status(claim):
-    return claim_status_parts(claim)[1]
-
-
 def claim_status_badge(claim):
-    key, label = claim_status_parts(claim)
-    return render_component("badge", label, variant=STATUS_TONES.get(key, "secondary"))
+    status = claim_status.of(claim)
+    return render_component("badge", status.label, variant=status.tone)
 
 
 class StatusFilter(admin.SimpleListFilter):
@@ -633,11 +589,11 @@ class StatusFilter(admin.SimpleListFilter):
     parameter_name = "status"
 
     def lookups(self, request, model_admin):
-        return [(state, STATUS_LABELS[state]) for state in STATUS_ORDER]
+        return claim_status.CHOICES
 
     def queryset(self, request, queryset):
-        if self.value() in STATUS_LABELS:
-            return queryset.filter(delivery.operator_state_filter(self.value()))
+        if self.value() in claim_status.LABELS:
+            return queryset.filter(status=self.value())
         return queryset
 
 
@@ -767,8 +723,10 @@ class ClaimAdmin(admin.ModelAdmin):
         return False
 
     def get_queryset(self, request):
-        return roles.visible_claims(
-            request.user, super().get_queryset(request).select_related("form", "delivery")
+        return claim_status.annotate(
+            roles.visible_claims(
+                request.user, super().get_queryset(request).select_related("form", "delivery")
+            )
         )
 
     def get_search_results(self, request, queryset, search_term):
@@ -792,11 +750,11 @@ class ClaimAdmin(admin.ModelAdmin):
 
     @admin.display(description="Error")
     def error(self, obj):
-        return delivery.operator_status(obj).error_code or "—"
+        return claim_status.of(obj).error_code or "—"
 
     @admin.display(description="Follow-up")
     def overdue(self, obj):
-        if delivery.operator_status(obj).overdue:
+        if claim_status.of(obj).overdue:
             return render_component("badge", "Overdue", variant="warning")
         return "—"
 
@@ -825,7 +783,7 @@ class ClaimAdmin(admin.ModelAdmin):
             # Django redirects with a message, e.g. for an outdated link.
             return super().change_view(request, object_id, form_url, extra_context)
         # A deleted claim has nothing left to process or delete.
-        operable = is_template_admin(request.user) and claim.state not in DELETED_STATES
+        operable = is_template_admin(request.user) and not claim_status.of(claim).deleted
         extra_context = {
             **(extra_context or {}),
             "can_retry": operable,
@@ -839,7 +797,7 @@ class ClaimAdmin(admin.ModelAdmin):
         if not self.has_purge_permission(request):
             raise PermissionDenied
         claim = get_object_or_404(self.get_queryset(request), pk=claim_id)
-        if claim.state in DELETED_STATES:
+        if claim_status.of(claim).deleted:
             messages.info(request, "This claim has already been deleted.")
             return redirect("admin:portal_claim_change", claim.pk)
         form = DeleteForm(request.POST or None)
@@ -852,7 +810,7 @@ class ClaimAdmin(admin.ModelAdmin):
 
     @admin.action(description="Delete selected claims", permissions=["purge"])
     def delete_claims(self, request, queryset):
-        claims = list(queryset.exclude(state__in=DELETED_STATES)[: MAX_BULK_DELETE + 1])
+        claims = list(queryset.exclude(state__in=claim_status.DELETED)[: MAX_BULK_DELETE + 1])
         if not claims:
             messages.info(request, "The selected claims have already been deleted.")
             return None
@@ -925,7 +883,9 @@ class ClaimAdmin(admin.ModelAdmin):
     def retry_view(self, request, claim_id):
         if not is_template_admin(request.user):
             raise PermissionDenied
-        claim = get_object_or_404(Claim.objects.select_related("form"), pk=claim_id)
+        claim = get_object_or_404(
+            claim_status.annotate(Claim.objects.select_related("form", "delivery")), pk=claim_id
+        )
         form = RetryForm(request.POST or None)
         if request.method == "POST" and form.is_valid():
             try:
@@ -948,9 +908,8 @@ class ClaimAdmin(admin.ModelAdmin):
                 "opts": self.model._meta,
                 "title": "Process claim again",
                 "claim": claim,
-                "status": claim_status(claim),
                 "status_badge": claim_status_badge(claim),
-                "duplicate_risk": delivery.operator_status(claim).duplicate_risk,
+                "duplicate_risk": delivery.duplicate_risk(claim),
                 "form": form,
             },
         )

@@ -144,6 +144,7 @@ Use operational reasons without participant names, account details, or receipt t
 ```bash
 python manage.py claim_status
 python manage.py claim_status --state processing_failed
+python manage.py claim_status --status send_unknown
 python manage.py claim_status CLAIM_UUID
 python manage.py reconcile_deliveries --batch-size 100
 python manage.py verify_storage
@@ -154,6 +155,8 @@ python manage.py purge_expired
 python manage.py purge_expired --execute
 ```
 
+`--status` filters by the status the admin list shows: the claim state until a Finance
+delivery exists, then the delivery state, and `purging` while a claim is being deleted.
 `claim_status` and `retry_claim` also accept the full readable bookkeeping reference.
 It includes the participant's surname; the internal UUID remains available for
 operational correlation until content purge deletes the claim.

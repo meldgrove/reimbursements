@@ -19,7 +19,7 @@ from portal.intake import IntakeError
 from portal.models import Claim, Form, PrivacyNotice
 from portal.participants import RequestParticipant
 from portal.roles import manages
-from portal.services import claim_validation, delivery, drafts, uploads
+from portal.services import claim_status, claim_validation, delivery, drafts, uploads
 from portal.services.capacity import storage_available
 from portal.services.drafts import open_draft
 from portal.services.mailersend import verify_webhook
@@ -200,11 +200,12 @@ def submit(request, form_slug):
 @require_GET
 def received(request, claim_id):
     claim = get_object_or_404(
-        Claim.objects.select_related("form"),
+        claim_status.annotate(Claim.objects.select_related("form", "delivery")),
         pk=claim_id,
         accepted_draft__session_hash=RequestParticipant(request).binding(),
     )
-    status, final = delivery.participant_status(claim)
+    current = claim_status.of(claim)
+    status, final = current.outcome, current.final
     if request.GET.get("format") == "json":
         return JsonResponse({"reference": claim.reference, "state": status, "final": final})
     return render(
