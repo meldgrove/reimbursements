@@ -12,6 +12,7 @@ from pathlib import Path
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import ignore_logger
+from sentry_sdk.integrations.stdlib import StdlibIntegration
 
 # Everything else in an event is removed, including request, user, extra and modules.
 KEPT_FIELDS = {
@@ -80,6 +81,10 @@ def options(dsn, environment, release=None):
         "environment": environment,
         "release": release or None,
         "integrations": [DjangoIntegration(transaction_style="url")],
+        # Stdlib would add trace variables to document children, whose environment is
+        # fixed. No trace headers on requests to MailerSend or Keycloak either.
+        "disabled_integrations": [StdlibIntegration()],
+        "trace_propagation_targets": [],
         # `redact` removes these again; not collecting them is the first line.
         "data_collection": {
             "user_info": False,

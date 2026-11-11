@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 
+import httpx
 import pytest
 import sentry_sdk
 from django.test import override_settings
@@ -10,6 +11,7 @@ from django.urls import path
 from sentry_sdk.transport import Transport
 
 from portal import error_reporting
+from portal.services.documents import child_environment
 
 DSN = "https://public@sentry.example.invalid/1"
 PRIVATE = "SYNTHETIC_PRIVATE_IBAN_AND_RECEIPT"
@@ -88,6 +90,30 @@ def test_library_log_errors_keep_only_the_message_template(reports):
 def test_client_mistakes_logged_by_django_are_not_reported(reports):
     logging.getLogger("django.security.DisallowedHost").error("Invalid HTTP_HOST: %s", PRIVATE)
     assert reports == []
+
+
+def test_document_children_get_no_tracing_variables(reports, tmp_path):
+    probe = "import os; print(sorted(os.environ))"
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=child_environment(tmp_path),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "SENTRY" not in result.stdout.upper()
+
+
+def test_outgoing_requests_get_no_tracing_headers(reports):
+    sent = {}
+
+    def respond(request):
+        sent.update(request.headers)
+        return httpx.Response(204)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        client.get("https://auth.example.invalid/")
+    assert sent and "sentry-trace" not in sent and "baggage" not in sent
 
 
 @pytest.mark.parametrize(
