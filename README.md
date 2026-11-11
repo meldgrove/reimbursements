@@ -11,7 +11,8 @@ tracking, retries, retention cleanup, and health checks.
 ## Run locally
 
 Requires Docker with Compose. Local delivery captures private `.eml` files and
-sends no external email.
+sends no external email. `compose.yaml` is the production setup; the
+`COMPOSE_FILE` line in `.env` makes these commands use `compose.dev.yaml`.
 
 ```bash
 cp .env.example .env

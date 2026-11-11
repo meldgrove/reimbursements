@@ -9,9 +9,9 @@ and the privacy notice are managed in the admin area at `/admin/`, which signs i
 through Keycloak and grants roles from the `groups` claim.
 
 Use a TLS reverse proxy for the public hostname. Expose only the web
-HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports. Keep the Compose host port on loopback, or remove the port
-mapping when Coolify routes
-directly to the container. Do not add a second reverse proxy.
+HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports.
+`compose.yaml` publishes no host port; Coolify routes directly to the web
+container. Do not add a second reverse proxy.
 
 For production set `DJANGO_DEBUG=0`, a random `DJANGO_SECRET_KEY`, production
 PostgreSQL credentials/URL, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and
