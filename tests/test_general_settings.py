@@ -40,9 +40,9 @@ def general(**changes):
     return {"language": "de", "timezone": "Europe/Berlin", "date_format": "d.m.Y", **changes}
 
 
-def png(size=32):
+def image_bytes(size=32, image_format="PNG"):
     output = io.BytesIO()
-    Image.new("RGB", (size, size), "teal").save(output, "PNG")
+    Image.new("RGB", (size, size), "teal").save(output, image_format)
     return output.getvalue()
 
 
@@ -203,25 +203,29 @@ def test_new_templates_get_the_declaration_in_the_app_language():
     assert FormTemplate.objects.create(name="English").declaration.startswith("I confirm")
 
 
-def test_a_custom_favicon_replaces_the_standard_one(admin_client, form):
+@pytest.mark.parametrize(
+    ("image_format", "media_type"), [("PNG", "image/png"), ("WEBP", "image/webp")]
+)
+def test_a_custom_favicon_replaces_the_standard_one(admin_client, form, image_format, media_type):
     visitor = Client()
     assert "portal/brand/logo" in visitor.get("/f/test/").content.decode()
-    upload = SimpleUploadedFile("icon.png", png(), content_type="image/png")
+    content = image_bytes(image_format=image_format)
+    upload = SimpleUploadedFile(f"icon.{image_format.lower()}", content, content_type=media_type)
     response = admin_client.post(URL, {**general(), "favicon_file": upload})
     assert response.status_code == 302
     settings = AppSettings.load()
     # Every request loads the settings; the image loads only for the favicon itself.
     assert "favicon" in settings.get_deferred_fields()
-    assert settings.favicon_type == "image/png" and bytes(settings.favicon) == png()
+    assert settings.favicon_type == media_type and bytes(settings.favicon) == content
     url = f"/favicon/{settings.favicon_digest}/"
     assert (
-        f'<link rel="icon" type="image/png" href="{url}">'
+        f'<link rel="icon" type="{media_type}" href="{url}">'
         in visitor.get("/f/test/").content.decode()
     )
     assert f'href="{url}"' in admin_client.get("/admin/portal/claim/").content.decode()
     response = visitor.get(url)
-    assert response.status_code == 200 and response.content == png()
-    assert response["Content-Type"] == "image/png"
+    assert response.status_code == 200 and response.content == content
+    assert response["Content-Type"] == media_type
     assert response["Cache-Control"] == "public, max-age=31536000, immutable"
     assert "sandbox" in response["Content-Security-Policy"]
     assert admin_client.post(URL, {**general(), "remove_favicon": "on"}).status_code == 302
@@ -232,12 +236,14 @@ def test_a_custom_favicon_replaces_the_standard_one(admin_client, form):
 @pytest.mark.parametrize(
     ("content", "error"),
     [
-        (b"GIF89a not accepted", "Upload a PNG, ICO or SVG file."),
-        (b"<html><script>alert(1)</script></html>", "Upload a PNG, ICO or SVG file."),
-        (png(400) + b"\0" * 100_000, "The favicon may be at most 100 KB."),
+        (b"GIF89a not accepted", "Upload a PNG, ICO, SVG or WebP file."),
+        (b"<html><script>alert(1)</script></html>", "Upload a PNG, ICO, SVG or WebP file."),
+        (b"RIFF\x24\x00\x00\x00WAVEfmt ", "Upload a PNG, ICO, SVG or WebP file."),
+        (b"WEBP", "Upload a PNG, ICO, SVG or WebP file."),
+        (image_bytes(400) + b"\0" * 100_000, "The favicon may be at most 100 KB."),
     ],
 )
-def test_favicons_must_be_small_png_ico_or_svg(admin_client, content, error):
+def test_favicons_must_be_small_png_ico_svg_or_webp(admin_client, content, error):
     upload = SimpleUploadedFile("icon", content)
     response = admin_client.post(URL, {**general(), "favicon_file": upload})
     assert response.status_code == 200 and error in response.content.decode()
