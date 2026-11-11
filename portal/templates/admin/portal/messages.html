@@ -1,0 +1,7 @@
+{% load ui %}{% if messages %}
+<ul class="flex flex-col gap-2" data-messages>
+  {% for message in messages %}
+  <li>{% if message.level_tag == "error" %}{% component "alert" variant="destructive" %}{% icon "circle-alert" %}{% component "alert_description" %}{{ message|capfirst }}{% endcomponent %}{% endcomponent %}{% elif message.level_tag == "warning" %}{% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_description" %}{{ message|capfirst }}{% endcomponent %}{% endcomponent %}{% elif message.level_tag == "success" %}{% component "alert" variant="success" data_dismiss_after="4000" %}{% icon "circle-check" %}{% component "alert_description" %}{{ message|capfirst }}{% endcomponent %}{% endcomponent %}{% else %}{% component "alert" variant="info" %}{% icon "info" %}{% component "alert_description" %}{{ message|capfirst }}{% endcomponent %}{% endcomponent %}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}

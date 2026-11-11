@@ -1,0 +1,34 @@
+[project]
+name = "reimbursements"
+version = "0.1.0"
+description = "Self-hosted reimbursement forms, receipt processing, and email delivery."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "django>=5.2.8,<5.3",
+  "dj-database-url>=3,<4",
+  "gunicorn>=23,<24",
+  "httpx>=0.28,<1",
+  "pillow>=12,<14",
+  "psycopg[binary]>=3.2,<4",
+  "pypdf>=6.1,<7",
+  "pypdfium2>=4.30,<6",
+  "python-stdnum>=2.1,<3",
+  "weasyprint>=70,<71",
+  "whitenoise>=6.9,<7",
+  "mozilla-django-oidc>=4,<5",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-django>=4.11,<5", "ruff>=0.12,<1"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.test_settings"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

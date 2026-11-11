@@ -1,0 +1,7 @@
+{% extends 'portal/base.html' %}{% load ui %}{% block content %}
+<div class="flex flex-col items-start gap-4 py-8">
+  {% component "badge" variant="outline" %}{{ portal_name }}{% endcomponent %}
+  <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">Auslagen einreichen</h1>
+  <p class="max-w-2xl text-lg text-muted-foreground">Hier beantragst du die Erstattung von Kosten, die du privat verauslagt hast. Bitte öffne den Link zu deinem Formular, den du von deinem Team erhalten hast.</p>
+</div>
+{% endblock %}

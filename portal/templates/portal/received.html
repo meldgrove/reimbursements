@@ -1,0 +1,20 @@
+{% extends 'portal/base.html' %}{% load static ui %}{% block title %}Antrag eingereicht{% endblock %}{% block content %}
+<ol class="steps flex items-center gap-2 sm:gap-3" aria-label="Fortschritt">
+  <li><span>1</span> Angaben &amp; Belege</li>
+  <li><span>2</span> Prüfen &amp; unterschreiben</li>
+  <li class="active" aria-current="step"><span>3</span> Eingereicht</li>
+</ol>
+<section class="flex flex-col items-center gap-5 rounded-xl border bg-card px-6 py-10 text-center text-card-foreground shadow-sm sm:px-10">
+  <span class="flex size-14 items-center justify-center rounded-full bg-success-background text-success" aria-hidden="true">{% icon "circle-check" class="size-7" %}</span>
+  {% component "badge" variant="outline" %}{{ form.name }}{% endcomponent %}
+  <h1 class="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">Danke. Dein Antrag wurde eingereicht.</h1>
+  <p class="max-w-lg text-muted-foreground">Deine Angaben und Belege sind eingegangen. Die Eingangsbestätigung ist noch keine Zusage zur Erstattung.</p>
+  <div class="flex w-full max-w-md flex-col gap-1 rounded-lg border bg-muted/50 p-4">
+    <span class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Deine Referenz</span>
+    <strong id="claim-reference" class="font-mono text-sm break-all select-all">{{ claim.reference }}</strong>
+    <small class="text-xs text-muted-foreground">Bitte notiere die Referenz für Rückfragen.</small>
+  </div>
+  <p id="processing-status" class="flex items-center gap-2 text-sm font-medium" data-status="{{ status }}" data-final="{{ final|yesno:'true,false' }}" aria-live="polite">Dein Antrag wird verarbeitet.</p>
+  <p class="text-sm text-muted-foreground">{{ payment_timing }}</p>
+</section>
+{% endblock %}{% block scripts %}<script src="{% static 'portal/received.js' %}" defer></script>{% endblock %}

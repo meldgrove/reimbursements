@@ -1,0 +1,9 @@
+{% load ui %}{% if show %}<details class="relative" data-popover>
+  <summary class="inline-flex h-8 items-center gap-2 rounded-md border border-dashed border-input bg-background px-3 text-xs font-medium shadow-xs outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30">
+    {% icon "calendar" class="size-3.5" %}Zeitraum
+  </summary>
+  <div class="ui-dropdown-content left-0 max-h-80 w-56 overflow-y-auto">
+    {% if back %}<a class="ui-dropdown-item" href="{{ back.link }}">{% icon "chevron-left" %}{{ back.title }}</a><div class="ui-dropdown-separator"></div>{% endif %}
+    {% for choice in choices %}{% if choice.link %}<a class="ui-dropdown-item" href="{{ choice.link }}">{{ choice.title }}</a>{% else %}<span class="ui-dropdown-item font-medium" aria-current="true">{% icon "check" %}{{ choice.title }}</span>{% endif %}{% endfor %}
+  </div>
+</details>{% endif %}

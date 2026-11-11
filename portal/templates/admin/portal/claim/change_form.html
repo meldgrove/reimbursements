@@ -1,0 +1,2 @@
+{% extends "admin/change_form.html" %}{% load ui %}
+{% block page-actions %}{% if can_retry %}{% component "button" variant="outline" size="sm" href=retry_url %}{% icon "refresh-cw" %}Erneut verarbeiten{% endcomponent %}{% endif %}{% if can_purge %}{% component "button" variant="outline" size="sm" href=purge_url class="text-destructive hover:text-destructive" %}{% icon "trash" %}Löschen{% endcomponent %}{% endif %}{{ block.super }}{% endblock %}

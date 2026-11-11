@@ -1,0 +1,423 @@
+/*
+ * Styles for the administration pages. These rules are not in a layer on
+ * purpose: they must win over Django's widgets.css, which is not layered either.
+ */
+
+/* Django's widget variables, mapped to the design tokens. */
+:root {
+  --body-bg: var(--popover);
+  --body-fg: var(--popover-foreground);
+  --body-quiet-color: var(--muted-foreground);
+  --border-color: var(--border);
+  --hairline-color: var(--border);
+  --darkened-bg: var(--muted);
+  --selected-bg: var(--muted);
+  --link-fg: var(--primary);
+  --header-bg: var(--primary);
+  --header-link-color: var(--primary-foreground);
+  --breadcrumbs-fg: var(--primary-foreground);
+  --button-fg: var(--primary-foreground);
+  --close-button-bg: var(--secondary);
+  --close-button-hover-bg: var(--accent);
+}
+
+/* Page frame */
+.page-title {
+  @apply text-2xl font-semibold tracking-tight;
+}
+.breadcrumbs {
+  @apply flex min-w-0 items-center gap-1.5 truncate text-sm text-muted-foreground;
+}
+.breadcrumbs a {
+  @apply transition-colors hover:text-foreground;
+}
+.breadcrumbs [aria-current="page"] {
+  @apply truncate font-normal text-foreground;
+}
+.breadcrumb-separator {
+  @apply size-3.5 shrink-0;
+}
+
+/* Text inside admin pages */
+:where(#content) :where(p, ul, ol) {
+  @apply leading-relaxed;
+}
+:where(#content) :where(a:not([class])) {
+  @apply ui-link;
+}
+:where(#content) :where(h2:not([class])) {
+  @apply mt-2 text-lg font-semibold tracking-tight;
+}
+:where(#content) :where(ul:not([class])) {
+  @apply list-disc space-y-1 pl-5;
+}
+:where(#content) :where(ul:not([class]) ul) {
+  @apply mt-1;
+}
+:where(#content) :where(.help, .quiet, .small) {
+  @apply text-sm text-muted-foreground;
+}
+
+/* Form controls rendered by Django */
+:where(.admin-ui) :where(
+    input[type="text"],
+    input[type="email"],
+    input[type="url"],
+    input[type="number"],
+    input[type="password"],
+    input[type="search"],
+    input[type="date"],
+    input[type="time"],
+    input[type="datetime-local"],
+    input[type="tel"]
+  ):where(:not(.ui-input, [data-search-input])) {
+  @apply ui-input;
+}
+:where(.admin-ui) :where(textarea):where(:not(.ui-textarea)) {
+  @apply ui-textarea max-h-[60vh] min-h-24 [field-sizing:content];
+}
+:where(.admin-ui) :where(select:not([multiple])):where(:not(.ui-select)) {
+  @apply ui-select;
+}
+:where(.admin-ui) :where(select[multiple]) {
+  @apply w-full rounded-md border border-input bg-transparent p-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30;
+}
+:where(.admin-ui) :where(input[type="checkbox"], input[type="radio"]) {
+  @apply size-4 shrink-0 accent-primary;
+}
+:where(.admin-ui) :where(input[type="file"]) {
+  @apply text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium;
+}
+
+/* Buttons rendered by Django */
+:where(.admin-ui) :where(input[type="submit"], input[type="button"], button.button, a.button, .closelink, .cancel-link) {
+  @apply inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:bg-input/30;
+}
+:where(.admin-ui) :where(input[type="submit"].default, .submit-row input[name="_save"], #login-form input[type="submit"]) {
+  @apply border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground;
+}
+:where(.admin-ui) :where(.deletelink, input[type="submit"].danger, .delete-confirmation input[type="submit"]) {
+  @apply inline-flex h-9 items-center justify-center rounded-md border border-transparent bg-destructive px-4 text-sm font-medium text-white shadow-xs hover:bg-destructive/90;
+}
+.submit-row {
+  @apply flex flex-wrap items-center gap-2;
+}
+.submit-row .deletelink {
+  @apply ml-auto;
+}
+
+/* Messages and errors */
+.errornote {
+  @apply rounded-lg border border-error-border bg-error-background px-4 py-3 text-sm font-medium text-destructive;
+}
+ul.errorlist {
+  @apply m-0 flex list-none flex-col gap-1 p-0 text-sm font-medium text-destructive;
+}
+.errors :where(input, select, textarea) {
+  @apply border-destructive;
+}
+
+/* Fieldsets as cards */
+fieldset.module {
+  @apply m-0 min-w-0 overflow-hidden rounded-xl border bg-card p-0 text-card-foreground shadow-sm;
+}
+fieldset.module > :where(h2, details > summary > h2) {
+  @apply border-b bg-muted/40 px-6 py-3 text-sm font-semibold;
+}
+fieldset.module > .description {
+  @apply border-b px-6 py-3 text-sm text-muted-foreground;
+}
+fieldset.module > details > summary {
+  @apply block;
+}
+.aligned .form-row {
+  @apply flex flex-col gap-4 border-b px-6 py-4 last:border-b-0;
+}
+.field-grid {
+  @apply flex flex-col gap-2 md:grid md:grid-cols-[13rem_minmax(0,1fr)] md:items-start md:gap-6;
+}
+.field-label {
+  @apply text-sm font-medium md:pt-2;
+}
+.field-label.required::after {
+  content: " *";
+  @apply text-muted-foreground;
+}
+.field-grid:has(.readonly) .field-label {
+  @apply text-muted-foreground md:pt-0;
+}
+.field-input {
+  @apply flex min-w-0 flex-col gap-1.5;
+}
+.field-input > .help {
+  @apply text-sm text-muted-foreground;
+}
+.checkbox-row {
+  @apply flex items-center gap-2 text-sm font-medium;
+}
+.form-multiline {
+  @apply flex flex-col gap-4;
+}
+.readonly {
+  @apply whitespace-pre-line break-words text-sm;
+}
+.readonly img[src*="icon-"] {
+  @apply inline size-4;
+}
+
+/* Dates, times and other Django widgets */
+p.datetime {
+  @apply m-0 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground;
+}
+p.datetime br {
+  @apply hidden;
+}
+.vDateField,
+.vTimeField {
+  @apply max-w-40;
+}
+.datetimeshortcuts {
+  @apply ml-1 inline-flex items-center gap-1 text-sm;
+}
+.datetimeshortcuts a {
+  @apply text-primary;
+}
+.timezonewarning {
+  @apply mt-1 block text-xs text-muted-foreground;
+}
+.calendarbox,
+.clockbox {
+  @apply z-50 rounded-md border bg-popover text-popover-foreground shadow-md;
+}
+.calendar table {
+  @apply bg-transparent;
+}
+.calendar caption,
+.calendarbox h2 {
+  @apply bg-muted py-2 text-sm text-foreground;
+}
+.calendar td.selected a,
+.calendar td a:hover,
+.timelist a:hover {
+  @apply bg-primary text-primary-foreground;
+}
+.calendar td a,
+.timelist a {
+  @apply text-foreground;
+}
+.calendar td.today a {
+  @apply font-bold text-primary;
+}
+.selector-chosen-title {
+  @apply bg-primary text-primary-foreground;
+}
+.selector-available-title,
+.selector-chosen-title {
+  @apply text-sm;
+}
+.selector .selector-filter input {
+  @apply h-8;
+}
+.related-widget-wrapper {
+  @apply flex items-center gap-2;
+}
+.related-widget-wrapper-link {
+  @apply opacity-70 hover:opacity-100;
+}
+
+/* Inline formsets (template fields, logged actions) */
+.inline-group {
+  @apply min-w-0;
+}
+.inline-group .tabular fieldset.module {
+  @apply overflow-x-auto;
+}
+.inline-group .tabular table {
+  @apply w-full min-w-max text-sm;
+}
+.inline-group .tabular thead th {
+  @apply h-10 border-b px-3 text-left align-middle text-xs font-medium whitespace-nowrap text-muted-foreground;
+}
+.inline-group .tabular thead th.required::after {
+  content: " *";
+}
+.inline-group .tabular td {
+  @apply border-b px-3 py-2 align-top;
+}
+.inline-group .tabular tr:last-child td {
+  @apply border-b-0;
+}
+.inline-group .tabular td.original p {
+  @apply m-0 text-xs text-muted-foreground;
+}
+.inline-group .tabular td.original:empty,
+.inline-group .tabular th.original {
+  @apply w-0 p-0;
+}
+.inline-group .tabular td p {
+  @apply m-0 py-1.5;
+}
+.inline-group .tabular td.delete {
+  @apply text-center align-middle;
+}
+.inline-group .tabular tr.empty-form,
+.inline-group .tabular tr.empty-form + tr.row-form-errors {
+  @apply hidden;
+}
+.inline-group .tabular textarea {
+  @apply min-h-9 py-1.5;
+}
+.inline-group .tabular table:not(:has(tbody tr:not(.empty-form))) {
+  @apply hidden;
+}
+.inline-group .tabular fieldset.module:has(table):not(:has(tbody tr:not(.empty-form)))::after {
+  content: "Noch keine Einträge.";
+  @apply block px-6 py-4 text-sm text-muted-foreground;
+}
+.inline-group .tabular .field-position input {
+  @apply w-20;
+}
+.inline-group .tabular .field-choices textarea,
+.inline-group .tabular .field-label input {
+  @apply min-w-48;
+}
+.inline-group .add-row td {
+  @apply border-t px-3 py-3;
+}
+.inline-group .add-row a {
+  @apply inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline;
+}
+.inline-group .add-row a::before {
+  content: "+";
+  @apply text-base leading-none;
+}
+.inline-deletelink {
+  @apply inline-block size-5 rounded-sm bg-[url("../admin/img/icon-deletelink.svg")] bg-center bg-no-repeat indent-[200%] overflow-hidden whitespace-nowrap opacity-70 hover:opacity-100;
+}
+.inline-related h3 {
+  @apply border-b px-6 py-2 text-sm font-medium;
+}
+
+/* Changelist */
+#changelist-form .results {
+  @apply overflow-x-auto;
+}
+#result_list {
+  @apply w-full caption-bottom text-sm;
+}
+#result_list thead th {
+  @apply h-10 border-b px-3 text-left align-middle font-medium whitespace-nowrap text-muted-foreground;
+}
+#result_list thead th .text a {
+  @apply inline-flex items-center gap-1 font-medium text-muted-foreground no-underline hover:text-foreground;
+}
+#result_list thead th.sorted .text a {
+  @apply text-foreground;
+}
+#result_list thead th.sorted.ascending .text a::after {
+  content: "↑";
+}
+#result_list thead th.sorted.descending .text a::after {
+  content: "↓";
+}
+#result_list thead .sortoptions,
+#result_list thead .clear {
+  @apply hidden;
+}
+#result_list tbody tr {
+  @apply border-b transition-colors last:border-b-0 hover:bg-muted/50;
+}
+#result_list tbody tr.selected {
+  @apply bg-muted;
+}
+#result_list :where(td, tbody th) {
+  @apply h-11 px-3 py-2 text-left align-middle font-normal whitespace-nowrap;
+}
+#result_list tbody th a {
+  @apply font-medium text-foreground hover:underline;
+}
+#result_list :where(td, th).action-checkbox,
+#result_list thead th.action-checkbox-column {
+  @apply w-10 pr-0;
+}
+#result_list img[src*="icon-"] {
+  @apply inline size-4;
+}
+#result_list a[target="_blank"] {
+  @apply text-primary hover:underline;
+}
+.actions {
+  @apply flex flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2 text-sm;
+}
+.actions label {
+  @apply flex items-center gap-2 font-medium;
+}
+.actions select {
+  @apply h-8 w-auto min-w-48;
+}
+.actions .button {
+  @apply h-8 px-3;
+}
+.actions .action-counter,
+.actions .all,
+.actions .question,
+.actions .clear {
+  @apply text-muted-foreground;
+}
+.actions .hidden {
+  @apply hidden;
+}
+.paginator {
+  @apply m-0 flex flex-wrap items-center gap-1 border-t px-3 py-3 text-sm text-muted-foreground;
+}
+.paginator a,
+.paginator .this-page {
+  @apply inline-flex size-8 items-center justify-center rounded-md text-sm font-medium text-foreground;
+}
+.paginator a:hover {
+  @apply bg-accent;
+}
+.paginator .this-page {
+  @apply border border-input bg-background shadow-xs;
+}
+.paginator .showall {
+  @apply ml-2 w-auto px-2 text-primary;
+}
+.toplinks {
+  @apply flex flex-wrap items-center gap-1 text-sm;
+}
+.toplinks a {
+  @apply rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground;
+}
+
+/* Object history and delete confirmation */
+#change-history {
+  @apply w-full text-sm;
+}
+#change-history th,
+#change-history td {
+  @apply border-b px-3 py-2 text-left align-top;
+}
+#change-history thead th {
+  @apply font-medium text-muted-foreground;
+}
+
+/* Login page (local development only) */
+#login-form {
+  @apply flex flex-col gap-4;
+}
+#login-form .form-row {
+  @apply flex flex-col gap-2 text-sm font-medium;
+}
+#login-form .submit-row input {
+  @apply w-full;
+}
+
+/* The changelist card holding toolbar, actions, table and pagination */
+/* Not clipped, so the toolbar's filter dropdowns can extend beyond the card. */
+#changelist {
+  @apply rounded-xl border bg-card text-card-foreground shadow-sm;
+}
+#changelist-form {
+  @apply overflow-hidden rounded-b-xl;
+}

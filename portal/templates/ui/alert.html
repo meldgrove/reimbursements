@@ -1,0 +1,1 @@
+<div role="{% if variant == 'destructive' %}alert{% else %}status{% endif %}" class="ui-alert ui-alert-{{ variant }}{% if class %} {{ class }}{% endif %}"{{ attrs }}>{{ slot }}</div>

@@ -1,0 +1,64 @@
+x-runtime: &runtime
+  image: ${CAPACITY_IMAGE:?Set CAPACITY_IMAGE}
+  build:
+    context: .
+    target: runtime
+  environment:
+    DJANGO_DEBUG: "1"
+    DEPLOYMENT_ENV: development
+    DATABASE_URL: postgresql://capacity:capacity@database:5432/capacity
+    ALLOWED_HOSTS: localhost,127.0.0.1,web
+    MAIL_DELIVERY_MODE: local
+    UPLOAD_SCANNER: disabled
+    REQUIRE_WORKER_HEARTBEAT: "1"
+    DOCUMENT_SANDBOX_ENABLED: "1"
+    MIN_FREE_STORAGE_BYTES: "1000000000"
+  volumes:
+    - private_data:/app/var/private
+  tmpfs:
+    - /app/var/private/work:size=700m,mode=0700,uid=10001,gid=10001
+  depends_on:
+    database:
+      condition: service_healthy
+
+services:
+  database:
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    environment:
+      POSTGRES_DB: capacity
+      POSTGRES_USER: capacity
+      POSTGRES_PASSWORD: capacity
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capacity -d capacity"]
+      interval: 1s
+      timeout: 5s
+      retries: 20
+    mem_limit: 512m
+  web:
+    <<: *runtime
+    pids_limit: 64
+    mem_limit: 512m
+  worker:
+    <<: *runtime
+    pids_limit: 64
+    command: ["python", "manage.py", "run_jobs"]
+    mem_limit: 2g
+    cpus: 2
+  load:
+    <<: *runtime
+    command: ["python", "scripts/capacity_check.py"]
+  restore:
+    <<: *runtime
+    environment:
+      DJANGO_DEBUG: "1"
+      DEPLOYMENT_ENV: development
+      DATABASE_URL: postgresql://capacity:capacity@database:5432/capacity_restore
+      MAIL_DELIVERY_MODE: local
+      UPLOAD_SCANNER: disabled
+    volumes:
+      - restore_data:/app/var/private
+volumes:
+  private_data:
+  restore_data:

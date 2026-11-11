@@ -1,0 +1,43 @@
+{% extends "admin/base_site.html" %}{% load admin_urls ui %}
+{% block breadcrumbs %}{% url 'admin:portal_claim_change' claim.pk as claim_url %}{% include "admin/portal/breadcrumbs.html" with parent_label=claim.reference|truncatechars:12 parent_url=claim_url current="Erneut verarbeiten" %}{% endblock %}
+{% block content_title %}
+<div class="grid gap-1">
+  <h1 class="page-title">Antrag erneut verarbeiten</h1>
+  <p class="text-sm text-muted-foreground">Eine fehlgeschlagene PDF-Erstellung wird neu gestartet. Eine erstellte PDF wird erneut an das Empfangspostfach gesendet.</p>
+</div>
+{% endblock %}
+{% block content %}
+<div id="content-main" class="flex max-w-3xl flex-col gap-6">
+  {% component "card" class="gap-0 py-0" %}
+  <dl class="grid divide-y text-sm">
+    <div class="grid gap-1 px-6 py-3 sm:grid-cols-[10rem_1fr]"><dt class="text-muted-foreground">Referenz</dt><dd class="break-all font-medium">{{ claim.reference }}</dd></div>
+    <div class="grid gap-1 px-6 py-3 sm:grid-cols-[10rem_1fr]"><dt class="text-muted-foreground">Formular</dt><dd>{{ claim.form.name }}</dd></div>
+    <div class="grid gap-1 px-6 py-3 sm:grid-cols-[10rem_1fr]"><dt class="text-muted-foreground">Aktueller Status</dt><dd>{{ status_badge }}</dd></div>
+  </dl>
+  {% endcomponent %}
+  {% if duplicate_risk %}
+  {% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_title" %}Doppelter Versand möglich{% endcomponent %}{% component "alert_description" %}Der letzte Versand ist nicht eindeutig fehlgeschlagen. Prüfe im Versanddienst oder bei Finance, ob die E-Mail angekommen ist, bevor du sie erneut sendest.{% endcomponent %}{% endcomponent %}
+  {% endif %}
+  <form method="post" class="flex flex-col gap-6">{% csrf_token %}
+    {% if form.non_field_errors %}<p class="errornote">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+    <fieldset class="module aligned">
+      <div class="form-row{% if form.reason.errors %} errors{% endif %}">
+        <div class="field-grid">
+          <label class="field-label required" for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label>
+          <div class="field-input">{{ form.reason }}{{ form.reason.errors }}<div class="help">Wird mit deinem Namen im Antrag protokolliert.</div></div>
+        </div>
+      </div>
+      <div class="form-row{% if form.acknowledge_duplicate_risk.errors %} errors{% endif %}">
+        <div class="field-grid">
+          <span></span>
+          <div class="field-input"><div class="checkbox-row items-start">{{ form.acknowledge_duplicate_risk }}<label for="{{ form.acknowledge_duplicate_risk.id_for_label }}" class="font-normal">{{ form.acknowledge_duplicate_risk.label }}</label></div>{{ form.acknowledge_duplicate_risk.errors }}</div>
+        </div>
+      </div>
+    </fieldset>
+    <div class="submit-row">
+      {% component "button" type="submit" %}{% icon "refresh-cw" %}Erneut verarbeiten{% endcomponent %}
+      {% url 'admin:portal_claim_change' claim.pk as claim_url %}{% component "button" variant="outline" href=claim_url %}Abbrechen{% endcomponent %}
+    </div>
+  </form>
+</div>
+{% endblock %}
