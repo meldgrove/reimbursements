@@ -130,13 +130,12 @@ forms, with name, email, total and status, but no banking or receipt data.
 Template admins can also delete claims, for example test submissions: **Löschen** on
 a claim, or the list action **Ausgewählte Anträge löschen** for up to 100 at once.
 A confirmation page lists the claims and says whether Finance may already hold their
-PDF; deletion needs a reason and records it with their address. It purges the claim
-immediately: files, personal and banking data are removed, and pending processing or
-sending stops. A claim that is currently being
-rendered or sent cannot be deleted until that finishes. A copy already sent to Finance
-or downstream systems is not affected. As after a retention purge, the reference UUID, form, status
-and the logged action stay visible for 30 days. Each deletion also logs
-`claim_deleted reference=<uuid>`.
+PDF; deletion needs a reason and records it with their address. It deletes the claim
+immediately: the claim, its files, personal and banking data are removed, it no longer
+appears in the list, and pending processing or sending stops. A claim that is currently
+being rendered or sent cannot be deleted until that finishes. A copy already sent to
+Finance or downstream systems is not affected. The logged action is kept without a link
+to the claim. Each deletion also logs `claim_deleted reference=<uuid>`.
 
 The commands below run through authorized host access and record the host actor.
 Use operational reasons without participant names, account details, or receipt text.
@@ -156,7 +155,7 @@ python manage.py purge_expired --execute
 
 `claim_status` and `retry_claim` also accept the full readable bookkeeping reference.
 It includes the participant's surname; the internal UUID remains available for
-operational correlation and survives content purge.
+operational correlation until content purge deletes the claim.
 
 `retry_claim` records the host actor and reason. It retries failed renders only
 before a PDF has become ready, and cannot resend once the PDF has been deleted. Delivery retries reuse the existing immutable PDF
@@ -234,7 +233,7 @@ email copies are deleted after seven days; all other content of the claim 90 day
 after submission. Failed/ambiguous claims have a 90-day resolution target and
 remain retained if unresolved; the admin area marks overdue claims and logs report
 approaching ones. The owner must resolve them or record an approved extension.
-After content purge, minimal reference/time/status records expire after 30 days.
+Content purge deletes the claim record itself; no reference or status record remains.
 Email provider and recipient copies follow their separately approved retention policies.
 
 ## Backup and restore

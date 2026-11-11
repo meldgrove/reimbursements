@@ -395,7 +395,7 @@ def test_duplicate_risk_is_what_a_retry_refuses_without_acknowledgment(delivery,
         deliveries.retry(claim)
 
 
-def test_unresolved_claims_are_overdue_until_delivered_or_purged(accepted):
+def test_unresolved_claims_are_overdue_until_delivered_or_deleted(accepted):
     later = accepted.resolution_due + timedelta(seconds=1)
     assert not deliveries.operator_status(
         accepted, now=accepted.resolution_due - timedelta(1)
@@ -403,5 +403,5 @@ def test_unresolved_claims_are_overdue_until_delivered_or_purged(accepted):
     assert deliveries.operator_status(accepted, now=later).overdue
     accepted.retention_due = later
     assert not deliveries.operator_status(accepted, now=later).overdue
-    accepted.retention_due, accepted.state = None, Claim.State.PURGED
+    accepted.retention_due, accepted.state = None, Claim.State.PURGING
     assert not deliveries.operator_status(accepted, now=later).overdue

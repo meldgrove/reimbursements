@@ -389,8 +389,8 @@ class Claim(models.Model):
         RENDERING = "rendering", "PDF wird erstellt"
         READY = "ready", "PDF erstellt"
         FAILED = "processing_failed", "PDF-Erstellung fehlgeschlagen"
+        # Content removal has begun; the claim record itself is deleted last.
         PURGING = "purging", "Wird gelöscht"
-        PURGED = "purged", "Gelöscht"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     form = models.ForeignKey(
@@ -429,7 +429,6 @@ class Claim(models.Model):
     pdf_removed_at = models.DateTimeField("PDF gelöscht am", null=True, blank=True)
     retention_due = models.DateTimeField("Inhalte löschen ab", null=True, blank=True, db_index=True)
     resolution_due = models.DateTimeField(default=timezone.now)
-    purged_at = models.DateTimeField(null=True, blank=True)
     supersedes = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="replacements"
     )

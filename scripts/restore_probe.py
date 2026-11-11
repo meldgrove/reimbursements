@@ -41,14 +41,14 @@ if not count:
     raise SystemExit("The restored dataset is empty")
 Claim.objects.update(retention_due=timezone.now())
 result = cleanup(execute=True)
-if result["failures"] or Claim.objects.exclude(state="purged").exists():
+if result["failures"] or Claim.objects.exists():
     raise SystemExit("Restored deletion failed")
 after = io.StringIO()
 call_command("verify_storage", stdout=after)
 report = {
     "restored_claims": count,
     "before_purge": json.loads(before.getvalue()),
-    "purged_claims": Claim.objects.filter(state="purged").count(),
+    "purged_claims": count - Claim.objects.count(),
     "after_purge": json.loads(after.getvalue()),
 }
 print(json.dumps(report))

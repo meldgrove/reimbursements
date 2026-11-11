@@ -63,8 +63,8 @@ The date is the Berlin submission date, the surname is the URL-safe last word of
 the full name, and the suffix is a database-locked global sequence. The reference
 never changes after acceptance and is used in confirmation, admin search, PDFs and
 emails. Email filenames replace slashes with underscores. Existing claims keep
-their UUID reference. The readable reference contains a name and is cleared at
-content purge; the counter contains no participant data and is retained to prevent
+their UUID reference. The readable reference contains a name and is deleted with
+the claim at content purge; the counter contains no participant data and is retained to prevent
 number reuse. Operator commands accept either reference or UUID.
 
 Acceptance also queues one participant confirmation email through MailerSend,

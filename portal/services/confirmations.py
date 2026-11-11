@@ -18,7 +18,7 @@ def schedule(claim):
 def start(claim_id):
     """Inside a transaction, reserve a pending email before contacting the provider."""
     claim = Claim.objects.select_for_update().get(pk=claim_id)
-    if claim.state in {Claim.State.PURGING, Claim.State.PURGED}:
+    if claim.state == Claim.State.PURGING:
         return None
     confirmation = Confirmation.objects.select_for_update().get(claim=claim)
     if confirmation.state != PENDING:
