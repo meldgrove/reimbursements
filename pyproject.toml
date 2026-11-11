@@ -16,6 +16,7 @@ dependencies = [
   "weasyprint>=70,<71",
   "whitenoise>=6.9,<7",
   "mozilla-django-oidc>=4,<5",
+  "sentry-sdk>=2.74,<3",
 ]
 
 [dependency-groups]

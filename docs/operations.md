@@ -193,6 +193,15 @@ code locations while excluding exception values, source text, bodies, paths,
 headers and local variables. Use request IDs and operational references to
 investigate failures without putting financial content in logs.
 
+Set `SENTRY_DSN` to also send errors to Sentry or a compatible service. Reports
+cover unhandled errors in web requests and management commands, and errors the
+application logs, such as failed jobs or purges. They follow the same limits as
+the logs: exception type, code locations, the URL pattern and the application's
+own log message, without exception values, request data, users, local variables
+or breadcrumbs. Library log messages keep only their template. The `process` tag
+is `web` or the management command, e.g. `run_jobs`. `SENTRY_ENVIRONMENT`
+defaults to `DEPLOYMENT_ENV`; `SENTRY_RELEASE` names the deployed version.
+
 The worker reclaims expired leases and runs cleanup each minute, including deletion
 of expired Django sessions through the configured session backend. Active sessions
 are preserved.
