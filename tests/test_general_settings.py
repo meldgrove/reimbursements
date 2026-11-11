@@ -17,7 +17,6 @@ from PIL import Image
 from portal import roles
 from portal.models import AppSettings, DeliveryAttempt, Form, FormTemplate
 from portal.services import confirmations, delivery
-from portal.services.transport import ACCEPTED, SendResult
 
 pytestmark = pytest.mark.django_db
 
@@ -162,24 +161,16 @@ def test_admin_shows_and_reads_dates_in_the_app_date_format(admin_client, form):
     assert form.trip_start.isoformat() == "2099-10-20"
 
 
-def test_claims_keep_the_language_their_participant_saw(accepted, monkeypatch):
+def test_claims_keep_the_language_their_participant_saw(accepted):
     assert accepted.snapshot["language"] == "de"
     AppSettings.objects.create(language="en", timezone="UTC")
-    sent = []
-
-    class Capture:
-        def send(self, message):
-            sent.append(message)
-            return SendResult(ACCEPTED, "message-1")
-
-    monkeypatch.setattr(confirmations, "configured_transport", Capture)
-    confirmations.send(accepted.confirmation)
-    assert sent[-1].subject.startswith("Eingangsbestätigung: Erstattungsantrag")
+    message = confirmations.compose(accepted.confirmation)
+    assert message.subject.startswith("Eingangsbestätigung: Erstattungsantrag")
     accepted.snapshot["language"] = "en"
     accepted.save()
-    confirmations.send(accepted.confirmation)
-    assert sent[-1].subject.startswith("Confirmation of receipt: reimbursement claim")
-    assert "Your Meldgrove Reimbursement team" in sent[-1].text
+    message = confirmations.compose(accepted.confirmation)
+    assert message.subject.startswith("Confirmation of receipt: reimbursement claim")
+    assert "Your Meldgrove Reimbursement team" in message.text
 
 
 def test_the_finance_email_uses_the_claim_language(delivery):

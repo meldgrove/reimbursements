@@ -21,7 +21,7 @@ from django.utils.dateparse import parse_datetime
 from portal import app_settings
 from portal.i18n import t
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent
-from portal.services import mailersend, queue
+from portal.services import mailersend, outbound, queue
 from portal.services.storage import path_for
 from portal.services.transport import (
     ACCEPTED,
@@ -31,7 +31,6 @@ from portal.services.transport import (
     PENDING,
     SENDING,
     UNKNOWN,
-    LocalOutbox,
     Message,
     SendResult,
 )
@@ -74,16 +73,6 @@ class Undeliverable(Exception):
 
 def _recipient_hash(address):
     return hashlib.sha256(address.lower().encode()).hexdigest()
-
-
-def recipient_approved(address):
-    return address.lower() in settings.APPROVED_DELIVERY_RECIPIENTS
-
-
-def configured_transport():
-    if settings.MAIL_DELIVERY_MODE == "local" and settings.DEBUG:
-        return LocalOutbox()
-    return mailersend.MailerSendTransport()
 
 
 def schedule(claim):
@@ -139,13 +128,8 @@ def start_attempt(delivery_id):
 
 def compose(attempt):
     delivery, claim = attempt.delivery, attempt.delivery.claim
-    if not recipient_approved(delivery.recipient):
+    if not outbound.recipient_approved(delivery.recipient):
         raise Undeliverable("unapproved_recipient")
-    if (
-        settings.TEST_RECIPIENT_ALLOWLIST
-        and delivery.recipient.lower() not in settings.TEST_RECIPIENT_ALLOWLIST
-    ):
-        raise Undeliverable("test_recipient_blocked")
     try:
         content = path_for(claim.pdf_key).read_bytes()
     except (OSError, ValueError) as exc:
@@ -178,8 +162,8 @@ def compose(attempt):
 def send(attempt):
     """Compose and transmit one attempt. No database writes; call outside a transaction.
 
-    Anything that fails while composing is a definite failure. An exception from the
-    transport itself propagates: the provider may have accepted the message.
+    Anything that fails while composing is a definite failure. An exception from
+    `outbound.send` propagates: the provider may have accepted the message.
     """
     try:
         message = compose(attempt)
@@ -188,7 +172,7 @@ def send(attempt):
     except Exception:
         logger.exception("delivery_compose_failed attempt=%s", attempt.pk)
         return SendResult(FAILED, error_code="message_unavailable")
-    return configured_transport().send(message)
+    return outbound.send(message)
 
 
 def record_result(attempt_id, result):
@@ -204,16 +188,8 @@ def record_result(attempt_id, result):
     refresh(delivery)
 
 
-def abandon(attempt_id, error_code):
-    """In a transaction: a retryable attempt that will not be retried has failed."""
-    attempt = DeliveryAttempt.objects.get(pk=attempt_id)
-    delivery = _lock_delivery(pk=attempt.delivery_id)
-    DeliveryAttempt.objects.filter(pk=attempt_id).update(state=FAILED, error_code=error_code)
-    refresh(delivery)
-
-
-def mark_interrupted(delivery_id, error_code):
-    """In a transaction: a sender died mid-attempt, so the outcome is unknown."""
+def mark_unknown(delivery_id, error_code):
+    """In a transaction: a send ended without a result, so its outcome is unknown."""
     delivery = _lock_delivery(pk=delivery_id)
     delivery.attempts.filter(state=SENDING).update(state=UNKNOWN, error_code=error_code)
     refresh(delivery)

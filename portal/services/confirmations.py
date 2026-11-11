@@ -7,9 +7,8 @@ from portal import app_settings
 from portal.constants import APP_NAME, PAYMENT_TIMING
 from portal.i18n import t
 from portal.models import Claim, Confirmation
-from portal.services import queue
-from portal.services.delivery import configured_transport
-from portal.services.transport import FAILED, PENDING, SENDING, Message, SendResult
+from portal.services import outbound, queue
+from portal.services.transport import PENDING, SENDING, Message
 
 
 def schedule(claim):
@@ -30,13 +29,8 @@ def start(claim_id):
     return confirmation
 
 
-def send(confirmation):
+def compose(confirmation):
     claim = confirmation.claim
-    if (
-        settings.TEST_RECIPIENT_ALLOWLIST
-        and claim.email.lower() not in settings.TEST_RECIPIENT_ALLOWLIST
-    ):
-        return SendResult(FAILED, error_code="test_recipient_blocked")
     with app_settings.for_claim(claim):
         subject = t(
             "Confirmation of receipt: reimbursement claim {reference}", reference=claim.reference
@@ -57,7 +51,7 @@ def send(confirmation):
             support=claim.snapshot["support_email"],
             app_name=APP_NAME,
         )
-    message = Message(
+    return Message(
         attempt_id=str(confirmation.pk),
         sender=settings.MAIL_FROM_ADDRESS,
         reply_to=claim.snapshot["support_email"],
@@ -65,10 +59,17 @@ def send(confirmation):
         subject=subject,
         text=text,
     )
-    return configured_transport().send(message)
 
 
-def mark(claim_id, state, error_code="", message_id=""):
+def send(confirmation):
+    """Transmit the confirmation. No database writes; call outside a transaction."""
+    return outbound.send(compose(confirmation))
+
+
+def record(claim_id, result):
     Confirmation.objects.filter(claim_id=claim_id).update(
-        state=state, error_code=error_code, message_id=message_id, updated_at=timezone.now()
+        state=result.state,
+        error_code=result.error_code,
+        message_id=result.message_id,
+        updated_at=timezone.now(),
     )

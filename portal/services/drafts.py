@@ -31,7 +31,7 @@ from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Draft, Form, PrivacyNotice
 from portal.services import network_budget
-from portal.services.delivery import recipient_approved
+from portal.services.outbound import recipient_approved
 
 # New drafts one browser session may open per day.
 MAX_DRAFTS_PER_SESSION = 10
