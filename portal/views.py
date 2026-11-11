@@ -171,15 +171,13 @@ def validate_claim(request, form_slug):
     data = json.loads(request.body)
     if not isinstance(data, dict):
         raise IntakeError(t("Invalid request."))
-    draft, form = drafts.gate(
+    _draft, form = drafts.gate(
         RequestParticipant(request),
         form_slug,
         data.get("draft_id"),
         draft_token(request),
-        drafts.Action(edits=False, accepts=True, locks_form=False),
+        drafts.REVIEW,
     )
-    if draft.claim_id:
-        raise drafts.AlreadySubmitted(draft)
     return JsonResponse({"fields": claim_validation.review(data, form).errors})
 
 

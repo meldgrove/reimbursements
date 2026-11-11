@@ -59,9 +59,9 @@ def submit_claim(participant, form_slug, data):
             claim=claim, **{key: value for key, value in row.items() if key != "uploads"}
         )
     files.attach(claim)
+    # A replay returns this claim until it is deleted; the draft no longer expires.
     draft.claim, draft.payload_hash = claim, payload_hash
-    draft.expires_at = timezone.now() + timedelta(days=7)
-    draft.save(update_fields=["claim", "payload_hash", "expires_at"])
+    draft.save(update_fields=["claim", "payload_hash"])
     queue.enqueue("render", claim)
     confirmations.schedule(claim)
     return claim

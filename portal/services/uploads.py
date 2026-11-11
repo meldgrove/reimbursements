@@ -270,7 +270,8 @@ def expire_draft(draft_id):
 
 
 def expire_unattached(now):
-    """Accepted drafts can hold uploads left out of the claim. They keep the draft lifetime.
+    """Accepted drafts can hold uploads left out of the claim. Each goes 24 hours after its
+    upload.
 
     Returns the number of uploads whose files could not be removed.
     """
