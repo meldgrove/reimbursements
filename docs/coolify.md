@@ -55,6 +55,9 @@ your actual hostname. Subscribe to supported sent, delivered, deferred, bounced
 and suppressed events. Disable provider tracking. See [operations](operations.md)
 for ambiguous delivery outcomes and retry controls.
 
+Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. See
+[operations](operations.md#monitoring-and-maintenance) for what a report contains.
+
 ## First launch and upgrades
 
 Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your

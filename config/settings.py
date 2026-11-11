@@ -263,3 +263,14 @@ if not DEBUG:
 
 # HSTS preload enrollment is an independent domain-owner decision.
 SILENCED_SYSTEM_CHECKS = ["security.W021"]
+
+# Error reports to Sentry or a compatible service: off without SENTRY_DSN.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    from portal import error_reporting
+
+    error_reporting.start(
+        dsn=SENTRY_DSN,
+        environment=os.getenv("SENTRY_ENVIRONMENT") or DEPLOYMENT_ENV,
+        release=os.getenv("SENTRY_RELEASE"),
+    )

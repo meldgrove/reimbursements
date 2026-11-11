@@ -55,6 +55,7 @@ production data, or external account identifiers are included. Configure:
 - `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, client credentials and role groups for admin sign-in.
 - `MAIL_FROM_ADDRESS`, `MAIL_REPLY_TO_ADDRESS`, MailerSend credentials and approved recipients.
 - PostgreSQL, private storage, malware scanner, TLS proxy and health check settings.
+- Optionally `SENTRY_DSN` for error reports without claim content.
 
 Replace the initial privacy setup notice in the admin area before opening forms.
 Review the declaration and retention periods for your deployment. Payment timing
