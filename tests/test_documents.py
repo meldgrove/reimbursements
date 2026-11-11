@@ -77,7 +77,7 @@ def test_adaptive_compression_meets_cap_and_keeps_all_pages(tmp_path):
             {"path": str(source), "media_type": "image/png", "label": "Receipt 1"},
             {"path": str(source), "media_type": "image/png", "label": "Receipt 2"},
         ],
-        "reference": "synthetic",
+        "title": "synthetic",
         "max_bytes": 350_000,
     }
     path = tmp_path / "manifest.json"
@@ -97,7 +97,7 @@ def test_impossible_cap_is_a_visible_failure_not_partial_pdf(tmp_path):
                 "html": "<p>Summary</p>",
                 "allowed_assets": [],
                 "receipts": [],
-                "reference": "test",
+                "title": "test",
                 "max_bytes": 1,
             }
         )
@@ -121,6 +121,19 @@ def test_authoritative_pdf_contains_source_form_fields_and_signature(accepted):
         assert result["pages"] == 2
         assert len(reader.pages[0].images) >= 1
         assert reader.outline
+        assert reader.metadata.title == f"Erstattung {accepted.reference}"
+        assert reader.metadata.producer == "Meldgrove Reimbursement"
+
+
+def test_the_pdf_uses_the_language_its_participant_saw(accepted):
+    accepted.snapshot["language"] = "en"
+    accepted.save()
+    with temporary_workspace() as directory:
+        path, _ = build_claim_pdf(accepted, directory)
+        reader = PdfReader(path)
+        text = " ".join(reader.pages[0].extract_text().split())
+        assert "Reimbursement form" in text and "Erstattungsformular" not in text
+        assert reader.metadata.title == f"Reimbursement {accepted.reference}"
 
 
 def test_filled_pdf_form_remains_visible_after_normalization(tmp_path):
@@ -170,7 +183,7 @@ def test_filled_pdf_form_remains_visible_after_normalization(tmp_path):
                 "receipts": [
                     {"path": str(source), "media_type": "application/pdf", "label": "Filled form"}
                 ],
-                "reference": "test",
+                "title": "test",
                 "max_bytes": 1_000_000,
             }
         )

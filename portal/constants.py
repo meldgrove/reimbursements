@@ -1,17 +1,20 @@
+# The product name, the same in every language and deployment.
+APP_NAME = "Meldgrove Reimbursement"
+# Standard participant texts, in English; portal.i18n holds their German version.
 DECLARATION = (
-    "Hiermit bestätige ich, dass die angegebenen Auslagen tatsächlich entstanden sind, "
-    "dem genannten Zweck dienen und bisher nicht erstattet wurden."
+    "I confirm that the stated expenses were actually incurred, serve the stated purpose "
+    "and have not been reimbursed before."
 )
 DECLARATION_VERSION = "reimbursement-v1"
 MAX_IMAGE_PIXELS = 40_000_000
 MAX_NORMALIZED_FILE_BYTES = 10_000_000
 MAX_PDF_PAGES = 30
 MAX_RECEIPT_DIMENSION = 3508
-FORM_TITLE = "Deine Auslagen. Einfach eingereicht."
+FORM_TITLE = "Your expenses. Simply submitted."
 FORM_DESCRIPTION = (
-    "Reiche deine privat ausgelegten Kosten zur Erstattung ein. "
-    "Deine Angaben, Belege und Unterschrift werden als PDF an die Buchhaltung gesendet."
+    "Submit the costs you paid out of your own pocket for reimbursement. "
+    "Your details, receipts and signature are sent to accounting as a PDF."
 )
 PAYMENT_TIMING = (
-    "Bei Rückfragen oder Fragen zur Auszahlung wende dich an die Kontaktadresse im Formular."
+    "For questions about your claim or the payment, contact the address given in the form."
 )

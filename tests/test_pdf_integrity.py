@@ -31,7 +31,7 @@ def test_multipage_receipt_content_and_order_survive_compression(tmp_path):
                 "receipts": [
                     {"path": str(source), "media_type": "application/pdf", "label": "Receipt"}
                 ],
-                "reference": "synthetic",
+                "title": "synthetic",
                 "max_bytes": 1_000_000,
             }
         )
@@ -82,7 +82,7 @@ def test_maximum_receipt_page_count_survives_confined_assembly(tmp_path):
                     "html": "<h1>Synthetic maximum-page claim</h1>",
                     "allowed_assets": [],
                     "receipts": receipts,
-                    "reference": "synthetic",
+                    "title": "synthetic",
                     "max_bytes": 10_000_000,
                 }
             )
@@ -120,7 +120,7 @@ def test_large_pdf_rasters_reach_final_compression_with_all_pages(tmp_path):
                     "receipts": [
                         {"path": str(source), "media_type": "application/pdf", "label": "Detail"}
                     ],
-                    "reference": "synthetic",
+                    "title": "synthetic",
                     "max_bytes": 1_000_000,
                 }
             )

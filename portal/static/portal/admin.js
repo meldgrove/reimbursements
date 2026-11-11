@@ -10,7 +10,7 @@
   const shortcutLinks = Array.from(
     document.querySelectorAll("[data-sidebar-navigation] [data-nav-shortcut]"),
   ).slice(0, 9);
-  const toggleHint = isMac ? "⌘B" : "Strg+B";
+  const toggleHint = isMac ? "⌘B" : "Ctrl+B";
 
   function updateTriggers() {
     const expanded = desktop.matches
@@ -18,7 +18,7 @@
       : root.dataset.sidebarOpen === "true";
     triggers.forEach((trigger) => {
       trigger.setAttribute("aria-expanded", String(expanded));
-      trigger.title = `Seitenleiste ${expanded ? "einklappen" : "ausklappen"} (${toggleHint})`;
+      trigger.title = `${expanded ? "Collapse" : "Expand"} sidebar (${toggleHint})`;
     });
   }
 
@@ -55,7 +55,7 @@
 
   shortcutLinks.forEach((link, index) => {
     link.setAttribute("aria-keyshortcuts", `Control+${index + 1}`);
-    link.title = `${link.title || link.textContent.trim()} (${isMac ? "⌃" : "Strg+"}${index + 1})`;
+    link.title = `${link.title || link.textContent.trim()} (${isMac ? "⌃" : "Ctrl+"}${index + 1})`;
   });
 
   // Popovers built on <details>: one at a time, closed by outside clicks and Escape.

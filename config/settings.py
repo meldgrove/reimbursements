@@ -9,7 +9,6 @@ from portal.constants import MAX_NORMALIZED_FILE_BYTES as MAX_NORMALIZED_FILE_BY
 from portal.constants import MAX_PDF_PAGES as MAX_PDF_PAGES
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-PORTAL_NAME = os.getenv("PORTAL_NAME", "Erstattungsportal")
 PORTAL_OPERATOR = os.getenv("PORTAL_OPERATOR", "")
 PORTAL_LEGAL_URL = os.getenv("PORTAL_LEGAL_URL", "")
 DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
@@ -38,6 +37,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "portal.middleware.AppSettingsMiddleware",
     "portal.middleware.RequestLimitsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "portal.middleware.AdminSessionMiddleware",
@@ -97,7 +97,7 @@ if DEBUG:
     AUTHENTICATION_BACKENDS.append("django.contrib.auth.backends.ModelBackend")
 LOGIN_URL = "admin:login"
 LOGIN_REDIRECT_URL = "/admin/"
-LOGIN_REDIRECT_URL_FAILURE = "/admin/kein-zugriff/"
+LOGIN_REDIRECT_URL_FAILURE = "/admin/no-access/"
 LOGOUT_REDIRECT_URL = "/"
 ADMIN_SESSION_SECONDS = 8 * 3600
 PRIVATE_STORAGE_ROOT = Path(os.getenv("PRIVATE_STORAGE_ROOT", str(BASE_DIR / "var/private")))
@@ -111,9 +111,13 @@ DATABASES = {
     )
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# The app language, timezone and date format are General settings in the admin area
+# (portal.app_settings). These are the defaults before they are saved.
 LANGUAGE_CODE = "de"
+LANGUAGES = [("de", "Deutsch"), ("en", "English")]
 TIME_ZONE = "Europe/Berlin"
 USE_TZ = True
+FORMAT_MODULE_PATH = ["portal.formats"]
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {

@@ -211,8 +211,8 @@ def test_editors_see_only_their_forms_and_claims(client, editor, accepted):
     assert "Alex Beispiel" in page and "participant@example.invalid" in page
     assert "DE89" not in page
     detail = client.get(f"/admin/portal/claim/{accepted.pk}/change/").content.decode()
-    assert "Alex Beispiel" in detail and "Erneut verarbeiten" not in detail
-    assert client.get(f"/admin/portal/claim/{accepted.pk}/erneut-versuchen/").status_code == 403
+    assert "Alex Beispiel" in detail and "Process again" not in detail
+    assert client.get(f"/admin/portal/claim/{accepted.pk}/retry/").status_code == 403
 
 
 def test_editors_cannot_change_templates_or_the_privacy_notice(client, editor, template):
@@ -273,15 +273,15 @@ def form_settings(form, **changes):
 def test_new_forms_autosave_as_incomplete_drafts(admin_client, template, client):
     url = f"/admin/portal/form/add/?template={template.pk}"
     page = admin_client.get(url).content.decode()
-    assert "Entwurf" in page and "Veröffentlichen" in page
+    assert "Draft" in page and "Publish" in page
     assert 'name="active"' not in page and 'name="status"' not in page
-    assert "Verantwortliche" not in page and 'name="owners"' not in page
+    assert "Owners" not in page and 'name="owners"' not in page
     assert 'name="_save"' not in page and 'name="_continue"' not in page
     response = admin_client.post(url, {"_autosave": "1", "instructions": "Erste Notiz"})
     assert response.status_code == 200, response.content
     form = Form.objects.get()
     assert form.status == Form.Status.DRAFT
-    assert form.instructions == "Erste Notiz" and form.name == "Neues Formular" and form.slug
+    assert form.instructions == "Erste Notiz" and form.name == "New form" and form.slug
     assert form.field_values == {"kst": "", "ktr": ""}
     assert form.owners.get().username == "admin"
     assert response.json()["can_delete"]
@@ -299,12 +299,12 @@ def test_autosave_keeps_a_draft_and_updates_the_existing_form(admin_client, form
     form.refresh_from_db()
     assert form.name == "Neuer Name" and form.field_values["kst"] == ""
     assert form.status == Form.Status.DRAFT and Form.objects.count() == 1
-    assert response.json()["status_label"] == "Entwurf"
+    assert response.json()["status_label"] == "Draft"
 
 
 def test_retrying_a_first_autosave_updates_the_same_draft(admin_client, template):
     url = f"/admin/portal/form/add/?template={template.pk}"
-    data = {"_autosave": "1", "_creation_key": str(uuid.uuid4()), "name": "Neues Formular"}
+    data = {"_autosave": "1", "_creation_key": str(uuid.uuid4()), "name": "New form"}
     first = admin_client.post(url, data)
     assert first.status_code == 200
     data["instructions"] = "Nach Verbindungsfehler erneut gespeichert"
@@ -331,7 +331,7 @@ def test_publishing_validates_then_unpublishing_closes_the_form(admin_client, cl
     assert not response.json()["can_delete"]
     form.refresh_from_db()
     assert form.is_open()
-    assert "Unveröffentlichen" in admin_client.get(url).content.decode()
+    assert "Unpublish" in admin_client.get(url).content.decode()
     response = admin_client.post(url, form_settings(form, _publication="unpublish"))
     assert response.status_code == 200 and response.json()["status"] == "draft"
     assert response.json()["can_delete"]
@@ -404,7 +404,7 @@ def test_status_cannot_be_changed_through_autosave_fields(admin_client, form):
 
 def test_form_list_shows_publication_status(admin_client, form):
     page = admin_client.get("/admin/portal/form/").content.decode()
-    assert "Veröffentlicht" in page and ">Status<" in page
+    assert "Published" in page and ">Status<" in page
 
 
 def test_draft_deletion_requires_confirmation(admin_client, form):
@@ -413,8 +413,8 @@ def test_draft_deletion_requires_confirmation(admin_client, form):
     url = f"/admin/portal/form/{form.pk}/delete/"
     response = admin_client.get(url)
     assert response.status_code == 200
-    assert "Entwurf endgültig löschen" in response.content.decode()
-    assert "Abbrechen" in response.content.decode()
+    assert "Delete draft for good" in response.content.decode()
+    assert "Cancel" in response.content.decode()
     assert Form.objects.filter(pk=form.pk).exists()
     response = admin_client.post(url, {"csrfmiddlewaretoken": "not-a-confirmation"})
     assert response.status_code == 400
@@ -492,8 +492,8 @@ def test_admin_adds_a_new_privacy_notice_version(admin_client, privacy_notice):
 def test_admin_retries_a_failed_render_with_an_audited_reason(admin_client, accepted):
     Claim.objects.filter(pk=accepted.pk).update(state=Claim.State.FAILED, error_code="timeout")
     Job.objects.all().delete()
-    url = f"/admin/portal/claim/{accepted.pk}/erneut-versuchen/"
-    assert "Erneut verarbeiten" in admin_client.get(url).content.decode()
+    url = f"/admin/portal/claim/{accepted.pk}/retry/"
+    assert "Process again" in admin_client.get(url).content.decode()
     assert admin_client.post(url, {"reason": ""}).status_code == 200
     response = admin_client.post(url, {"reason": "Sandbox repariert"})
     assert response.status_code == 302
@@ -506,9 +506,9 @@ def test_admin_retries_a_failed_render_with_an_audited_reason(admin_client, acce
 def test_admin_resend_requires_duplicate_risk_acknowledgment(admin_client, delivery):
     delivery.state = "delivered"
     delivery.save()
-    url = f"/admin/portal/claim/{delivery.claim_id}/erneut-versuchen/"
+    url = f"/admin/portal/claim/{delivery.claim_id}/retry/"
     response = admin_client.post(url, {"reason": "Das Postfach hat nichts erhalten"})
-    assert response.status_code == 200 and "doppelten Versands" in response.content.decode()
+    assert response.status_code == 200 and "duplicate delivery" in response.content.decode()
     response = admin_client.post(
         url, {"reason": "Das Postfach hat nichts erhalten", "acknowledge_duplicate_risk": "on"}
     )
@@ -534,14 +534,14 @@ def second_claim(form):
 
 
 def test_admin_deletes_a_claim_only_after_confirmation(admin_client, accepted):
-    purge_url = f"/admin/portal/claim/{accepted.pk}/loeschen/"
+    purge_url = f"/admin/portal/claim/{accepted.pk}/purge/"
     page = admin_client.get(f"/admin/portal/claim/{accepted.pk}/change/").content.decode()
     assert purge_url in page
     response = admin_client.get(purge_url)
     page = response.content.decode()
     assert response.status_code == 200
-    assert "Antrag endgültig löschen" in page and "Abbrechen" in page
-    assert "Noch nicht an Finance gesendet" in page and "Alex Beispiel" in page
+    assert "Delete claim for good" in page and "Cancel" in page
+    assert "Not yet sent to Finance" in page and "Alex Beispiel" in page
     assert admin_client.post(purge_url, {"reason": ""}).status_code == 200
     accepted.refresh_from_db()
     assert accepted.state == Claim.State.RECEIVED and accepted.iban
@@ -556,23 +556,23 @@ def test_admin_deletes_a_claim_only_after_confirmation(admin_client, accepted):
         "Testeinreichung",
     )
     page = admin_client.get("/admin/portal/claim/").content.decode()
-    assert str(accepted.pk) not in page and "Gelöscht" not in page
+    assert str(accepted.pk) not in page and "Deleted" not in page
     assert admin_client.get(purge_url).status_code == 404
 
 
 def test_deletion_warns_when_finance_may_already_hold_the_pdf(admin_client, delivery):
     DeliveryAttempt.objects.create(delivery=delivery, state="delivered")
-    page = admin_client.get(f"/admin/portal/claim/{delivery.claim_id}/loeschen/").content.decode()
-    assert "Bereits an Finance gesendet" in page
-    assert "Noch nicht an Finance gesendet" not in page
+    page = admin_client.get(f"/admin/portal/claim/{delivery.claim_id}/purge/").content.decode()
+    assert "Already sent to Finance" in page
+    assert "Not yet sent to Finance" not in page
 
 
 def test_deletion_is_refused_while_the_claim_is_processed(admin_client, accepted):
     Job.objects.filter(kind="render").update(state="running")
     response = admin_client.post(
-        f"/admin/portal/claim/{accepted.pk}/loeschen/", {"reason": "Testeinreichung"}
+        f"/admin/portal/claim/{accepted.pk}/purge/", {"reason": "Testeinreichung"}
     )
-    assert response.status_code == 200 and "gerade verarbeitet" in response.content.decode()
+    assert response.status_code == 200 and "being processed or sent" in response.content.decode()
     accepted.refresh_from_db()
     assert accepted.state == Claim.State.RECEIVED
     assert not Operation.objects.exists()
@@ -586,9 +586,9 @@ def test_an_interrupted_deletion_reports_that_cleanup_finishes_it(
 
     monkeypatch.setattr("portal.services.retention.purge_claim", interrupted)
     response = admin_client.post(
-        f"/admin/portal/claim/{accepted.pk}/loeschen/", {"reason": "Testeinreichung"}, follow=True
+        f"/admin/portal/claim/{accepted.pk}/purge/", {"reason": "Testeinreichung"}, follow=True
     )
-    assert "wird in wenigen Minuten automatisch abgeschlossen" in response.content.decode()
+    assert "finishes automatically within a few minutes" in response.content.decode()
     accepted.refresh_from_db()
     assert accepted.state == Claim.State.PURGING
     assert Operation.objects.get().action == "delete"
@@ -603,7 +603,7 @@ def test_bulk_deletion_confirms_then_deletes_the_selected_claims(admin_client, a
         {"action": "delete_claims", "_selected_action": selected, "index": "0"},
     )
     page = response.content.decode()
-    assert response.status_code == 200 and "2 Anträge endgültig löschen" in page
+    assert response.status_code == 200 and "Delete 2 claims for good" in page
     assert "Alex Beispiel" in page and "Sam Zweitens" in page
     assert Claim.objects.count() == 2
     confirmation = {"action": "delete_claims", "_selected_action": selected, "post": "yes"}
@@ -619,7 +619,7 @@ def test_bulk_deletion_confirms_then_deletes_the_selected_claims(admin_client, a
 def test_editors_cannot_delete_claims(client, editor, accepted):
     accepted.form.owners.add(editor)
     client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
-    purge_url = f"/admin/portal/claim/{accepted.pk}/loeschen/"
+    purge_url = f"/admin/portal/claim/{accepted.pk}/purge/"
     assert (
         purge_url not in client.get(f"/admin/portal/claim/{accepted.pk}/change/").content.decode()
     )
@@ -685,17 +685,17 @@ def test_sidebar_shows_the_admin_section_only_to_template_admins(
     admin_client, client, editor, oidc
 ):
     page = admin_client.get("/admin/portal/claim/").content.decode()
-    assert 'href="/admin/portal/formtemplate/"' in page
-    assert "Willkommen" not in page and "Website anzeigen" not in page
+    assert 'href="/admin/portal/appsettings/"' in page
+    assert "Welcome" not in page and "View site" not in page
     assert "/realms/reimbursements/account/" in page
     client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
     page = client.get("/admin/portal/claim/").content.decode()
     assert 'href="/admin/portal/claim/"' in page
-    assert 'href="/admin/portal/formtemplate/"' not in page
+    assert 'href="/admin/portal/appsettings/"' not in page
 
 
 def suggestions(client, query):
-    response = client.get("/admin/suche/vorschlaege/", {"q": query})
+    response = client.get("/admin/search/suggestions/", {"q": query})
     assert response.status_code == 200
     return {group["label"]: group["items"] for group in response.json()["groups"]}
 
@@ -706,24 +706,27 @@ def test_search_finds_only_what_the_person_may_open(client, editor, accepted, te
     assert suggestions(client, template.name[:6]) == {}
     accepted.form.owners.add(editor)
     groups = suggestions(client, "Alex")
-    assert [item["name"] for item in groups["Anträge"]] == ["Alex Beispiel"]
-    assert groups["Anträge"][0]["url"] == f"/admin/portal/claim/{accepted.pk}/change/"
+    assert [item["name"] for item in groups["Claims"]] == ["Alex Beispiel"]
+    assert groups["Claims"][0]["url"] == f"/admin/portal/claim/{accepted.pk}/change/"
     assert suggestions(client, accepted.reference[:8]) == {}
-    assert "Anträge" in suggestions(client, accepted.reference)
-    assert suggestions(client, "formu")["Navigation"][0]["url"] == "/admin/portal/form/"
+    assert "Claims" in suggestions(client, accepted.reference)
+    assert suggestions(client, "form")["Navigation"][0]["url"] == "/admin/portal/form/"
     assert suggestions(client, "a") == {}
 
 
 def test_template_admins_find_templates_and_settings(admin_client, template):
     groups = suggestions(admin_client, template.name[:6])
-    assert groups["Vorlagen"][0]["url"] == f"/admin/portal/formtemplate/{template.pk}/change/"
-    assert suggestions(admin_client, "datenschutz")["Navigation"][0]["name"] == "Datenschutzhinweis"
+    assert groups["Templates"][0]["url"] == f"/admin/portal/formtemplate/{template.pk}/change/"
+    assert suggestions(admin_client, "privacy")["Navigation"][0]["name"] == "Privacy notice"
+    assert (
+        suggestions(admin_client, "general")["Navigation"][0]["url"] == "/admin/portal/appsettings/"
+    )
 
 
 def test_search_page_lists_all_results(admin_client, accepted):
-    page = admin_client.get("/admin/suche/", {"q": "Beispiel"}).content.decode()
+    page = admin_client.get("/admin/search/", {"q": "Beispiel"}).content.decode()
     assert "Alex Beispiel" in page and f"/admin/portal/claim/{accepted.pk}/change/" in page
-    assert "Keine Treffer" in admin_client.get("/admin/suche/", {"q": "zzz"}).content.decode()
+    assert "No results" in admin_client.get("/admin/search/", {"q": "zzz"}).content.decode()
 
 
 def test_list_search_box_sends_the_query_and_reset_clears_it(admin_client, accepted):
@@ -738,3 +741,8 @@ def test_list_search_box_sends_the_query_and_reset_clears_it(admin_client, accep
 def test_local_admin_sidebar_has_no_identity_provider_account_link(admin_client):
     page = admin_client.get("/admin/portal/claim/").content.decode()
     assert "/account/" not in page
+
+
+def test_failed_sign_ins_land_on_the_no_access_page(client, settings):
+    response = client.get(settings.LOGIN_REDIRECT_URL_FAILURE)
+    assert response.status_code == 403 and "No access" in response.content.decode()

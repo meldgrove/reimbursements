@@ -9,7 +9,7 @@
     {% if cl.model_admin.list_description %}<p class="text-sm text-muted-foreground">{{ cl.model_admin.list_description }}</p>{% endif %}
   </div>
   {% if has_add_permission and not is_popup %}{% url cl.opts|admin_urlname:'add' as add_url %}
-  {% component "button" href=add_url %}{% icon "plus" %}{{ cl.model_admin.add_label|default:"Hinzufügen" }}{% endcomponent %}
+  {% component "button" href=add_url %}{% icon "plus" %}{{ cl.model_admin.add_label|default:"Add" }}{% endcomponent %}
   {% endif %}
 </div>
 {% endblock %}
@@ -19,16 +19,16 @@
 <div class="flex flex-wrap items-center gap-2 border-b p-3" data-changelist-toolbar>
   {% if cl.search_fields %}
   <form id="changelist-search" method="get" role="search" class="relative w-full sm:w-72">
-    <label class="sr-only" for="searchbar">{{ cl.opts.verbose_name_plural|capfirst }} durchsuchen</label>
+    <label class="sr-only" for="searchbar">Search {{ cl.opts.verbose_name_plural }}</label>
     {% icon "search" class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" %}
-    <input id="searchbar" class="ui-input h-8 pl-8" type="search" name="q" value="{{ cl.query }}" placeholder="{{ cl.model_admin.search_placeholder|default:'Suchen …' }}" maxlength="200">
+    <input id="searchbar" class="ui-input h-8 pl-8" type="search" name="q" value="{{ cl.query }}" placeholder="{{ cl.model_admin.search_placeholder|default:'Search …' }}" maxlength="200">
     {% for pair in cl.params.items %}{% if pair.0 != "q" and pair.0 != "p" %}<input type="hidden" name="{{ pair.0 }}" value="{{ pair.1 }}">{% endif %}{% endfor %}
   </form>
   {% endif %}
   {% for spec in cl.filter_specs %}{% admin_list_filter cl spec %}{% endfor %}
   {% if cl.date_hierarchy %}{% date_hierarchy cl %}{% endif %}
   {% if cl.has_active_filters or cl.query %}
-  {% component "button" variant="ghost" size="sm" href="?" %}Zurücksetzen{% icon "x" %}{% endcomponent %}
+  {% component "button" variant="ghost" size="sm" href="?" %}Reset{% icon "x" %}{% endcomponent %}
   {% endif %}
   <span class="ml-auto text-sm text-muted-foreground">{{ cl.result_count }} {% if cl.result_count == 1 %}{{ cl.opts.verbose_name }}{% else %}{{ cl.opts.verbose_name_plural }}{% endif %}</span>
 </div>
@@ -40,10 +40,10 @@
 <div class="flex flex-col items-center gap-2 px-6 py-16 text-center">
   <span class="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">{% icon "search" class="size-5" %}</span>
   {% if cl.has_active_filters or cl.query %}
-  <p class="font-medium">Keine Treffer</p>
-  <p class="text-sm text-muted-foreground">Ändere die Suche oder setze die Filter zurück.</p>
+  <p class="font-medium">No results</p>
+  <p class="text-sm text-muted-foreground">Change the search or reset the filters.</p>
   {% else %}
-  <p class="font-medium">Noch keine {{ cl.opts.verbose_name_plural }}</p>
+  <p class="font-medium">No {{ cl.opts.verbose_name_plural }} yet</p>
   {% if cl.model_admin.empty_description %}<p class="max-w-sm text-sm text-muted-foreground">{{ cl.model_admin.empty_description }}</p>{% endif %}
   {% endif %}
 </div>

@@ -23,7 +23,6 @@ x-application: &application
     DOCUMENT_SANDBOX_ENABLED: "1"
     REQUIRE_WORKER_HEARTBEAT: "1"
     HEALTHCHECK_TOKEN: ${HEALTHCHECK_TOKEN:?Set a random health check token}
-    PORTAL_NAME: ${PORTAL_NAME:-Erstattungsportal}
     PORTAL_OPERATOR: ${PORTAL_OPERATOR:-}
     PORTAL_LEGAL_URL: ${PORTAL_LEGAL_URL:-}
     KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:?Set the identity provider HTTPS URL}

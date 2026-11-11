@@ -11,11 +11,11 @@
   const viewAll = dialog.querySelector("[data-search-all]");
   const initialMessage = status.textContent;
   const platform = navigator.userAgentData?.platform || navigator.platform || "";
-  const shortcut = /Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘K" : "Strg K";
+  const shortcut = /Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘K" : "Ctrl K";
   triggers.forEach((trigger) => {
     const hint = trigger.querySelector("[data-search-shortcut]");
     if (hint) hint.textContent = shortcut;
-    trigger.title = `Suchen (${shortcut} oder /)`;
+    trigger.title = `Search (${shortcut} or /)`;
   });
 
   let timer;
@@ -110,10 +110,10 @@
     results.hidden = options.length === 0;
     input.setAttribute("aria-expanded", String(options.length > 0));
     if (options.length) {
-      setStatus(`${options.length} Treffer. Mit den Pfeiltasten auswählen.`, false);
+      setStatus(`${options.length} ${options.length === 1 ? "result" : "results"}. Use the arrow keys to select.`, false);
       setActiveOption(0);
     } else {
-      setStatus("Keine Treffer.");
+      setStatus("No results.");
     }
   }
 
@@ -132,7 +132,7 @@
       if (pendingRequest === controller && dialog.open) showResults(payload.groups || []);
     } catch (error) {
       if (error.name !== "AbortError" && pendingRequest === controller && dialog.open) {
-        setStatus("Die Vorschläge sind gerade nicht verfügbar. Zeige alle Ergebnisse an.");
+        setStatus("Suggestions are unavailable right now. Show all results instead.");
       }
     } finally {
       if (pendingRequest === controller) pendingRequest = null;
@@ -145,10 +145,10 @@
     const query = input.value.trim();
     viewAll.disabled = query.length < 2;
     if (query.length < 2) {
-      setStatus(query ? "Gib mindestens zwei Zeichen ein." : initialMessage);
+      setStatus(query ? "Enter at least two characters." : initialMessage);
       return;
     }
-    setStatus("Suche …");
+    setStatus("Searching …");
     timer = window.setTimeout(fetchSuggestions, 200);
   });
 

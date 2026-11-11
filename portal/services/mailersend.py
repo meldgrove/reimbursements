@@ -8,6 +8,7 @@ import re
 import httpx
 from django.conf import settings
 
+from portal.constants import APP_NAME
 from portal.services.transport import ACCEPTED, FAILED, PAUSED, PENDING, UNKNOWN, SendResult
 
 
@@ -27,7 +28,7 @@ class MailerSendTransport:
 
     def send(self, message):
         payload = {
-            "from": {"email": message.sender, "name": settings.PORTAL_NAME},
+            "from": {"email": message.sender, "name": APP_NAME},
             "to": [{"email": message.recipient}],
             "reply_to": {"email": message.reply_to},
             "subject": message.subject,

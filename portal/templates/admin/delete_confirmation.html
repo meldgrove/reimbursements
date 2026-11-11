@@ -1,4 +1,4 @@
 {% extends "admin/delete_confirmation.html" %}{% load admin_urls %}
 {% block extrastyle %}{% endblock %}
-{% block breadcrumbs %}{% url opts|admin_urlname:'change' object.pk|admin_urlquote as change_url %}{% include "admin/portal/breadcrumbs.html" with current="Löschen" parent_label=object|truncatechars:40 parent_url=change_url %}{% endblock %}
-{% block content_title %}<h1 class="page-title">„{{ object }}“ löschen?</h1>{% endblock %}
+{% block breadcrumbs %}{% url opts|admin_urlname:'change' object.pk|admin_urlquote as change_url %}{% include "admin/portal/breadcrumbs.html" with current="Delete" parent_label=object|truncatechars:40 parent_url=change_url %}{% endblock %}
+{% block content_title %}<h1 class="page-title">Delete “{{ object }}”?</h1>{% endblock %}

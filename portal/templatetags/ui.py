@@ -39,7 +39,7 @@ def html_attributes(values):
 
 
 def render_component(name, slot, /, **options):
-    """A component outside templates, e.g. `render_component("badge", "Neu", variant="success")`."""
+    """A component outside templates, e.g. `render_component("badge", "New", variant="success")`."""
     if name not in COMPONENTS:
         raise template.TemplateSyntaxError(f"Unknown component {name!r}.")
     variables = {key: options.pop(key, default) for key, default in COMPONENTS[name].items()}
@@ -92,6 +92,7 @@ ICONS = {
     "corner-down-left": '<path d="M25 5V20H6L12 14M6 20L12 26"/>',
     "external-link": '<path d="M18 5H27V14M27 5L14 18M13 6H5V27H26V19"/>',
     "eye": '<path d="M3 16Q16-2 29 16Q16 34 3 16Z"/><circle cx="16" cy="16" r="4"/>',
+    "globe": '<circle cx="16" cy="16" r="13"/><path d="M3 16H29M16 3Q8 16 16 29Q24 16 16 3"/>',
     "file-text": '<path d="M7 3H20L26 9V29H7ZM20 3V10H26M11 16H22M11 22H22"/>',
     "history": '<path d="M6 10A12 12 0 1 1 4 20M6 3V10H13M16 8V16L22 20"/>',
     "layout-template": '<rect x="4" y="4" width="24" height="24" rx="2"/><path d="M4 12H28M18 12V28"/>',

@@ -44,7 +44,8 @@ values. Set the public hostname in `ALLOWED_HOSTS`, the HTTPS origin in
 `CSRF_TRUSTED_ORIGINS`, and the actual proxy network ranges in
 `TRUSTED_PROXY_CIDRS`. Include `127.0.0.1` in allowed hosts for container probes.
 
-Set `PORTAL_NAME`, `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. Set `MAIL_FROM_ADDRESS`
+Set `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app language, timezone, date format
+and favicon are set after the first sign-in under Admin > General. Set `MAIL_FROM_ADDRESS`
 to an address in a verified MailerSend domain, and `MAIL_REPLY_TO_ADDRESS` to a
 monitored inbox. `APPROVED_DELIVERY_RECIPIENTS` lists every inbox a form may send to.
 For staging, also set a nonempty `TEST_RECIPIENT_ALLOWLIST`; it restricts accounting

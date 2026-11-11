@@ -1,70 +1,74 @@
 {% extends 'portal/base.html' %}{% load static portal_text ui %}
 {% block content %}
-{% if development %}{% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_description" %}Testumgebung · Bitte nur Beispieldaten verwenden. Es werden keine echten E-Mails versendet.{% endcomponent %}{% endcomponent %}{% endif %}
-{% if preview %}{% component "alert" variant="info" %}{% icon "eye" %}{% component "alert_description" %}Vorschau · Dieses Formular ist nicht geöffnet. Hochladen und Einreichen sind nicht möglich.{% endcomponent %}{% endcomponent %}{% endif %}
+{% if development %}{% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_description" %}{% t "Test environment · Please use sample data only. No real emails are sent." %}{% endcomponent %}{% endcomponent %}{% endif %}
+{% if preview %}{% component "alert" variant="info" %}{% icon "eye" %}{% component "alert_description" %}{% t "Preview · This form is not open. Uploading and submitting are not possible." %}{% endcomponent %}{% endcomponent %}{% endif %}
 
 <div class="flex flex-col items-start gap-3">
   {% component "badge" variant="outline" %}{{ form.name }}{% endcomponent %}
   <h1 class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{{ form.display_title }}</h1>
   <p class="text-muted-foreground sm:text-lg">{{ form.display_description|linebreaksbr }}</p>
-  {% if form.closes_at %}<p class="inline-flex items-center gap-2 text-sm font-medium">{% icon "calendar" class="size-4 text-muted-foreground" %}Einreichen bis {{ form.closes_at|date:"d.m.Y, H:i T" }}</p>{% endif %}
+  {% if form.closes_at %}<p class="inline-flex items-center gap-2 text-sm font-medium">{% icon "calendar" class="size-4 text-muted-foreground" %}{% t "Submit by {date} {zone}" date=form.closes_at|date:"DATETIME_FORMAT" zone=form.closes_at|date:"T" %}</p>{% endif %}
 </div>
 
-{% component "alert" variant="info" %}{% icon "info" %}{% component "alert_title" %}Nur für Privatpersonen.{% endcomponent %}{% component "alert_description" %}Dieses Formular ist für Auslagen, die du selbst bezahlt hast. Organisationen und Unternehmen stellen uns bitte eine Rechnung.{% endcomponent %}{% endcomponent %}
+{% component "alert" variant="info" %}{% icon "info" %}{% component "alert_title" %}{% t "For private individuals only." %}{% endcomponent %}{% component "alert_description" %}{% t "This form is for expenses you paid yourself. Organisations and companies, please send us an invoice." %}{% endcomponent %}{% endcomponent %}
 
-<ol class="steps flex items-center gap-2 sm:gap-3" aria-label="Fortschritt">
-  <li class="active" id="step-details" aria-current="step"><span>1</span> Angaben &amp; Belege</li>
-  <li id="step-review"><span>2</span> Prüfen &amp; unterschreiben</li>
-  <li><span>3</span> Eingereicht</li>
+<ol class="steps flex items-center gap-2 sm:gap-3" aria-label="{% t "Progress" %}">
+  <li class="active" id="step-details" aria-current="step"><span>1</span> {% t "Details & receipts" %}</li>
+  <li id="step-review"><span>2</span> {% t "Review & sign" %}</li>
+  <li><span>3</span> {% t "Submitted" %}</li>
 </ol>
 
 {% if template.intro or form.instructions %}
 <aside class="flex flex-col gap-2 rounded-xl border bg-card p-5 text-sm leading-relaxed shadow-sm">{% if template.intro %}<p>{{ template.intro|linebreaksbr }}</p>{% endif %}{% if form.instructions %}<p>{{ form.instructions|linebreaksbr }}</p>{% endif %}</aside>
 {% endif %}
-<noscript>{% component "alert" variant="destructive" %}{% icon "circle-alert" %}{% component "alert_description" %}Bitte aktiviere JavaScript, um Belege hochzuladen und das Formular einzureichen.{% endcomponent %}{% endcomponent %}</noscript>
+<noscript>{% component "alert" variant="destructive" %}{% icon "circle-alert" %}{% component "alert_description" %}{% t "Please enable JavaScript to upload receipts and submit the form." %}{% endcomponent %}{% endcomponent %}</noscript>
 <div id="form-error" class="rounded-lg border border-error-border bg-error-background px-4 py-3 text-sm font-medium text-destructive outline-none" role="alert" tabindex="-1" hidden></div>
 
 <form id="claim-form" class="flex flex-col gap-6" novalidate>{% csrf_token %}<div class="honeypot" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
 <div id="details-panel" class="flex flex-col gap-6">
   <section class="panel rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-details">
-    {% include "portal/section_heading.html" with number="01" id="section-details" title="Deine Angaben" text="Für die Zuordnung und Überweisung deiner Erstattung." %}
+    {% t "Your details" as title %}{% t "For assigning and transferring your reimbursement." as text %}
+    {% include "portal/section_heading.html" with number="01" id="section-details" title=title text=text %}
     <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
       {% include 'portal/field.html' with field=claim_form.full_name %}
-      {% include 'portal/field.html' with field=claim_form.email hint='Für die Eingangsbestätigung und Rückfragen zu deinem Antrag.' %}
+      {% t "For the confirmation of receipt and questions about your claim." as hint %}{% include 'portal/field.html' with field=claim_form.email hint=hint %}
       {% include 'portal/field.html' with field=claim_form.street wide=True %}
       <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4">{% include 'portal/field.html' with field=claim_form.postal_code %}{% include 'portal/field.html' with field=claim_form.city %}</div>
       {% include 'portal/field.html' with field=claim_form.country %}
-      {% include 'portal/field.html' with field=claim_form.account_holder hint='Name, auf den das Konto läuft.' %}
-      {% include 'portal/field.html' with field=claim_form.iban hint='Auch ausländische IBANs sind möglich.' %}
-      {% include 'portal/field.html' with field=claim_form.bic hint='Nur nötig für Konten außerhalb des SEPA-Raums.' %}
+      {% t "The name the account is held in." as hint %}{% include 'portal/field.html' with field=claim_form.account_holder hint=hint %}
+      {% t "IBANs from other countries are possible too." as hint %}{% include 'portal/field.html' with field=claim_form.iban hint=hint %}
+      {% t "Only needed for accounts outside the SEPA area." as hint %}{% include 'portal/field.html' with field=claim_form.bic hint=hint %}
     </div>
   </section>
 
   <section class="panel rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-purpose">
-    {% include "portal/section_heading.html" with number="02" id="section-purpose" title="Anlass der Erstattung" text="Wofür sind die Auslagen entstanden?" %}
+    {% t "Reason for the reimbursement" as title %}{% t "What were the expenses for?" as text %}
+    {% include "portal/section_heading.html" with number="02" id="section-purpose" title=title text=text %}
     <div class="flex flex-col gap-5 p-5 sm:p-6">
+      {% t "Optional: describe the connection in more detail if needed." as details_hint %}
       {% if configuration.fixed_purpose %}
       <div class="field"><span class="text-sm font-medium">{{ claim_form.purpose.label }}</span><p class="rounded-lg bg-muted/50 p-4">{{ configuration.fixed_purpose }}</p>{{ claim_form.purpose }}<p class="field-error" id="error-purpose"></p></div>
-      {% include 'portal/field.html' with field=claim_form.purpose_details hint='Optional: Beschreibe, falls nötig, den Zusammenhang genauer.' %}
+      {% include 'portal/field.html' with field=claim_form.purpose_details hint=details_hint %}
       {% elif configuration.purpose_options %}
       <fieldset class="field choice-list"><legend class="mb-3">{{ claim_form.purpose.label }} <span class="required-mark" aria-hidden="true">*</span></legend>{% for radio in claim_form.purpose %}<label class="check-label" for="{{ radio.id_for_label }}">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}<p class="field-error" id="error-purpose"></p></fieldset>
-      {% include 'portal/field.html' with field=claim_form.purpose_details hint='Optional: Beschreibe, falls nötig, den Zusammenhang genauer.' %}
+      {% include 'portal/field.html' with field=claim_form.purpose_details hint=details_hint %}
       {% else %}{% include 'portal/field.html' with field=claim_form.purpose %}{% endif %}
     </div>
   </section>
 
   <section class="panel rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-expenses">
-    {% include "portal/section_heading.html" with number="03" id="section-expenses" title="Auslagen & Belege" text="Lege eine oder mehrere Positionen an. Alle Beträge in Euro." %}
+    {% t "Expenses & receipts" as title %}{% t "Add one or more items. All amounts in euros." as text %}
+    {% include "portal/section_heading.html" with number="03" id="section-expenses" title=title text=text %}
     <div class="flex flex-col gap-4 p-5 sm:p-6">
       <p class="flex items-start gap-2 text-sm text-muted-foreground">{% icon "paperclip" class="mt-0.5 size-4 shrink-0" %}<span>{{ intake_messages.upload_hint }}</span></p>
-      <p id="expenses-empty" class="text-sm text-muted-foreground">Lege eine Auslage mit Beleg oder eine Kilometererstattung an.</p>
+      <p id="expenses-empty" class="text-sm text-muted-foreground">{% t "Add an expense with a receipt or a mileage claim." %}</p>
       <div id="expenses" class="flex flex-col gap-4"></div>
       <div class="flex flex-wrap gap-2">
-        {% component "button" variant="outline" type="button" id="add-expense" %}{% icon "plus" %}Auslage mit Beleg{% endcomponent %}
-        {% if configuration.mileage_rate %}{% component "button" variant="outline" type="button" id="add-mileage" %}{% icon "plus" %}Kilometererstattung{% endcomponent %}{% endif %}
+        {% component "button" variant="outline" type="button" id="add-expense" %}{% icon "plus" %}{% t "Expense with receipt" %}{% endcomponent %}
+        {% if configuration.mileage_rate %}{% component "button" variant="outline" type="button" id="add-mileage" %}{% icon "plus" %}{% t "Mileage claim" %}{% endcomponent %}{% endif %}
       </div>
       {% if template.travel != 'off' %}
-      {% if template.travel == 'optional' %}<details id="receipt-travel" class="rounded-lg border p-4" hidden><summary class="text-sm font-medium">Reiseangaben für Auslagen mit Beleg ergänzen (optional)</summary>{% else %}<div id="receipt-travel" class="rounded-lg border p-4" hidden><p class="text-sm font-medium">Reiseangaben für Auslagen mit Beleg</p>{% endif %}
+      {% if template.travel == 'optional' %}<details id="receipt-travel" class="rounded-lg border p-4" hidden><summary class="text-sm font-medium">{% t "Add travel details for expenses with receipts (optional)" %}</summary>{% else %}<div id="receipt-travel" class="rounded-lg border p-4" hidden><p class="text-sm font-medium">{% t "Travel details for expenses with receipts" %}</p>{% endif %}
         <div class="grid gap-5 pt-4 sm:grid-cols-2" id="trip-fields">
           {% include 'portal/field.html' with field=claim_form.trip_destination required=True wide=True %}
           {% include 'portal/field.html' with field=claim_form.trip_start required=True %}
@@ -78,71 +82,72 @@
   </section>
 
   <div class="flex flex-col-reverse items-start justify-between gap-4 sm:flex-row sm:items-center">
-    <p class="text-sm text-muted-foreground"><span aria-hidden="true">*</span> Pflichtfelder<br>Deine Angaben bleiben bis zum Absenden nur in diesem geöffneten Formular.</p>
-    {% component "button" size="lg" type="button" id="review-button" class="w-full px-6 sm:w-auto" %}Angaben prüfen <span aria-hidden="true">→</span>{% endcomponent %}
+    <p class="text-sm text-muted-foreground">{% t_html '<span aria-hidden="true">*</span> Required fields<br>Until you submit, your details stay only in this open form.' %}</p>
+    {% component "button" size="lg" type="button" id="review-button" class="w-full px-6 sm:w-auto" %}{% t_html 'Review details <span aria-hidden="true">→</span>' %}{% endcomponent %}
   </div>
 </div>
 
 <div id="review-panel" class="flex flex-col gap-6" hidden>
   <section class="panel rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-review">
-    <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">04</span><div class="grid gap-1"><h2 id="section-review" class="text-lg font-semibold outline-none" tabindex="-1">Prüfe deine Angaben</h2><p class="text-sm text-muted-foreground">Nach dem Einreichen kannst du den Antrag nicht mehr bearbeiten.</p></div></div>
+    <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">04</span><div class="grid gap-1"><h2 id="section-review" class="text-lg font-semibold outline-none" tabindex="-1">{% t "Check your details" %}</h2><p class="text-sm text-muted-foreground">{% t "Once submitted, you can no longer change the claim." %}</p></div></div>
     <div class="flex flex-col gap-4 p-5 sm:p-6">
       <div id="review-content"></div>
-      {% component "button" variant="outline" type="button" id="edit-button" class="w-fit" %}{% icon "arrow-left" %}Angaben bearbeiten{% endcomponent %}
+      {% component "button" variant="outline" type="button" id="edit-button" class="w-fit" %}{% icon "arrow-left" %}{% t "Edit details" %}{% endcomponent %}
     </div>
   </section>
 
   <section class="panel rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-declaration">
-    <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{% icon "pen-line" %}</span><h2 id="section-declaration" class="pt-1.5 text-lg font-semibold">Erklärung &amp; Unterschrift</h2></div>
+    <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{% icon "pen-line" %}</span><h2 id="section-declaration" class="pt-1.5 text-lg font-semibold">{% t "Declaration & signature" %}</h2></div>
     <div class="flex flex-col gap-5 p-5 sm:p-6">
       <p class="declaration-text rounded-lg bg-muted/60 p-4 text-sm leading-relaxed">{{ template.declaration }}</p>
-      <label class="check-label font-medium"><input type="checkbox" name="declaration" id="declaration" required><span>Ich bestätige die Erklärung. *</span></label>
+      <label class="check-label font-medium"><input type="checkbox" name="declaration" id="declaration" required><span>{% t "I confirm the declaration. *" %}</span></label>
       <div class="signature-section flex flex-col gap-2">
-        <label class="text-sm font-medium" for="signature-canvas">Hier unterschreiben</label>
-        <canvas id="signature-canvas" width="800" height="240" aria-label="Zeichenfläche für deine Unterschrift"></canvas>
+        <label class="text-sm font-medium" for="signature-canvas">{% t "Sign here" %}</label>
+        <canvas id="signature-canvas" width="800" height="240" aria-label="{% t "Drawing area for your signature" %}"></canvas>
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" id="clear-signature" class="text-button">Unterschrift löschen</button>
-          <label class="signature-file">Oder als Bild hochladen<input type="file" id="signature-file" accept="image/png,image/jpeg"></label>
+          <button type="button" id="clear-signature" class="text-button">{% t "Clear signature" %}</button>
+          <label class="signature-file">{% t "Or upload it as an image" %}<input type="file" id="signature-file" accept="image/png,image/jpeg"></label>
         </div>
-        <button type="button" id="retry-signature" class="text-button w-fit" hidden>Status erneut prüfen</button>
+        <button type="button" id="retry-signature" class="text-button w-fit" hidden>{% t "Check status again" %}</button>
         <p id="signature-status" class="text-sm text-muted-foreground" aria-live="polite">{{ intake_messages.signature_hint }}</p>
       </div>
     </div>
   </section>
 
   <section class="panel privacy rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-privacy">
-    <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{% icon "shield-check" %}</span><h2 id="section-privacy" class="pt-1.5 text-lg font-semibold">Datenschutz</h2></div>
+    <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{% icon "shield-check" %}</span><h2 id="section-privacy" class="pt-1.5 text-lg font-semibold">{% t "Privacy" %}</h2></div>
     <div class="flex flex-col gap-4 p-5 text-sm leading-relaxed sm:p-6">
-      <p>Wir verarbeiten deine Angaben, Belege und deine Unterschrift, um deine Auslagen zu erstatten. Die PDF löschen wir 7 Tage nach der Zustellung an die Buchhaltung, alle übrigen Daten im Portal 90 Tage nach dem Einreichen.</p>
+      <p>{% t "We process your details, receipts and signature to reimburse your expenses. We delete the PDF 7 days after it reaches accounting, and all other data in the portal 90 days after submission." %}</p>
       <details class="group rounded-lg border">
-        <summary class="flex items-center justify-between gap-2 px-4 py-3 font-medium hover:bg-accent/50">Vollständigen Datenschutzhinweis lesen{% icon "chevron-down" class="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" %}</summary>
+        <summary class="flex items-center justify-between gap-2 px-4 py-3 font-medium hover:bg-accent/50">{% t "Read the full privacy notice" %}{% icon "chevron-down" class="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" %}</summary>
         <div class="privacy-text max-h-96 overflow-y-auto border-t px-4 py-4">{{ privacy_notice.text|paragraphs }}</div>
       </details>
-      <label class="check-label font-medium"><input type="checkbox" name="privacy_acknowledged" id="privacy_acknowledged" required><span>Ich habe den <a class="ui-link" href="{% url 'privacy' %}" target="_blank" rel="noopener">Datenschutzhinweis</a> gelesen. *</span></label>
+      {% url 'privacy' as privacy_url %}
+      <label class="check-label font-medium"><input type="checkbox" name="privacy_acknowledged" id="privacy_acknowledged" required><span>{% t_html 'I have read the <a class="ui-link" href="{url}" target="_blank" rel="noopener">privacy notice</a>. *' url=privacy_url %}</span></label>
     </div>
   </section>
 
   <div class="flex flex-col-reverse items-start justify-between gap-4 sm:flex-row sm:items-center">
-    <p class="text-sm text-muted-foreground">Mit dem Absenden wird dein Antrag verbindlich eingereicht. Die Prüfung und Auszahlung übernimmt die Buchhaltung.</p>
-    {% component "button" size="lg" type="submit" id="submit-button" class="w-full px-6 sm:w-auto" disabled=preview %}Antrag einreichen <span aria-hidden="true">→</span>{% endcomponent %}
+    <p class="text-sm text-muted-foreground">{% t "Submitting makes your claim binding. Accounting reviews it and makes the payment." %}</p>
+    {% component "button" size="lg" type="submit" id="submit-button" class="w-full px-6 sm:w-auto" disabled=preview %}{% t_html 'Submit claim <span aria-hidden="true">→</span>' %}{% endcomponent %}
   </div>
 </div>
 </form>
 
-<template id="expense-template"><article class="expense-card" data-kind="receipt"><div class="expense-top"><h3><span class="row-number"></span> Auslage mit Beleg</h3><div class="row-actions"><button type="button" data-action="up" aria-label="Position nach oben verschieben">↑</button><button type="button" data-action="down" aria-label="Position nach unten verschieben">↓</button><button type="button" data-action="remove" class="remove-row">Entfernen</button></div></div><div class="grid gap-4 sm:grid-cols-2"><div class="field"><label>Name Geschäftspartner *<input data-field="merchant" maxlength="{{ field_lengths.merchant }}" required placeholder="z. B. Fahrkartenverkauf"></label></div><div class="field"><label>Referenz/Rechnungsnr.<input data-field="receipt_reference" maxlength="{{ field_lengths.receipt_reference }}" placeholder="falls vorhanden"></label></div><div class="field"><label>Betrag in EUR *<input data-field="amount" inputmode="decimal" required placeholder="0,00" pattern="{{ amount_pattern }}"></label></div></div><div class="receipt-zone"><label class="upload-button">{% icon "upload" %}Beleg hinzufügen<input type="file" class="receipt-input" accept="application/pdf,image/jpeg,image/png" multiple></label><small>{{ intake_messages.receipt_hint }}</small><ul class="file-list" aria-live="polite"></ul></div></article></template>
+<template id="expense-template"><article class="expense-card" data-kind="receipt"><div class="expense-top"><h3><span class="row-number"></span> {% t "Expense with receipt" %}</h3><div class="row-actions"><button type="button" data-action="up" aria-label="{% t "Move item up" %}">↑</button><button type="button" data-action="down" aria-label="{% t "Move item down" %}">↓</button><button type="button" data-action="remove" class="remove-row">{% t "Remove" %}</button></div></div><div class="grid gap-4 sm:grid-cols-2"><div class="field"><label>{% t "Business partner *" %}<input data-field="merchant" maxlength="{{ field_lengths.merchant }}" required placeholder="{% t "e.g. ticket office" %}"></label></div><div class="field"><label>{% t "Reference/invoice no." %}<input data-field="receipt_reference" maxlength="{{ field_lengths.receipt_reference }}" placeholder="{% t "if available" %}"></label></div><div class="field"><label>{% t "Amount in EUR *" %}<input data-field="amount" inputmode="decimal" required placeholder="{% t "0.00" %}" pattern="{{ amount_pattern }}"></label></div></div><div class="receipt-zone"><label class="upload-button">{% icon "upload" %}{% t "Add receipt" %}<input type="file" class="receipt-input" accept="application/pdf,image/jpeg,image/png" multiple></label><small>{{ intake_messages.receipt_hint }}</small><ul class="file-list" aria-live="polite"></ul></div></article></template>
 <template id="mileage-template">
   <article class="expense-card" data-kind="mileage">
-    <div class="expense-top"><h3><span class="row-number"></span> Kilometererstattung</h3><div class="row-actions"><button type="button" data-action="up" aria-label="Position nach oben verschieben">↑</button><button type="button" data-action="down" aria-label="Position nach unten verschieben">↓</button><button type="button" data-action="remove" class="remove-row">Entfernen</button></div></div>
+    <div class="expense-top"><h3><span class="row-number"></span> {% t "Mileage claim" %}</h3><div class="row-actions"><button type="button" data-action="up" aria-label="{% t "Move item up" %}">↑</button><button type="button" data-action="down" aria-label="{% t "Move item down" %}">↓</button><button type="button" data-action="remove" class="remove-row">{% t "Remove" %}</button></div></div>
     <div class="grid gap-4 sm:grid-cols-2">
-      <div class="field"><label>Datum der Hinfahrt *<input data-field="travel_date" type="date" required></label></div>
-      <div class="field"><label>Kennzeichen *<input data-field="vehicle_registration" maxlength="{{ field_lengths.vehicle_registration }}" required placeholder="z. B. B-AB 123"></label></div>
-      <div class="field"><label>Start *<input data-field="route_from" maxlength="{{ field_lengths.route_from }}" required placeholder="Ort"></label></div>
-      <div class="field"><label>Ziel *<input data-field="route_to" maxlength="{{ field_lengths.route_to }}" required placeholder="Ort"></label></div>
-      <div class="field"><label>Entfernung (einfache Strecke, km) *<input data-field="distance_km" type="number" inputmode="numeric" min="1" max="{{ max_distance_km }}" step="1" required></label></div>
-      <div class="field justify-end"><label class="check-label inline-check"><input data-field="round_trip" type="checkbox"><span>Hin- und Rückfahrt</span></label><p class="mileage-amount muted" aria-live="polite"></p></div>
-      <div class="field return-date" hidden><label>Rückfahrtdatum *<input data-field="return_date" type="date" disabled></label></div>
+      <div class="field"><label>{% t "Date of the outward journey *" %}<input data-field="travel_date" type="date" required></label></div>
+      <div class="field"><label>{% t "Registration *" %}<input data-field="vehicle_registration" maxlength="{{ field_lengths.vehicle_registration }}" required placeholder="{% t "e.g. B-AB 123" %}"></label></div>
+      <div class="field"><label>{% t "From *" %}<input data-field="route_from" maxlength="{{ field_lengths.route_from }}" required placeholder="{% t "Place" %}"></label></div>
+      <div class="field"><label>{% t "To *" %}<input data-field="route_to" maxlength="{{ field_lengths.route_to }}" required placeholder="{% t "Place" %}"></label></div>
+      <div class="field"><label>{% t "Distance (one way, km) *" %}<input data-field="distance_km" type="number" inputmode="numeric" min="1" max="{{ max_distance_km }}" step="1" required></label></div>
+      <div class="field justify-end"><label class="check-label inline-check"><input data-field="round_trip" type="checkbox"><span>{% t "Return journey" %}</span></label><p class="mileage-amount muted" aria-live="polite"></p></div>
+      <div class="field return-date" hidden><label>{% t "Date of the return journey *" %}<input data-field="return_date" type="date" disabled></label></div>
     </div>
-    <div class="receipt-zone"><label class="upload-button">{% icon "upload" %}Nachweis hinzufügen (optional)<input type="file" class="receipt-input" accept="application/pdf,image/jpeg,image/png" multiple></label><small>Zum Beispiel ein Screenshot der Route.</small><ul class="file-list" aria-live="polite"></ul></div>
+    <div class="receipt-zone"><label class="upload-button">{% icon "upload" %}{% t "Add supporting file (optional)" %}<input type="file" class="receipt-input" accept="application/pdf,image/jpeg,image/png" multiple></label><small>{% t "For example, a screenshot of the route." %}</small><ul class="file-list" aria-live="polite"></ul></div>
   </article>
 </template>
 {{ configuration|json_script:'portal-configuration' }}

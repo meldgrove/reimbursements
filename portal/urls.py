@@ -5,6 +5,7 @@ from portal import views
 urlpatterns = [
     path("", views.index, name="index"),
     path("datenschutz/", views.privacy, name="privacy"),
+    path("favicon/<slug:digest>/", views.favicon, name="favicon"),
     path("f/<slug:form_slug>/", views.form_page, name="form_page"),
     path("f/<slug:form_slug>/uploads/", views.upload, name="upload"),
     path(

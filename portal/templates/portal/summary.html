@@ -1,7 +1,7 @@
-<!doctype html>
-<html lang="de">
+{% load portal_text %}<!doctype html>
+<html lang="{{ page_language }}">
 <head><meta charset="utf-8"><style>
-@page { size: A4; margin: 15mm 15mm 18mm; @bottom-left { content: "Erstattungsportal · {{ claim.reference }}"; font-family: "DejaVu Sans", sans-serif; font-size: 7pt; color: #666; } @bottom-right { content: counter(page) " / " counter(pages); font-family: "DejaVu Sans", sans-serif; font-size: 8pt; } }
+@page { size: A4; margin: 15mm 15mm 18mm; @bottom-left { content: "{{ app_name }} · {{ claim.reference }}"; font-family: "DejaVu Sans", sans-serif; font-size: 7pt; color: #666; } @bottom-right { content: counter(page) " / " counter(pages); font-family: "DejaVu Sans", sans-serif; font-size: 8pt; } }
 * { box-sizing: border-box; }
 body { font-family: "DejaVu Sans", sans-serif; font-size: 9pt; color: #172033; line-height: 1.4; }
 h1 { color: #134e4a; font-size: 18pt; margin: 0; } h2 { color: #134e4a; font-size: 11pt; margin: 4mm 0 1.5mm; }
@@ -19,37 +19,37 @@ table.details th { overflow-wrap: break-word; } .box table.details th { width: 4
 .signature { max-width: 60mm; max-height: 16mm; } .declaration p { margin: 1.5mm 0; } .declaration { break-inside: avoid; } .multiline { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style></head>
 <body>
-<div class="eyebrow">Erstattung privat verauslagter Kosten</div>
-<h1>Erstattungsformular</h1>
-<p class="meta">Referenz {{ claim.reference }}<br>Eingereicht am {{ claim.submitted_at|date:"d.m.Y H:i T" }} · Formularversion {% firstof claim.snapshot.revision claim.snapshot.config_version %}</p>
+<div class="eyebrow">{% t "Reimbursement of privately paid costs" %}</div>
+<h1>{% t "Reimbursement form" %}</h1>
+<p class="meta">{% t "Reference {reference}" reference=claim.reference %}<br>{% firstof claim.snapshot.revision claim.snapshot.config_version as version %}{% t "Submitted on {date} {zone} · Form version {version}" date=claim.submitted_at|date:"SHORT_DATETIME_FORMAT" zone=claim.submitted_at|date:"T" version=version %}</p>
 <table class="columns"><tr><td style="width: 58%">
-<h2>Angaben zur Person</h2>
+<h2>{% t "Personal details" %}</h2>
 <table class="details">
-<tr><th>Name</th><td>{{ claim.full_name }}</td></tr>
-<tr><th>Anschrift</th><td class="multiline">{{ claim.postal_address }}</td></tr>
-<tr><th>E-Mail</th><td>{{ claim.email }}</td></tr>
-<tr><th>Kontoinhaber:in</th><td>{{ claim.account_holder }}</td></tr>
-<tr><th>IBAN</th><td>{{ claim.iban }}</td></tr>
-{% if claim.bic %}<tr><th>BIC</th><td>{{ claim.bic }}</td></tr>{% endif %}
+<tr><th>{% t "Name" %}</th><td>{{ claim.full_name }}</td></tr>
+<tr><th>{% t "Address" %}</th><td class="multiline">{{ claim.postal_address }}</td></tr>
+<tr><th>{% t "Email" %}</th><td>{{ claim.email }}</td></tr>
+<tr><th>{% t "Account holder" %}</th><td>{{ claim.account_holder }}</td></tr>
+<tr><th>{% t "IBAN" %}</th><td>{{ claim.iban }}</td></tr>
+{% if claim.bic %}<tr><th>{% t "BIC" %}</th><td>{{ claim.bic }}</td></tr>{% endif %}
 </table></td><td>
-<h2>Zuordnung</h2>
+<h2>{% t "Assignment" %}</h2>
 <div class="box"><table class="details">
-<tr><th>Formular</th><td>{{ claim.snapshot.name }}</td></tr>
-<tr><th>Vorlage</th><td>{{ claim.snapshot.template }}</td></tr>
+<tr><th>{% t "Form" %}</th><td>{{ claim.snapshot.name }}</td></tr>
+<tr><th>{% t "Template" %}</th><td>{{ claim.snapshot.template }}</td></tr>
 {% for label, value in claim.snapshot.internal_values %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}
 </table></div></td></tr></table>
-<h2>Anlass/Bezug zum Projekt oder der Veranstaltung</h2>
+<h2>{% t "Occasion/connection to the project or event" %}</h2>
 <table class="details">
-<tr><th>Anlass/Projektbezug</th><td class="multiline">{{ claim.purpose }}</td></tr>
-{% if claim.purpose_details %}<tr><th>Ergänzung</th><td class="multiline">{{ claim.purpose_details }}</td></tr>{% endif %}
-{% if claim.trip_start %}<tr><th>Zielort</th><td>{{ claim.trip_destination }}</td></tr>
-<tr><th>Reisezeitraum</th><td>{{ claim.trip_start|date:"d.m.Y" }} bis {{ claim.trip_end|date:"d.m.Y" }}</td></tr>{% endif %}
+<tr><th>{% t "Occasion/project" %}</th><td class="multiline">{{ claim.purpose }}</td></tr>
+{% if claim.purpose_details %}<tr><th>{% t "Additional details" %}</th><td class="multiline">{{ claim.purpose_details }}</td></tr>{% endif %}
+{% if claim.trip_start %}<tr><th>{% t "Destination" %}</th><td>{{ claim.trip_destination }}</td></tr>
+<tr><th>{% t "Travel period" %}</th><td>{% t "{start} to {end}" start=claim.trip_start|date:"DATE_FORMAT" end=claim.trip_end|date:"DATE_FORMAT" %}</td></tr>{% endif %}
 </table>
-<h2>Auslagenpositionen</h2>
-<table><colgroup><col style="width: 6%"><col style="width: 24%"><col style="width: 33%"><col style="width: 19%"><col style="width: 18%"></colgroup><thead><tr><th>Nr.</th><th>Geschäftspartner / Fahrt</th><th>Anlass/Zweck</th><th>Referenz</th><th class="amount">Betrag</th></tr></thead><tbody>
-{% for expense in expenses %}<tr><td>{{ forloop.counter }}</td>{% if expense.kind == "mileage" %}<td>Kilometerpauschale<br>{{ expense.travel_date|date:"d.m.Y" }}: {{ expense.route_from }} – {{ expense.route_to }}{% if expense.round_trip %}<br>Rückfahrt{% if expense.return_date %} am {{ expense.return_date|date:"d.m.Y" }}{% endif %}{% endif %}{% if expense.vehicle_registration %}<br>Kennzeichen: {{ expense.vehicle_registration }}{% endif %}</td><td>{{ expense.purpose }}<br>{{ expense.billed_km }} km × {{ expense.mileage_rate|floatformat:2 }} EUR</td><td>—</td>{% else %}<td>{{ expense.merchant }}</td><td>{{ expense.purpose }}</td><td>{{ expense.receipt_reference|default:"—" }}</td>{% endif %}<td class="amount">{{ expense.amount|floatformat:2 }} EUR</td></tr>{% endfor %}
-<tr class="total"><td></td><td colspan="3">Summe</td><td class="amount">{{ claim.total|floatformat:2 }} EUR</td></tr>
+<h2>{% t "Expense items" %}</h2>
+<table><colgroup><col style="width: 6%"><col style="width: 24%"><col style="width: 33%"><col style="width: 19%"><col style="width: 18%"></colgroup><thead><tr><th>{% t "No." %}</th><th>{% t "Business partner / journey" %}</th><th>{% t "Occasion/purpose" %}</th><th>{% t "Reference" %}</th><th class="amount">{% t "Amount" %}</th></tr></thead><tbody>
+{% for expense in expenses %}<tr><td>{{ forloop.counter }}</td>{% if expense.kind == "mileage" %}<td>{% t "Mileage allowance" %}<br>{{ expense.travel_date|date:"DATE_FORMAT" }}: {{ expense.route_from }} – {{ expense.route_to }}{% if expense.round_trip %}<br>{% if expense.return_date %}{% t "Return on {date}" date=expense.return_date|date:"DATE_FORMAT" %}{% else %}{% t "Return" %}{% endif %}{% endif %}{% if expense.vehicle_registration %}<br>{% t "Registration: {plate}" plate=expense.vehicle_registration %}{% endif %}</td><td>{{ expense.purpose }}<br>{{ expense.billed_km }} km × {{ expense.mileage_rate|floatformat:2 }} EUR</td><td>—</td>{% else %}<td>{{ expense.merchant }}</td><td>{{ expense.purpose }}</td><td>{{ expense.receipt_reference|default:"—" }}</td>{% endif %}<td class="amount">{{ expense.amount|floatformat:2 }} EUR</td></tr>{% endfor %}
+<tr class="total"><td></td><td colspan="3">{% t "Total" %}</td><td class="amount">{{ claim.total|floatformat:2 }} EUR</td></tr>
 </tbody></table>
-<p class="meta">Die Belege folgen in Positionsreihenfolge und innerhalb jeder Position in der gewählten Dateireihenfolge. PDF-Lesezeichen ordnen die Seiten den Positionen zu.</p>
-<div class="declaration"><h2>Erklärung und Unterschrift</h2><p>{{ claim.snapshot.declaration }}</p><img class="signature" src="{{ signature_uri }}" alt="Unterschrift"><p>{{ claim.full_name }} · {{ claim.submitted_at|date:"d.m.Y" }}</p><p class="meta">Erklärung {{ claim.snapshot.declaration_version }} bestätigt. Datenschutzhinweis Version {{ claim.snapshot.privacy_version }} zur Kenntnis genommen.</p></div>
+<p class="meta">{% t "The receipts follow in item order and, within each item, in the chosen file order. PDF bookmarks assign the pages to the items." %}</p>
+<div class="declaration"><h2>{% t "Declaration and signature" %}</h2><p>{{ claim.snapshot.declaration }}</p><img class="signature" src="{{ signature_uri }}" alt="{% t "Signature" %}"><p>{{ claim.full_name }} · {{ claim.submitted_at|date:"DATE_FORMAT" }}</p><p class="meta">{% t "Declaration {version} confirmed. Privacy notice version {privacy} acknowledged." version=claim.snapshot.declaration_version privacy=claim.snapshot.privacy_version %}</p></div>
 </body></html>

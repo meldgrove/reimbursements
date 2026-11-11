@@ -1,6 +1,7 @@
 # Form contract
 
-The German-language intake collects the following data.
+The intake collects the following data, in the app language: German or English.
+Field names below are the German labels.
 
 - Name → `Claim.full_name`: letters in any script with spaces,
   hyphens, apostrophes and dots; no digits or other symbols.
@@ -27,10 +28,11 @@ The German-language intake collects the following data.
   rate instead of a merchant. A return trip requires a return date on or after the
   outbound date; one-way trips discard any return date. Their amount is calculated
   on the server. Totals use exact decimal arithmetic.
-- Declaration → the verbatim German text in `portal/constants.py`, the default
-  of each template, versioned and snapshotted at acceptance.
+- Declaration → the standard text in `portal/constants.py` (German in
+  `portal/i18n/de.py`), the default of each new template in the app language,
+  versioned and snapshotted at acceptance.
 - Signature → required private drawn/uploaded image, normalized and included
-  in the PDF. Date → server-recorded submission date in Europe/Berlin.
+  in the PDF. Date → server-recorded submission date in the app timezone.
 
 The portal adds email for the participant's receipt and Finance correspondence, one to three receipt files per
 expense, mileage rows, a review step, and privacy notice acknowledgment. It does not

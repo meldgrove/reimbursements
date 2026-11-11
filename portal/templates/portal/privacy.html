@@ -1,11 +1,11 @@
-{% extends 'portal/base.html' %}{% load portal_text %}{% block title %}Datenschutz{% endblock %}{% block content %}
+{% extends 'portal/base.html' %}{% load portal_text %}{% block title %}{% t "Privacy" %}{% endblock %}{% block content %}
 <article class="rounded-xl border bg-card p-6 text-card-foreground shadow-sm sm:p-10">
   {% if notice %}
   <div class="prose-notice">{{ notice.text|paragraphs }}</div>
-  <p class="mt-8 border-t pt-4 text-sm text-muted-foreground">Version {{ notice.version }} vom {{ notice.created_at|date:"d.m.Y" }}</p>
+  <p class="mt-8 border-t pt-4 text-sm text-muted-foreground">{% t "Version {version} of {date}" version=notice.version date=notice.created_at|date:"DATE_FORMAT" %}</p>
   {% else %}
-  <h1 class="text-2xl font-semibold tracking-tight">Datenschutz</h1>
-  <p class="mt-2 text-muted-foreground">Der Datenschutzhinweis ist derzeit nicht verfügbar.</p>
+  <h1 class="text-2xl font-semibold tracking-tight">{% t "Privacy" %}</h1>
+  <p class="mt-2 text-muted-foreground">{% t "The privacy notice is unavailable at the moment." %}</p>
   {% endif %}
 </article>
 {% endblock %}

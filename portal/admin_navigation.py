@@ -25,27 +25,34 @@ class Page:
 
 
 SECTIONS = (
-    Page("Anträge", "receipt-euro", "admin:portal_claim_changelist", ("claim",)),
-    Page("Formulare", "file-text", "admin:portal_form_changelist", ("form",)),
+    Page("Claims", "receipt-euro", "admin:portal_claim_changelist", ("claim",)),
+    Page("Forms", "file-text", "admin:portal_form_changelist", ("form",)),
     Page(
         "Admin",
         "settings",
-        "admin:portal_formtemplate_changelist",
-        ("formtemplate", "privacynotice"),
+        "admin:portal_appsettings_changelist",
+        ("appsettings", "formtemplate", "privacynotice"),
         template_admins_only=True,
         separated=True,
     ),
 )
 SETTINGS_TABS = (
     Page(
-        "Vorlagen",
+        "General",
+        "globe",
+        "admin:portal_appsettings_changelist",
+        ("appsettings",),
+        template_admins_only=True,
+    ),
+    Page(
+        "Templates",
         "layout-template",
         "admin:portal_formtemplate_changelist",
         ("formtemplate",),
         template_admins_only=True,
     ),
     Page(
-        "Datenschutzhinweis",
+        "Privacy notice",
         "shield-check",
         "admin:portal_privacynotice_changelist",
         ("privacynotice",),
@@ -93,7 +100,7 @@ def settings_tabs(request):
 
 
 def _claim(claim):
-    return claim.full_name or "Antrag", f"{claim.form.name} · {claim.reference}"
+    return claim.full_name or "Claim", f"{claim.form.name} · {claim.reference}"
 
 
 def _form(form):
@@ -105,9 +112,9 @@ def _template(template):
 
 
 SEARCHES = (
-    ("Anträge", Claim, ["-submitted_at"], _claim),
-    ("Formulare", Form, ["name"], _form),
-    ("Vorlagen", FormTemplate, ["name"], _template),
+    ("Claims", Claim, ["-submitted_at"], _claim),
+    ("Forms", Form, ["name"], _form),
+    ("Templates", FormTemplate, ["name"], _template),
 )
 
 
@@ -118,7 +125,7 @@ def search(request, site, query, limit):
         return []
     needle = term.casefold()
     pages = [
-        {"name": link["label"], "detail": "Seite", "url": link["url"]}
+        {"name": link["label"], "detail": "Page", "url": link["url"]}
         for link in _links(SECTIONS + SETTINGS_TABS, request)
         if needle in link["label"].casefold()
     ]

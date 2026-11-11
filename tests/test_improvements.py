@@ -9,6 +9,7 @@ from django.test import Client
 from django.utils import timezone
 
 from portal.constants import FORM_DESCRIPTION, FORM_TITLE, PAYMENT_TIMING
+from portal.i18n import t
 from portal.jobs import reclaim_stale_jobs, run_one
 from portal.models import Claim, Confirmation, Job
 from portal.services import confirmations, publication
@@ -64,7 +65,7 @@ def test_blank_form_copy_uses_existing_defaults_and_does_not_invalidate_drafts(c
     data.save()
     assert form.revision() == revision
     page = client.get("/f/test/").content.decode()
-    assert FORM_TITLE in page and FORM_DESCRIPTION in page
+    assert t(FORM_TITLE) in page and t(FORM_DESCRIPTION) in page
     assert (
         "Eine Rechnung, Quittung oder ein Ticket, aus dem der Betrag, Zweck und Geschäftspartner hervorgehen."
         in page
@@ -147,7 +148,7 @@ def test_receipt_is_sent_once_with_reference_and_no_sensitive_attachments(accept
     assert message["Reply-To"] == accepted.snapshot["support_email"]
     text = message.get_content()
     assert accepted.reference in message["Subject"] and accepted.reference in text
-    assert accepted.snapshot["name"] in text and PAYMENT_TIMING in text
+    assert accepted.snapshot["name"] in text and t(PAYMENT_TIMING) in text
     assert not list(message.iter_attachments()) and accepted.iban not in text
     confirmations.schedule(accepted)
     assert not run_one()

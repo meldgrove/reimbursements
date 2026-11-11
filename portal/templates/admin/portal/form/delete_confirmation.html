@@ -1,19 +1,19 @@
 {% extends "admin/delete_confirmation.html" %}{% load admin_urls ui %}
-{% block content_title %}<h1 class="page-title">Entwurf löschen?</h1>{% endblock %}
+{% block content_title %}<h1 class="page-title">Delete draft?</h1>{% endblock %}
 {% block delete_confirm %}
 {% url opts|admin_urlname:'change' object.pk|admin_urlquote as change_url %}
 {% component "card" class="max-w-2xl" %}
   {% component "card_header" %}
-    {% component "card_title" %}„{{ object }}“ endgültig löschen?{% endcomponent %}
-    {% component "card_description" %}Der Entwurf und sein Formularlink werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.{% endcomponent %}
+    {% component "card_title" %}Delete “{{ object }}” for good?{% endcomponent %}
+    {% component "card_description" %}The draft and its form link are deleted permanently. This cannot be undone.{% endcomponent %}
   {% endcomponent %}
   {% component "card_footer" %}
     <form method="post" class="flex flex-wrap items-center gap-2">{% csrf_token %}
       <input type="hidden" name="post" value="yes">
       {% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
       {% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
-      {% component "button" variant="outline" href=change_url %}Abbrechen{% endcomponent %}
-      {% component "button" type="submit" variant="destructive" %}{% icon "trash" %}Entwurf endgültig löschen{% endcomponent %}
+      {% component "button" variant="outline" href=change_url %}Cancel{% endcomponent %}
+      {% component "button" type="submit" variant="destructive" %}{% icon "trash" %}Delete draft for good{% endcomponent %}
     </form>
   {% endcomponent %}
 {% endcomponent %}

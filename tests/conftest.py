@@ -9,6 +9,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from PIL import Image, ImageDraw
 
+from portal import dates
 from portal.models import (
     Claim,
     Delivery,
@@ -57,6 +58,10 @@ def local_settings(settings, tmp_path):
     settings.MIN_FREE_STORAGE_BYTES = 0
     settings.APPROVED_DELIVERY_RECIPIENTS = ["finance@example.invalid"]
     settings.TEST_RECIPIENT_ALLOWLIST = []
+    yield
+    # Requests and jobs set the app date format for the whole process; start each test
+    # with the default.
+    dates.use(dates.DEFAULT_DATE_FORMAT)
 
 
 class FakeDisk:

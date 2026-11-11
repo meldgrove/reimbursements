@@ -2,17 +2,21 @@ import hashlib
 import json
 import re
 import uuid
+import zoneinfo
 from datetime import timedelta
 from decimal import Decimal
+from functools import cache
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
-from django.utils import timezone
+from django.utils import timezone, translation
 
+from portal import dates
 from portal.constants import DECLARATION, DECLARATION_VERSION, FORM_DESCRIPTION, FORM_TITLE
-from portal.countries import COUNTRIES
+from portal.countries import country_name
+from portal.i18n import LANGUAGES, language, t
 from portal.intake import EXPENSE_FIELD_LENGTHS
 
 
@@ -20,18 +24,102 @@ def draft_expiry():
     return timezone.now() + timedelta(hours=24)
 
 
+TIMEZONE_REGIONS = frozenset(
+    "Africa America Antarctica Arctic Asia Atlantic Australia Europe Indian Pacific".split()
+)
+
+
+@cache
+def timezone_names():
+    """The timezones one can choose: UTC and those named after a region and a city."""
+    return sorted(
+        name
+        for name in zoneinfo.available_timezones()
+        if name == "UTC" or name.split("/")[0] in TIMEZONE_REGIONS
+    )
+
+
+def validate_timezone(value):
+    if value not in timezone_names():
+        raise ValidationError("Choose a timezone from the list.")
+
+
+class AppSettings(models.Model):
+    """The General settings: one row for the whole app, see portal.app_settings."""
+
+    language = models.CharField(
+        "App language",
+        max_length=2,
+        choices=LANGUAGES,
+        default="de",
+        help_text=(
+            "For public forms, emails to participants and Finance, and the claim PDF. "
+            "The admin area is always in English."
+        ),
+    )
+    timezone = models.CharField(
+        "Timezone",
+        max_length=64,
+        default="Europe/Berlin",
+        validators=[validate_timezone],
+        help_text="Times are shown in this timezone, and form opening times are entered in it.",
+    )
+    date_format = models.CharField(
+        "Date format",
+        max_length=8,
+        choices=dates.CHOICES,
+        default=dates.DEFAULT_DATE_FORMAT,
+        help_text="For dates everywhere, including the admin area and the claim PDF.",
+    )
+    favicon = models.BinaryField("Favicon", blank=True, default=b"")
+    favicon_type = models.CharField(max_length=40, blank=True)
+    # Names the favicon in its link, so browsers fetch a new one at once.
+    favicon_digest = models.CharField(max_length=16, blank=True, editable=False)
+    updated_at = models.DateTimeField("Changed", auto_now=True)
+
+    class Meta:
+        verbose_name = "General settings"
+        verbose_name_plural = "General settings"
+
+    def __str__(self):
+        return "General settings"
+
+    @classmethod
+    def load(cls):
+        """The saved settings, or the defaults while none are saved.
+
+        Every request loads them, so the favicon image itself loads only when used.
+        """
+        return cls.objects.defer("favicon").filter(pk=1).first() or cls(pk=1)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def set_favicon(self, content, media_type=""):
+        """Use `content` as the favicon; empty content restores the standard one."""
+        self.favicon, self.favicon_type = content, media_type if content else ""
+        self.favicon_digest = hashlib.sha256(content).hexdigest()[:16] if content else ""
+
+
+def default_declaration():
+    """The standard declaration in the app language, for new templates."""
+    with translation.override(AppSettings.load().language):
+        return t(DECLARATION)
+
+
 class PrivacyNotice(models.Model):
     """The app's one privacy notice. Every change is a new version; claims keep theirs."""
 
     version = models.PositiveIntegerField(unique=True, editable=False)
     text = models.TextField("Text")
-    created_at = models.DateTimeField("Erstellt am", default=timezone.now, editable=False)
-    created_by = models.CharField("Erstellt von", max_length=254, blank=True, editable=False)
+    created_at = models.DateTimeField("Created", default=timezone.now, editable=False)
+    created_by = models.CharField("Created by", max_length=254, blank=True, editable=False)
 
     class Meta:
         ordering = ["-version"]
-        verbose_name = "Datenschutzhinweis"
-        verbose_name_plural = "Datenschutzhinweise"
+        verbose_name = "privacy notice"
+        verbose_name_plural = "privacy notices"
 
     def __str__(self):
         return f"Version {self.version}"
@@ -42,7 +130,7 @@ class PrivacyNotice(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk:
-            raise ValidationError("Datenschutzhinweise werden nicht geändert, sondern ersetzt.")
+            raise ValidationError("Privacy notices are not changed but replaced.")
         latest = PrivacyNotice.objects.aggregate(models.Max("version"))["version__max"] or 0
         self.version = latest + 1
         super().save(*args, **kwargs)
@@ -52,41 +140,41 @@ class FormTemplate(models.Model):
     """A type of reimbursement form. Its fields hold each form's internal values."""
 
     class Travel(models.TextChoices):
-        OFF = "off", "Keine Reiseangaben"
-        OPTIONAL = "optional", "Optional (Teilnehmende wählen)"
-        REQUIRED = "required", "Pflicht"
+        OFF = "off", "No travel details"
+        OPTIONAL = "optional", "Optional (participants choose)"
+        REQUIRED = "required", "Required"
 
     name = models.CharField("Name", max_length=200, unique=True)
-    description = models.TextField("Interne Beschreibung", blank=True)
+    description = models.TextField("Internal description", blank=True)
     intro = models.TextField(
-        "Hinweise für Teilnehmende",
+        "Notes for participants",
         blank=True,
-        help_text="Wird oben in jedem Formular dieser Vorlage angezeigt.",
+        help_text="Shown at the top of every form of this template.",
     )
-    declaration = models.TextField("Erklärung", default=DECLARATION)
+    declaration = models.TextField("Declaration", default=default_declaration)
     declaration_version = models.CharField(
-        "Version der Erklärung", max_length=80, default=DECLARATION_VERSION
+        "Declaration version", max_length=80, default=DECLARATION_VERSION
     )
     travel = models.CharField(
-        "Reiseangaben (Zielort, Zeitraum)",
+        "Travel details (destination, dates)",
         max_length=12,
         choices=Travel.choices,
         default=Travel.OPTIONAL,
     )
-    mileage_enabled = models.BooleanField("Kilometererstattung erlauben", default=False)
+    mileage_enabled = models.BooleanField("Allow mileage reimbursement", default=False)
     mileage_rate = models.DecimalField(
-        "Kilometerpauschale in EUR",
+        "Mileage rate in EUR",
         max_digits=4,
         decimal_places=2,
         default=Decimal("0.30"),
         validators=[MinValueValidator(Decimal("0.01"))],
     )
-    updated_at = models.DateTimeField("Geändert am", auto_now=True)
+    updated_at = models.DateTimeField("Changed", auto_now=True)
 
     class Meta:
         ordering = ["name"]
-        verbose_name = "Vorlage"
-        verbose_name_plural = "Vorlagen"
+        verbose_name = "template"
+        verbose_name_plural = "templates"
 
     def __str__(self):
         return self.name
@@ -100,30 +188,30 @@ class TemplateField(models.Model):
 
     class Kind(models.TextChoices):
         TEXT = "text", "Text"
-        CHOICE = "choice", "Auswahl"
+        CHOICE = "choice", "Choice"
 
     template = models.ForeignKey(FormTemplate, on_delete=models.CASCADE, related_name="fields")
     key = models.SlugField(
-        "Schlüssel", max_length=40, help_text="Technischer Name, z. B. kst. Nicht mehr ändern."
+        "Key", max_length=40, help_text="Technical name, e.g. kst. Do not change it later."
     )
-    label = models.CharField("Bezeichnung", max_length=80, help_text="z. B. Kostenstelle (KST)")
-    kind = models.CharField("Typ", max_length=10, choices=Kind.choices, default=Kind.TEXT)
+    label = models.CharField("Label", max_length=80, help_text="e.g. Kostenstelle (KST)")
+    kind = models.CharField("Type", max_length=10, choices=Kind.choices, default=Kind.TEXT)
     choices = models.TextField(
-        "Auswahlmöglichkeiten", blank=True, help_text="Nur für Auswahl: eine Option pro Zeile."
+        "Options", blank=True, help_text="Only for choices: one option per line."
     )
     pattern = models.CharField(
-        "Format (regulärer Ausdruck)",
+        "Format (regular expression)",
         max_length=200,
         blank=True,
-        help_text="Optional, z. B. \\d{4} für vierstellige Nummern.",
+        help_text="Optional, e.g. \\d{4} for four-digit numbers.",
     )
-    required = models.BooleanField("Pflichtfeld", default=True)
-    position = models.PositiveSmallIntegerField("Reihenfolge", default=0)
+    required = models.BooleanField("Required", default=True)
+    position = models.PositiveSmallIntegerField("Order", default=0)
 
     class Meta:
         ordering = ["position", "pk"]
-        verbose_name = "Feld"
-        verbose_name_plural = "Felder"
+        verbose_name = "field"
+        verbose_name_plural = "fields"
         constraints = [
             models.UniqueConstraint(fields=["template", "key"], name="template_field_key_unique")
         ]
@@ -139,23 +227,23 @@ class TemplateField(models.Model):
             try:
                 re.compile(self.pattern)
             except re.error as exc:
-                raise ValidationError({"pattern": "Ungültiger regulärer Ausdruck."}) from exc
+                raise ValidationError({"pattern": "Invalid regular expression."}) from exc
         if self.kind == self.Kind.CHOICE and not self.options():
-            raise ValidationError({"choices": "Bitte gib mindestens eine Option an."})
+            raise ValidationError({"choices": "Enter at least one option."})
 
     def validate(self, value):
-        """The cleaned value, or ValidationError with a German message."""
+        """The cleaned value, or ValidationError with a message for the admin area."""
         value = (value or "").strip()
         if not value:
             if self.required:
-                raise ValidationError("Dieses Feld ist erforderlich.")
+                raise ValidationError("This field is required.")
             return ""
         if len(value) > 200:
-            raise ValidationError("Höchstens 200 Zeichen.")
+            raise ValidationError("At most 200 characters.")
         if self.kind == self.Kind.CHOICE and value not in self.options():
-            raise ValidationError("Bitte wähle eine der Optionen.")
+            raise ValidationError("Choose one of the options.")
         if self.pattern and not re.fullmatch(self.pattern, value):
-            raise ValidationError("Der Wert entspricht nicht dem Format der Vorlage.")
+            raise ValidationError("The value does not match the template's format.")
         return value
 
 
@@ -163,71 +251,69 @@ class Form(models.Model):
     """A reimbursement form, drafted and published by its owners."""
 
     class Status(models.TextChoices):
-        DRAFT = "draft", "Entwurf"
-        PUBLISHED = "published", "Veröffentlicht"
+        DRAFT = "draft", "Draft"
+        PUBLISHED = "published", "Published"
 
     template = models.ForeignKey(
-        FormTemplate, on_delete=models.PROTECT, related_name="forms", verbose_name="Vorlage"
+        FormTemplate, on_delete=models.PROTECT, related_name="forms", verbose_name="Template"
     )
     slug = models.SlugField(
-        "Kurzname für den Link",
+        "Short name for the link",
         unique=True,
-        help_text="Der Link lautet /f/Kurzname/. Nach dem Versenden nicht mehr ändern.",
+        help_text="The link is /f/short-name/. Do not change it once shared.",
     )
-    name = models.CharField("Name", max_length=200, help_text="Für Teilnehmende sichtbar.")
+    name = models.CharField("Name", max_length=200, help_text="Visible to participants.")
     title = models.CharField(
-        "Titel",
+        "Title",
         max_length=200,
         blank=True,
-        default=FORM_TITLE,
-        help_text="Überschrift über dem Formular. Leer lassen für den Standardtitel.",
+        help_text="Heading above the form. Leave empty for the standard title.",
     )
     description = models.TextField(
-        "Beschreibung",
+        "Description",
         blank=True,
-        default=FORM_DESCRIPTION,
-        help_text="Text unter dem Titel. Leer lassen für die Standardbeschreibung.",
+        help_text="Text below the title. Leave empty for the standard description.",
     )
-    field_values = models.JSONField("Interne Werte", default=dict, blank=True)
+    field_values = models.JSONField("Internal values", default=dict, blank=True)
     purpose_options = models.TextField(
-        "Vorgaben zum Anlass/Projektbezug",
+        "Preset purposes",
         blank=True,
         help_text=(
-            "Eine Option pro Zeile. Eine einzelne Vorgabe wird als Text angezeigt; bei mehreren "
-            "wählen Teilnehmende eine Option. Eine Ergänzung ist optional. "
-            "Leer lassen für Freitext."
+            "One option per line. A single preset is shown as text; with several, "
+            "participants choose one. Additional details are optional. "
+            "Leave empty for free text."
         ),
     )
-    instructions = models.TextField("Hinweise für Teilnehmende", blank=True)
-    recipient = models.EmailField("Empfangspostfach (Buchhaltung)")
-    support_email = models.EmailField("Kontakt für Rückfragen")
-    trip_start = models.DateField("Reisebeginn (Vorbelegung)", null=True, blank=True)
-    trip_end = models.DateField("Reiseende (Vorbelegung)", null=True, blank=True)
-    opens_at = models.DateTimeField("Geöffnet ab", null=True, blank=True)
-    closes_at = models.DateTimeField("Geöffnet bis", null=True, blank=True)
+    instructions = models.TextField("Notes for participants", blank=True)
+    recipient = models.EmailField("Receiving inbox (accounting)")
+    support_email = models.EmailField("Contact for questions")
+    trip_start = models.DateField("Trip start (preset)", null=True, blank=True)
+    trip_end = models.DateField("Trip end (preset)", null=True, blank=True)
+    opens_at = models.DateTimeField("Opens", null=True, blank=True)
+    closes_at = models.DateTimeField("Closes", null=True, blank=True)
     status = models.CharField("Status", max_length=12, choices=Status.choices, default=Status.DRAFT)
     creation_key = models.UUIDField(null=True, unique=True, editable=False)
     primary = models.BooleanField(
-        "Startseite",
+        "Start page",
         default=False,
         help_text=(
-            "Die Startseite leitet auf dieses Formular weiter, solange es geöffnet ist. "
-            "Nur ein Formular kann die Startseite sein."
+            "The start page redirects to this form while it is open. "
+            "Only one form can be the start page."
         ),
     )
     owners = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
         related_name="owned_forms",
-        verbose_name="Verantwortliche",
+        verbose_name="Owners",
     )
-    created_at = models.DateTimeField("Erstellt am", default=timezone.now, editable=False)
-    updated_at = models.DateTimeField("Geändert am", auto_now=True)
+    created_at = models.DateTimeField("Created", default=timezone.now, editable=False)
+    updated_at = models.DateTimeField("Changed", auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
-        verbose_name = "Formular"
-        verbose_name_plural = "Formulare"
+        verbose_name = "form"
+        verbose_name_plural = "forms"
         constraints = [
             models.UniqueConstraint(
                 fields=["primary"], condition=models.Q(primary=True), name="form_primary_unique"
@@ -248,11 +334,11 @@ class Form(models.Model):
 
     @property
     def display_title(self):
-        return self.title or FORM_TITLE
+        return self.title or t(FORM_TITLE)
 
     @property
     def display_description(self):
-        return self.description or FORM_DESCRIPTION
+        return self.description or t(FORM_DESCRIPTION)
 
     def internal_value_errors(self):
         """Labels of internal values that no longer satisfy the current template.
@@ -333,6 +419,8 @@ class Form(models.Model):
             "privacy_version": notice.version if notice else None,
             "mileage_rate": str(template.mileage_rate) if template.mileage_enabled else None,
             "revision": self._revision(notice),
+            # The PDF and the emails use the language the participant saw.
+            "language": language(),
         }
 
 
@@ -385,19 +473,19 @@ class Claim(models.Model):
     objects = ClaimQuerySet.as_manager()
 
     class State(models.TextChoices):
-        RECEIVED = "received", "Eingegangen"
-        RENDERING = "rendering", "PDF wird erstellt"
-        READY = "ready", "PDF erstellt"
-        FAILED = "processing_failed", "PDF-Erstellung fehlgeschlagen"
+        RECEIVED = "received", "Received"
+        RENDERING = "rendering", "Creating PDF"
+        READY = "ready", "PDF created"
+        FAILED = "processing_failed", "PDF creation failed"
         # Content removal has begun; the claim record itself is deleted last.
-        PURGING = "purging", "Wird gelöscht"
+        PURGING = "purging", "Being deleted"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     form = models.ForeignKey(
-        Form, on_delete=models.PROTECT, related_name="claims", verbose_name="Formular"
+        Form, on_delete=models.PROTECT, related_name="claims", verbose_name="Form"
     )
     full_name = models.CharField("Name", max_length=200)
-    email = models.EmailField("E-Mail")
+    email = models.EmailField("Email")
     street = models.CharField(max_length=200)
     postal_code = models.CharField(max_length=12)
     city = models.CharField(max_length=100)
@@ -411,13 +499,13 @@ class Claim(models.Model):
     trip_destination = models.CharField(max_length=200, blank=True)
     trip_start = models.DateField(null=True, blank=True)
     trip_end = models.DateField(null=True, blank=True)
-    submitted_at = models.DateTimeField("Eingereicht am", default=timezone.now)
+    submitted_at = models.DateTimeField("Submitted", default=timezone.now)
     snapshot = models.JSONField()
     total = models.DecimalField(
-        "Summe (EUR)", max_digits=12, decimal_places=2, null=True, blank=True
+        "Total (EUR)", max_digits=12, decimal_places=2, null=True, blank=True
     )
     state = models.CharField(
-        "Verarbeitung", max_length=24, choices=State.choices, default=State.RECEIVED, db_index=True
+        "Processing", max_length=24, choices=State.choices, default=State.RECEIVED, db_index=True
     )
     pdf_key = models.CharField(max_length=200, blank=True)
     pdf_hash = models.CharField(max_length=64, blank=True)
@@ -426,16 +514,18 @@ class Claim(models.Model):
     error_code = models.CharField(max_length=80, blank=True)
     # The PDF is removed first; all remaining content at retention_due.
     pdf_due = models.DateTimeField(null=True, blank=True, db_index=True)
-    pdf_removed_at = models.DateTimeField("PDF gelöscht am", null=True, blank=True)
-    retention_due = models.DateTimeField("Inhalte löschen ab", null=True, blank=True, db_index=True)
+    pdf_removed_at = models.DateTimeField("PDF deleted", null=True, blank=True)
+    retention_due = models.DateTimeField(
+        "Content deleted from", null=True, blank=True, db_index=True
+    )
     resolution_due = models.DateTimeField(default=timezone.now)
     supersedes = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="replacements"
     )
 
     class Meta:
-        verbose_name = "Antrag"
-        verbose_name_plural = "Anträge"
+        verbose_name = "claim"
+        verbose_name_plural = "claims"
 
     def __str__(self):
         return self.reference
@@ -448,7 +538,7 @@ class Claim(models.Model):
     def postal_address(self):
         if not self.street:
             return ""
-        return f"{self.street}\n{self.postal_code} {self.city}\n{COUNTRIES.get(self.country, self.country)}"
+        return f"{self.street}\n{self.postal_code} {self.city}\n{country_name(self.country)}"
 
 
 class Expense(models.Model):
@@ -456,8 +546,8 @@ class Expense(models.Model):
     claim = models.ForeignKey(Claim, on_delete=models.CASCADE, related_name="expenses")
 
     class Kind(models.TextChoices):
-        RECEIPT = "receipt", "Beleg"
-        MILEAGE = "mileage", "Kilometer"
+        RECEIPT = "receipt", "Receipt"
+        MILEAGE = "mileage", "Mileage"
 
     position = models.PositiveSmallIntegerField()
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.RECEIPT)
@@ -523,7 +613,7 @@ class Upload(models.Model):
 class Delivery(models.Model):
     claim = models.OneToOneField(Claim, on_delete=models.CASCADE, related_name="delivery")
     recipient = models.EmailField()
-    state = models.CharField("Versand", max_length=24, default="pending", db_index=True)
+    state = models.CharField("Delivery", max_length=24, default="pending", db_index=True)
     message_id = models.CharField(max_length=100, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
     error_code = models.CharField(max_length=80, blank=True)
