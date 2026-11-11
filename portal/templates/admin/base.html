@@ -21,12 +21,8 @@
 <div class="flex min-h-dvh">
   <aside id="admin-sidebar" data-sidebar aria-label="Sidebar" class="fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out sidebar-open:translate-x-0 sidebar-open:shadow-xl md:sticky md:top-0 md:h-dvh md:w-(--sidebar-width) md:shrink-0 md:translate-x-0 md:transition-[width] md:collapsed:w-(--sidebar-width-collapsed)">
     <div class="flex flex-col gap-2 p-2">
-      <a href="{% url 'admin:index' %}" class="flex items-center gap-2 rounded-md p-2 outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring md:collapsed:p-0" title="{{ app_name }}">
-        <img src="{% static 'portal/brand/logo.svg' %}" alt="" width="32" height="32" class="size-8 shrink-0 rounded-md">
-        <span class="grid min-w-0 leading-tight md:collapsed:hidden">
-          <span class="truncate text-sm font-semibold text-sidebar-accent-foreground">{{ app_name }}</span>
-          <span class="truncate text-xs text-muted-foreground">Administration</span>
-        </span>
+      <a href="{% url 'admin:index' %}" class="flex items-center rounded-md p-2 outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring md:collapsed:hidden" title="Reimbursements">
+        <span class="truncate text-sm font-semibold text-sidebar-accent-foreground">Reimbursements</span>
       </a>
       <button type="button" data-search-trigger aria-haspopup="dialog" aria-controls="search-dialog" aria-keyshortcuts="Meta+K Control+K /" title="Search" class="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-2.5 text-sm text-muted-foreground shadow-xs outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring md:collapsed:size-8 md:collapsed:justify-center md:collapsed:px-0 dark:bg-input/30">
         {% icon "search" class="size-4 shrink-0" %}
