@@ -1,9 +1,10 @@
 # Deploy with Coolify
 
-Use `compose.coolify.yaml` for the web process, worker, scanner and migration job.
-Run PostgreSQL as a separate resource on the same private network. Route only the
-web service to a public HTTPS hostname. Keep all persistent volumes across upgrades.
-The `exclude_from_hc` field is a Coolify extension. Use `compose.yaml` locally.
+Use `compose.yaml` for the web process, worker, scanner and migration job: create a
+Docker Compose resource from this repository and set its Docker Compose location to
+`/compose.yaml`. Run PostgreSQL as a separate resource on the same private network.
+Route only the web service to a public HTTPS hostname. Keep all persistent volumes
+across upgrades. Use `compose.dev.yaml` locally.
 
 ## Database and storage
 
