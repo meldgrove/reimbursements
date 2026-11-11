@@ -38,8 +38,8 @@ def saved(template, data, person, **options):
 def test_a_new_draft_saves_with_gaps_and_its_creator_owns_it(template):
     editor = person("editor", roles.FORM_EDITOR)
     form = saved(template, {"instructions": "Erste Notiz"}, editor)
-    assert form.status == Form.Status.DRAFT and form.name == "Neues Formular"
-    assert form.slug.startswith("neues-formular-")
+    assert form.status == Form.Status.DRAFT and form.name == "New form"
+    assert form.slug.startswith("new-form-")
     assert form.field_values == {"kst": "", "ktr": ""}
     assert list(form.owners.all()) == [editor]
 

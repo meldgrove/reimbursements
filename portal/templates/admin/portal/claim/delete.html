@@ -1,20 +1,20 @@
 {% extends "admin/base_site.html" %}{% load admin_urls ui %}
-{% block breadcrumbs %}{% if bulk %}{% include "admin/portal/breadcrumbs.html" with current="Löschen" %}{% else %}{% with claim=rows.0.claim %}{% url 'admin:portal_claim_change' claim.pk as claim_url %}{% include "admin/portal/breadcrumbs.html" with parent_label=claim.reference|truncatechars:12 parent_url=claim_url current="Löschen" %}{% endwith %}{% endif %}{% endblock %}
+{% block breadcrumbs %}{% if bulk %}{% include "admin/portal/breadcrumbs.html" with current="Delete" %}{% else %}{% with claim=rows.0.claim %}{% url 'admin:portal_claim_change' claim.pk as claim_url %}{% include "admin/portal/breadcrumbs.html" with parent_label=claim.reference|truncatechars:12 parent_url=claim_url current="Delete" %}{% endwith %}{% endif %}{% endblock %}
 {% block content_title %}
 <div class="grid gap-1">
   <h1 class="page-title">{{ title }}</h1>
-  <p class="text-sm text-muted-foreground">Der Antrag wird mit Name, Anschrift, Bankverbindung, Ausgaben, Belegen, Unterschrift und PDF sofort und endgültig gelöscht und erscheint nicht mehr in der Liste. Das kann nicht rückgängig gemacht werden.</p>
+  <p class="text-sm text-muted-foreground">The claim is deleted at once and for good, with its name, address, bank details, expenses, receipts, signature and PDF, and no longer appears in the list. This cannot be undone.</p>
 </div>
 {% endblock %}
 {% block content %}
 <div id="content-main" class="flex max-w-3xl flex-col gap-6">
   {% component "card" class="gap-0 py-0" %}
-  <ul class="grid divide-y text-sm" aria-label="Zu löschende Anträge">
+  <ul class="grid divide-y text-sm" aria-label="Claims to delete">
     {% for row in rows %}
     <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-6 py-3">
       <span class="grid min-w-0 gap-0.5">
         <span class="break-all font-medium">{{ row.claim.reference }}</span>
-        <span class="text-muted-foreground">{{ row.claim.form.name }} · eingereicht {{ row.claim.submitted_at|date:"d.m.Y" }}{% if row.claim.full_name %} · {{ row.claim.full_name }}{% endif %}</span>
+        <span class="text-muted-foreground">{{ row.claim.form.name }} · submitted {{ row.claim.submitted_at|date:"DATE_FORMAT" }}{% if row.claim.full_name %} · {{ row.claim.full_name }}{% endif %}</span>
       </span>
       {{ row.status_badge }}
     </li>
@@ -22,10 +22,10 @@
   </ul>
   {% endcomponent %}
   {% if sent_count %}
-  {% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_title" %}{% if rows|length == 1 %}Bereits an Finance gesendet{% else %}{{ sent_count }} {% if sent_count == 1 %}Antrag wurde{% else %}Anträge wurden{% endif %} bereits an Finance gesendet{% endif %}{% endcomponent %}{% component "alert_description" %}Die Löschung entfernt die PDF nicht aus dem Postfach von Finance oder aus nachgelagerten Systemen.{% endcomponent %}{% endcomponent %}
+  {% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_title" %}{% if rows|length == 1 %}Already sent to Finance{% else %}{{ sent_count }} {% if sent_count == 1 %}claim was{% else %}claims were{% endif %} already sent to Finance{% endif %}{% endcomponent %}{% component "alert_description" %}Deleting does not remove the PDF from Finance's inbox or from downstream systems.{% endcomponent %}{% endcomponent %}
   {% endif %}
   {% if unsent_count %}
-  {% component "alert" variant="info" %}{% icon "info" %}{% component "alert_title" %}{% if rows|length == 1 %}Noch nicht an Finance gesendet{% else %}{{ unsent_count }} {% if unsent_count == 1 %}Antrag wurde{% else %}Anträge wurden{% endif %} noch nicht an Finance gesendet{% endif %}{% endcomponent %}{% component "alert_description" %}Nach dem Löschen {% if unsent_count == 1 %}wird er{% else %}werden sie{% endif %} nicht mehr verarbeitet oder versendet.{% endcomponent %}{% endcomponent %}
+  {% component "alert" variant="info" %}{% icon "info" %}{% component "alert_title" %}{% if rows|length == 1 %}Not yet sent to Finance{% else %}{{ unsent_count }} {% if unsent_count == 1 %}claim was{% else %}claims were{% endif %} not yet sent to Finance{% endif %}{% endcomponent %}{% component "alert_description" %}Once deleted, {% if unsent_count == 1 %}it is{% else %}they are{% endif %} no longer processed or sent.{% endcomponent %}{% endcomponent %}
   {% endif %}
   <form method="post" class="flex flex-col gap-6">{% csrf_token %}
     {% if bulk %}
@@ -38,13 +38,13 @@
       <div class="form-row{% if form.reason.errors %} errors{% endif %}">
         <div class="field-grid">
           <label class="field-label required" for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label>
-          <div class="field-input">{{ form.reason }}{{ form.reason.errors }}<div class="help">Wird mit deinem Namen protokolliert. Nenne keine Namen, Kontodaten oder Belegdetails.</div></div>
+          <div class="field-input">{{ form.reason }}{{ form.reason.errors }}<div class="help">Logged with your name. Do not include names, bank details or receipt details.</div></div>
         </div>
       </div>
     </fieldset>
     <div class="submit-row">
-      {% component "button" type="submit" variant="destructive" %}{% icon "trash" %}{% if rows|length == 1 %}Antrag endgültig löschen{% else %}{{ rows|length }} Anträge endgültig löschen{% endif %}{% endcomponent %}
-      {% if bulk %}{% url 'admin:portal_claim_changelist' as cancel_url %}{% else %}{% url 'admin:portal_claim_change' rows.0.claim.pk as cancel_url %}{% endif %}{% component "button" variant="outline" href=cancel_url %}Abbrechen{% endcomponent %}
+      {% component "button" type="submit" variant="destructive" %}{% icon "trash" %}{% if rows|length == 1 %}Delete claim for good{% else %}Delete {{ rows|length }} claims for good{% endif %}{% endcomponent %}
+      {% if bulk %}{% url 'admin:portal_claim_changelist' as cancel_url %}{% else %}{% url 'admin:portal_claim_change' rows.0.claim.pk as cancel_url %}{% endif %}{% component "button" variant="outline" href=cancel_url %}Cancel{% endcomponent %}
     </div>
   </form>
 </div>

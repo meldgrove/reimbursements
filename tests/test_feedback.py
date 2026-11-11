@@ -13,6 +13,7 @@ from django.template.loader import render_to_string
 from pypdf import PdfReader
 
 from portal.constants import PAYMENT_TIMING
+from portal.i18n import t
 from portal.jobs import run_one
 from portal.models import Claim, ClaimReferenceCounter
 from portal.services.capacity import temporary_workspace
@@ -124,8 +125,10 @@ def test_reference_is_stable_searchable_and_used_on_confirmation(prepared):
     assert claim.reference == reference
     page = prepared["client"].get(response.json()["receipt_url"]).content.decode()
     assert reference in page
-    assert PAYMENT_TIMING in page
+    assert t(PAYMENT_TIMING) in page
     assert "Kontaktadresse im Formular" in page
+    # The status script's messages aside, the page promises no timing or retention.
+    page = re.sub(r'<script id="status-text".*?</script>', "", page, flags=re.S)
     assert "Woche" not in page
     assert "gespeichert" not in page and "gelöscht" not in page
     assert "Finance" not in page

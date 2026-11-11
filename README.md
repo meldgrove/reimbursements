@@ -1,8 +1,9 @@
 # Reimbursements
 
-A self-hosted reimbursement app with a German participant interface. Collect expense
-claims, receipts and signatures, assemble one PDF, and send it to an approved
-accounting inbox. Participants receive a separate confirmation without attachments.
+Meldgrove Reimbursement is a self-hosted reimbursement app. Collect expense claims,
+receipts and signatures, assemble one PDF, and send it to an approved accounting
+inbox. Participants receive a separate confirmation without attachments. Participants
+use it in German or English; the admin area is always in English.
 
 The app includes configurable form templates, receipt and mileage expenses, private
 uploads, malware scanning, PDF compression, role-based administration, delivery
@@ -52,15 +53,20 @@ A local-only fallback is available with `DOCUMENT_SANDBOX_ENABLED=0`.
 Each operator supplies their own identity and infrastructure settings. No credentials,
 production data, or external account identifiers are included. Configure:
 
-- `PORTAL_NAME`, `PORTAL_OPERATOR`, `PORTAL_LEGAL_URL` for the site identity.
+- `PORTAL_OPERATOR`, `PORTAL_LEGAL_URL` for the footer of public pages.
 - `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, client credentials and role groups for admin sign-in.
 - `MAIL_FROM_ADDRESS`, `MAIL_REPLY_TO_ADDRESS`, MailerSend credentials and approved recipients.
 - PostgreSQL, private storage, malware scanner, TLS proxy and health check settings.
 - Optionally `SENTRY_DSN` for error reports without claim content.
 
+In the admin area under Admin > General, choose the app language (German or
+English), timezone and date format, and optionally upload a favicon. The app language
+applies to public pages, emails to participants and Finance, and the claim PDF.
 Replace the initial privacy setup notice in the admin area before opening forms.
-Review the declaration and retention periods for your deployment. Payment timing
-is left to the operator's support process.
+Review the declaration and retention periods for your deployment. Texts written in the
+admin area, such as the privacy notice, declarations and form descriptions, are shown
+as written, so write them in the app language. Payment timing is left to the
+operator's support process.
 
 Production requires PostgreSQL, Keycloak, MailerSend, ClamAV, a bounded private
 document workspace, and worker heartbeat checks. Password sign-in is available

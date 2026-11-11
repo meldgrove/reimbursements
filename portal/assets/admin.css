@@ -271,7 +271,7 @@ p.datetime br {
   @apply hidden;
 }
 .inline-group .tabular fieldset.module:has(table):not(:has(tbody tr:not(.empty-form)))::after {
-  content: "Noch keine Einträge.";
+  content: "No entries yet.";
   @apply block px-6 py-4 text-sm text-muted-foreground;
 }
 .inline-group .tabular .field-position input {

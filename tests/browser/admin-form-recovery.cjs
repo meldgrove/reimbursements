@@ -55,7 +55,7 @@ if (!editorUrl || !storageState)
           name: field(body, "name"),
           slug,
           status: serverStatus,
-          status_label: serverStatus === "published" ? "Veröffentlicht" : "Entwurf",
+          status_label: serverStatus === "published" ? "Published" : "Draft",
           link: `/f/${slug}/`,
           delete_url: pathname.replace(/change\/$/, "delete/"),
           can_delete: serverStatus === "draft",
@@ -64,7 +64,7 @@ if (!editorUrl || !storageState)
     });
 
     async function saved() {
-      await page.getByText("Alle Änderungen gespeichert.", { exact: true }).waitFor();
+      await page.getByText("All changes saved.", { exact: true }).waitFor();
       assert.equal(await indicator.getAttribute("data-save-state"), "saved");
       assert.equal(await page.locator('[data-save-symbol="saved"]').isVisible(), true);
       assert.equal(await deleteLink.isVisible(), serverStatus === "draft");
@@ -97,7 +97,7 @@ if (!editorUrl || !storageState)
         await retry.waitFor({ state: "visible" });
         assert.equal(serverStatus, unchangedStatus, "Autosave must not replay publication actions.");
         assert.equal(actions.at(-1), null);
-        assert.notEqual(await status.textContent(), "Alle Änderungen gespeichert.");
+        assert.notEqual(await status.textContent(), "All changes saved.");
       }
       await retry.click();
       await saved();
@@ -153,14 +153,14 @@ if (!editorUrl || !storageState)
       const toolbar = page.locator("[data-form-toolbar]");
       const controls = await Promise.all([
         toolbar.locator("[data-publication-toggle]").boundingBox(),
-        toolbar.getByRole("link", { name: "Vorschau", exact: true }).boundingBox(),
-        toolbar.getByRole("link", { name: "Verlauf", exact: true }).boundingBox(),
+        toolbar.getByRole("link", { name: "Preview", exact: true }).boundingBox(),
+        toolbar.getByRole("link", { name: "History", exact: true }).boundingBox(),
       ]);
       assert.ok(controls.every((box) => box && Math.abs(box.y - controls[0].y) < 1));
       await deleteLink.click();
-      await page.getByRole("heading", { name: "Entwurf löschen?", exact: true }).waitFor();
-      assert.equal(await page.getByRole("button", { name: "Entwurf endgültig löschen", exact: true }).isVisible(), true);
-      await page.getByRole("link", { name: "Abbrechen", exact: true }).click();
+      await page.getByRole("heading", { name: "Delete draft?", exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Delete draft for good", exact: true }).isVisible(), true);
+      await page.getByRole("link", { name: "Cancel", exact: true }).click();
       await page.locator("[data-publication-toggle]").waitFor();
       console.log("Passed save indicators, toolbar alignment, draft deletion visibility, and confirmation cancellation.");
     }

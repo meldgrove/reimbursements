@@ -19,6 +19,8 @@ from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from portal import app_settings
+from portal.i18n import t
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent
 from portal.services import mailersend, queue
 from portal.services.storage import path_for
@@ -158,17 +160,21 @@ def compose(attempt):
         or hashlib.sha256(content).hexdigest() != claim.pdf_hash
     ):
         raise Undeliverable("attachment_integrity")
+    values = {"reference": claim.reference, "form": claim.snapshot["name"]}
+    with app_settings.for_claim(claim):
+        subject = t("Reimbursement claim {reference} | {form}", **values)
+        text = t(
+            "Reimbursement claim {reference}\nForm: {form}\n\n"
+            "The complete reimbursement form and all receipts are in the attached PDF.\n",
+            **values,
+        )
     return Message(
         attempt_id=str(attempt.id),
         sender=settings.MAIL_FROM_ADDRESS,
         reply_to=settings.MAIL_REPLY_TO_ADDRESS,
         recipient=delivery.recipient,
-        subject=f"Erstattungsantrag {claim.reference} | {claim.snapshot['name']}",
-        text=(
-            f"Erstattungsantrag {claim.reference}\nFormular: {claim.snapshot['name']}\n\n"
-            "Das vollständige Erstattungsformular und alle Belege sind in der beigefügten PDF "
-            "enthalten.\n"
-        ),
+        subject=subject,
+        text=text,
         attachment=content,
         filename=f"reimbursement_{claim.reference.replace('/', '_')}.pdf",
     )

@@ -7,7 +7,16 @@ from django.core.files.uploadhandler import StopUpload, TemporaryFileUploadHandl
 from django.http import JsonResponse
 from django.utils import timezone
 
-from portal import intake
+from portal import app_settings, intake
+from portal.i18n import t
+from portal.models import AppSettings
+
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; "
+    "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+)
+# Responses anyone may cache: static files and the favicon.
+PUBLIC_PATHS = ("/static/", "/favicon/")
 
 
 class AdminSessionMiddleware:
@@ -44,10 +53,13 @@ class RequestLimitsMiddleware:
         try:
             length = int(request.META.get("CONTENT_LENGTH") or 0)
         except ValueError:
-            return JsonResponse({"error": "Ungültige Anfrage."}, status=400)
-        cap = (
-            settings.MAX_RECEIPT_BYTES + 128_000 if request.path.endswith("/uploads/") else 128_000
-        )
+            return JsonResponse({"error": t("Invalid request.")}, status=400)
+        if request.path.endswith("/uploads/"):
+            cap = settings.MAX_RECEIPT_BYTES + 128_000
+        elif request.path.startswith(app_settings.GENERAL_SETTINGS_PATH):
+            cap = 1_000_000
+        else:
+            cap = 128_000
         if length > cap:
             return JsonResponse({"error": intake.message("request_too_large")}, status=413)
         return self.get_response(request)
@@ -61,11 +73,29 @@ class PrivateResponseMiddleware:
         response = self.get_response(request)
         response["X-Frame-Options"] = "DENY"
         response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        response["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-        )
-        if not request.path.startswith("/static/"):
+        # A view may set a stricter policy, as the favicon does.
+        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        if not request.path.startswith(PUBLIC_PATHS):
             response["Cache-Control"] = "no-store, private"
+        return response
+
+
+class AppSettingsMiddleware:
+    """Applies the General settings: the language, timezone and date format."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith("/-/"):
+            # Health checks answer without the database.
+            return self.get_response(request)
+        general = AppSettings.load()
+        language = app_settings.request_language(request, general)
+        request.app_settings, request.LANGUAGE_CODE = general, language
+        with app_settings.applied(general, language):
+            response = self.get_response(request)
+        response.headers.setdefault("Content-Language", language)
         return response
 
 

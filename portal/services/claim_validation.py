@@ -12,6 +12,7 @@ from django.conf import settings
 from django.utils.dateparse import parse_date
 
 from portal.forms import ClaimForm
+from portal.i18n import t, t_lazy
 from portal.intake import (
     EXPENSE_FIELD_LENGTHS,
     MAX_CLAIM_TOTAL,
@@ -25,10 +26,10 @@ from portal.models import Expense
 
 CONSENT = frozenset({"declaration", "privacy_acknowledged"})
 REQUIRED_MESSAGES = {
-    "merchant": "Bitte gib den Geschäftspartner an.",
-    "vehicle_registration": "Bitte gib das Kennzeichen des Fahrzeugs an.",
-    "route_from": "Bitte gib den Startort der Fahrt an.",
-    "route_to": "Bitte gib das Ziel der Fahrt an.",
+    "merchant": t_lazy("Please enter the business partner."),
+    "vehicle_registration": t_lazy("Please enter the vehicle registration."),
+    "route_from": t_lazy("Please enter where the journey starts."),
+    "route_to": t_lazy("Please enter the destination of the journey."),
 }
 
 
@@ -44,7 +45,7 @@ class Validation:
     def require_valid(self):
         if self.errors:
             summary = self.errors.get(
-                "__all__", [{"message": "Bitte prüfe die markierten Angaben."}]
+                "__all__", [{"message": t("Please check the marked details.")}]
             )
             raise IntakeError(summary[0]["message"], errors=self.errors)
         return self.payload, self.total
@@ -56,10 +57,10 @@ def _uuid(value):
 
 def _text(value, key, *, required=True):
     if not isinstance(value, str) or len(value.strip()) > EXPENSE_FIELD_LENGTHS[key]:
-        raise ValueError("Ungültige Angabe.")
+        raise ValueError(t("Invalid entry."))
     value = value.strip()
     if required and not value:
-        raise ValueError(REQUIRED_MESSAGES[key])
+        raise ValueError(str(REQUIRED_MESSAGES[key]))
     return value
 
 
@@ -83,7 +84,7 @@ class _Row:
         try:
             return parse(self.row.get(name, ""))
         except (TypeError, ValueError, AttributeError) as exc:
-            self.error(name, error or str(exc) or "Ungültige Angabe.")
+            self.error(name, error or str(exc) or t("Invalid entry."))
             return None
 
     def text(self, name, *, required=True):
@@ -99,17 +100,17 @@ def _expense(row, template, purpose, key, result):
         item["receipt_reference"] = fields.text("receipt_reference", required=False)
         item["amount"] = fields.read("amount", parse_amount)
     elif kind == Expense.Kind.MILEAGE and template.mileage_enabled:
-        start = fields.read("travel_date", _date, "Bitte gib das Datum der Fahrt an.")
+        start = fields.read("travel_date", _date, t("Please enter the date of the journey."))
         returning = row.get("round_trip", False)
         if not isinstance(returning, bool):
-            fields.error("round_trip", "Ungültige Angabe zu Hin- und Rückfahrt.")
+            fields.error("round_trip", t("Invalid return journey entry."))
             returning = False
         end = None
         if returning:
-            end = fields.read("return_date", _date, "Bitte gib das Rückfahrtdatum an.")
+            end = fields.read("return_date", _date, t("Please enter the return date."))
             if start and end and end < start:
                 fields.error(
-                    "return_date", "Das Rückfahrtdatum darf nicht vor der Hinfahrt liegen."
+                    "return_date", t("The return date cannot be before the outward journey.")
                 )
         distance = fields.read("distance_km", parse_distance)
         registration = fields.text("vehicle_registration")
@@ -117,7 +118,7 @@ def _expense(row, template, purpose, key, result):
             registration = registration.upper()
             if len(registration) > EXPENSE_FIELD_LENGTHS["vehicle_registration"]:
                 fields.error(
-                    "vehicle_registration", "Das Kennzeichen darf höchstens 20 Zeichen haben."
+                    "vehicle_registration", t("The registration may have at most 20 characters.")
                 )
         item.update(
             merchant="",
@@ -135,7 +136,7 @@ def _expense(row, template, purpose, key, result):
             else None,
         )
     else:
-        fields.error("__all__", "Diese Art von Position ist für das Formular nicht freigegeben.")
+        fields.error("__all__", t("This type of item is not enabled for the form."))
     ids = row.get("uploads")
     minimum = 1 if kind == Expense.Kind.RECEIPT else 0
     if not isinstance(ids, list) or not minimum <= len(ids) <= settings.MAX_FILES_PER_EXPENSE:
@@ -145,7 +146,7 @@ def _expense(row, template, purpose, key, result):
         try:
             ids = [_uuid(value) for value in ids]
         except (ValueError, TypeError, AttributeError):
-            fields.error("__all__", "Ungültige Belegdatei.")
+            fields.error("__all__", t("Invalid receipt file."))
             ids = []
     return item, ids, fields.valid
 
@@ -153,7 +154,7 @@ def _expense(row, template, purpose, key, result):
 def _check(data, form, *, submitting):
     result = Validation()
     if not isinstance(data, dict):
-        result.add("__all__", "Ungültige Anfrage.")
+        result.add("__all__", t("Invalid request."))
         return result
     expenses = data.get("expenses")
     if not isinstance(expenses, list) or not 1 <= len(expenses) <= settings.MAX_EXPENSES:
@@ -178,23 +179,21 @@ def _check(data, form, *, submitting):
             if row_id in row_ids:
                 raise ValueError
         except (KeyError, TypeError, ValueError, AttributeError):
-            result.add("__all__", f"Position {position + 1}: Ungültige Positionskennung.")
+            result.add("__all__", t("Item {number}: invalid item ID.", number=position + 1))
             continue
         row_ids.add(row_id)
         item, ids, valid = _expense(
             row, form.template, claim_form.cleaned_data.get("purpose", ""), row_id, result
         )
         if len(set(ids)) != len(ids) or upload_ids.intersection(ids):
-            result.add(
-                f"expense-{row_id}-__all__", "Eine Belegdatei darf nur einmal zugeordnet werden."
-            )
+            result.add(f"expense-{row_id}-__all__", t("A receipt file can be assigned only once."))
         upload_ids.update(ids)
         if item.get("amount") is not None:
             total += item["amount"]
         if valid:
             cleaned.append({**item, "id": row_id, "position": position, "uploads": ids})
     if total > MAX_CLAIM_TOTAL:
-        result.add("__all__", "Die Summe aller Positionen ist zu hoch. Bitte prüfe die Beträge.")
+        result.add("__all__", t("The total of all items is too high. Please check the amounts."))
     payload = dict(claim_form.cleaned_data)
     if not submitting:
         for key in CONSENT:
@@ -203,7 +202,7 @@ def _check(data, form, *, submitting):
         try:
             payload["signature"] = _uuid(data.get("signature"))
         except (ValueError, TypeError, AttributeError):
-            result.add("signature", "Bitte zeichne oder lade eine Unterschrift hoch.")
+            result.add("signature", t("Please draw or upload a signature."))
     if not result.errors:
         result.payload, result.total = {**payload, "expenses": cleaned}, total
     return result

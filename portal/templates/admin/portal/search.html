@@ -1,15 +1,15 @@
 {% extends "admin/base_site.html" %}{% load ui %}
-{% block breadcrumbs %}<div class="breadcrumbs"><span aria-current="page">Suche</span></div>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><span aria-current="page">Search</span></div>{% endblock %}
 {% block content %}
 <form method="get" role="search" class="flex max-w-xl gap-2">
-  <label class="sr-only" for="search-page-input">Suchbegriff</label>
-  <input id="search-page-input" class="ui-input" type="search" name="q" value="{{ query }}" maxlength="100" placeholder="Name, E-Mail, Referenz, Formular …" autofocus>
-  {% component "button" type="submit" %}{% icon "search" %}Suchen{% endcomponent %}
+  <label class="sr-only" for="search-page-input">Search term</label>
+  <input id="search-page-input" class="ui-input" type="search" name="q" value="{{ query }}" maxlength="100" placeholder="Name, email, reference, form …" autofocus>
+  {% component "button" type="submit" %}{% icon "search" %}Search{% endcomponent %}
 </form>
 {% if query|length < 2 %}
-<p class="text-sm text-muted-foreground">Gib mindestens zwei Zeichen ein.</p>
+<p class="text-sm text-muted-foreground">Enter at least two characters.</p>
 {% elif not groups %}
-{% component "card" class="items-center py-12 text-center" %}{% icon "search" class="size-8 text-muted-foreground" %}{% component "card_content" class="grid gap-1" %}<p class="font-medium">Keine Treffer für „{{ query }}“</p><p class="text-sm text-muted-foreground">Anträge findest du über Name, E-Mail oder die vollständige Referenz.</p>{% endcomponent %}{% endcomponent %}
+{% component "card" class="items-center py-12 text-center" %}{% icon "search" class="size-8 text-muted-foreground" %}{% component "card_content" class="grid gap-1" %}<p class="font-medium">No results for “{{ query }}”</p><p class="text-sm text-muted-foreground">Find claims by name, email or the full reference.</p>{% endcomponent %}{% endcomponent %}
 {% else %}
 {% for group in groups %}
 <section class="overflow-hidden rounded-xl border bg-card shadow-sm" aria-labelledby="search-group-{{ forloop.counter }}">

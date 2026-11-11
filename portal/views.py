@@ -4,16 +4,17 @@ from functools import wraps
 
 from django.conf import settings
 from django.db import connection
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from portal import intake
+from portal import app_settings, dates, intake
 from portal.constants import PAYMENT_TIMING
 from portal.forms import ClaimForm
+from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Claim, Form, PrivacyNotice
 from portal.participants import RequestParticipant
@@ -35,7 +36,7 @@ def api_errors(view):
         except IntakeError as exc:
             return JsonResponse({"error": exc.message, "fields": exc.errors}, status=exc.status)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return JsonResponse({"error": "Ungültige Anfrage."}, status=400)
+            return JsonResponse({"error": t("Invalid request.")}, status=400)
 
     return wrapped
 
@@ -90,6 +91,7 @@ def form_page(request, form_slug):
         "upload_url": reverse("upload", kwargs={"form_slug": form.slug}),
         "submit_url": reverse("submit", kwargs={"form_slug": form.slug}),
         "validate_url": reverse("validate_claim", kwargs={"form_slug": form.slug}),
+        "date_format": dates.active().script,
         **intake.client_config(),
     }
     return render(
@@ -168,7 +170,7 @@ def validate_claim(request, form_slug):
     """Validate current entries without saving them or requiring a signature."""
     data = json.loads(request.body)
     if not isinstance(data, dict):
-        raise IntakeError("Ungültige Anfrage.")
+        raise IntakeError(t("Invalid request."))
     draft, form = drafts.gate(
         RequestParticipant(request),
         form_slug,
@@ -213,9 +215,38 @@ def received(request, claim_id):
             "status": status,
             "final": final,
             "form": claim.form,
-            "payment_timing": PAYMENT_TIMING,
+            "payment_timing": t(PAYMENT_TIMING),
+            "status_text": {
+                "processing": t("Your claim is being processed and sent to Finance."),
+                "problem": t(
+                    "There was a problem processing your claim. It stays saved; please do not "
+                    "submit it again, but contact us with your reference."
+                ),
+                "delivered": t("Your claim was sent to Finance."),
+                "unavailable": t(
+                    "The status is unavailable right now. Your claim stays saved; please do "
+                    "not submit it again."
+                ),
+                "reload": t("Reload this page later to check the current status."),
+            },
         },
     )
+
+
+@require_GET
+def favicon(request, digest):
+    """The favicon from the General settings. Its link names the digest of its content."""
+    general = app_settings.current(request)
+    if not general.favicon_digest:
+        raise Http404
+    response = HttpResponse(bytes(general.favicon), content_type=general.favicon_type)
+    # An SVG favicon opened on its own must not run anything.
+    response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    if digest == general.favicon_digest:
+        response["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        response["Cache-Control"] = "public, no-cache"
+    return response
 
 
 @csrf_exempt

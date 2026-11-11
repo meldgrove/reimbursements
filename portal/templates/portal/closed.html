@@ -1,8 +1,8 @@
-{% extends 'portal/base.html' %}{% load ui %}{% block content %}
+{% extends 'portal/base.html' %}{% load portal_text ui %}{% block content %}
 <section class="flex flex-col items-center gap-4 rounded-xl border bg-card px-6 py-12 text-center text-card-foreground shadow-sm">
   <span class="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">{% icon "lock" class="size-6" %}</span>
   {% component "badge" variant="outline" %}{{ form.name }}{% endcomponent %}
-  <h1 class="text-2xl font-semibold tracking-tight">Formular geschlossen</h1>
-  <p class="max-w-md text-muted-foreground">{{ message|default:'Dieses Erstattungsformular nimmt derzeit keine neuen Anträge an. Bitte wende dich bei Fragen an den angegebenen Kontakt.' }}</p>
+  <h1 class="text-2xl font-semibold tracking-tight">{% t "Form closed" %}</h1>
+  <p class="max-w-md text-muted-foreground">{% if message %}{{ message }}{% else %}{% t "This reimbursement form is not accepting new claims at the moment. If you have questions, please contact the contact given." %}{% endif %}</p>
 </section>
 {% endblock %}

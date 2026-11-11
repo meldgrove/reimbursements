@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
+from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Claim, Expense
 from portal.services import claim_validation, confirmations, drafts, queue, uploads
@@ -17,7 +18,7 @@ from portal.services.references import allocate_reference
 def submit_claim(participant, form_slug, data):
     """Accept the participant's draft as a claim; a repeated identical request returns it."""
     if not isinstance(data, dict) or data.get("website"):
-        raise IntakeError("Ungültige Anfrage.")
+        raise IntakeError(t("Invalid request."))
     # Compare an exact canonical request on replay, even if the form changed or closed later.
     replay_data = {key: value for key, value in data.items() if key not in {"token", "website"}}
     payload_hash = digest(
@@ -30,7 +31,7 @@ def submit_claim(participant, form_slug, data):
     except drafts.AlreadySubmitted as submitted:
         if not constant_time_compare(submitted.draft.payload_hash, payload_hash):
             raise IntakeError(
-                "Dieses Formular wurde bereits mit anderen Angaben eingereicht.", status=409
+                t("This form has already been submitted with different details."), status=409
             ) from None
         return submitted.draft.claim
     # A privacy notice published since the gate's check must not enter this claim.
@@ -44,9 +45,9 @@ def submit_claim(participant, form_slug, data):
     files = uploads.claimable(draft, all_ids)
     signature = files[payload["signature"]]
     if signature.kind != "signature":
-        raise IntakeError("Eine Datei ist nicht verfügbar. Bitte lade sie erneut hoch.")
+        raise IntakeError(t("A file is unavailable. Please upload it again."))
     if Expense.objects.filter(id__in=[row["id"] for row in payload["expenses"]]).exists():
-        raise IntakeError("Ungültige Positionskennung. Bitte öffne ein neues Formular.", status=409)
+        raise IntakeError(t("Invalid item ID. Please open a new form."), status=409)
     fields = {
         key: value
         for key, value in payload.items()

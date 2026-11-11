@@ -21,6 +21,17 @@
     submitting = false,
     accepted = false;
 
+  // Text in the app language; `{name}` placeholders take the given values.
+  function say(key, values = {}) {
+    return (config.text[key] || key).replace(/\{(\w+)\}/g, (match, name) =>
+      name in values ? values[name] : match,
+    );
+  }
+  // An ISO date (YYYY-MM-DD) in the app date format.
+  function formatDate(value) {
+    const [year, month, day] = value.split("-");
+    return config.date_format.replace("YYYY", year).replace("MM", month).replace("DD", day);
+  }
   function node(tag, text, className) {
     const element = document.createElement(tag);
     if (text !== undefined) element.textContent = text;
@@ -77,13 +88,11 @@
       if (response && !response.ok) {
         result = {
           error: [404, 410].includes(response.status)
-            ? "Die Sitzung oder Datei ist nicht mehr verfügbar. Bitte öffne das Formular erneut."
-            : "Die Anfrage konnte nicht verarbeitet werden.",
+            ? say("session_gone")
+            : say("request_failed"),
         };
       } else {
-        const error = new Error(
-          "Die Verbindung wurde unterbrochen. Bitte versuche es erneut.",
-        );
+        const error = new Error(say("connection_lost"));
         error.retryable = true;
         throw error;
       }
@@ -91,9 +100,7 @@
       clearTimeout(deadline);
     }
     if (!response.ok) {
-      const error = new Error(
-        result.error || "Die Anfrage ist fehlgeschlagen.",
-      );
+      const error = new Error(result.error || say("request_error"));
       error.fields = result.fields;
       error.status = response.status;
       error.retryable =
@@ -118,11 +125,11 @@
     if (element.disabled) return "";
     let message = element.validationMessage;
     if (element.required && element.type !== "radio" && !element.value.trim())
-      message = "Bitte fülle dieses Feld aus.";
+      message = say("field_required");
     if (element.dataset.field === "amount") {
       const amount = cents(element.value);
       if (amount === null || amount <= 0n)
-        message = "Bitte gib einen positiven Betrag in Euro ein, z. B. 12,50.";
+        message = say("amount_invalid");
     }
     return message;
   }
@@ -182,7 +189,7 @@
     document.getElementById("error-__all__").textContent = rows.length
       ? fields.__all__?.map((error) => error.message).join(" ") || "" : "";
     if (all && Object.keys(fields).length) {
-      showError("Bitte prüfe die markierten Angaben.", fields);
+      showError(say("check_marked"), fields);
       valid = false;
     }
     return valid;
@@ -211,7 +218,7 @@
   details.addEventListener("change", scheduleValidation);
   const amountFormat = new RegExp(`^(?:${config.amount_pattern})$`);
   function money(cents) {
-    return new Intl.NumberFormat("de-DE", {
+    return new Intl.NumberFormat(config.locale, {
       style: "currency",
       currency: "EUR",
     }).format(Number(cents) / 100);
@@ -241,7 +248,7 @@
     returnDate.min = data.travel_date;
     returnDate.setCustomValidity(
       data.round_trip && data.return_date && data.return_date < data.travel_date
-        ? "Das Rückfahrtdatum darf nicht vor der Hinfahrt liegen."
+        ? say("return_before_outward")
         : "",
     );
   }
@@ -273,22 +280,18 @@
       }
       const reference = data.receipt_reference
         .trim()
-        .toLocaleLowerCase("de-DE");
+        .toLocaleLowerCase(config.locale);
       if (reference && references.has(reference)) duplicate = true;
       references.add(reference);
     });
     const target = document.getElementById("totals");
     target.replaceChildren();
     const line = node("div");
-    line.append(node("span", "Summe", "total-caption"), node("span", money(total)));
+    line.append(node("span", say("total"), "total-caption"), node("span", money(total)));
     target.append(line);
     if (duplicate)
       target.append(
-        node(
-          "p",
-          "Hinweis: Eine Belegreferenz wird mehrfach verwendet. Bitte prüfe die Zuordnung.",
-          "muted",
-        ),
+        node("p", say("duplicate_reference"), "muted"),
       );
     return total;
   }
@@ -339,8 +342,8 @@
     const empty = document.getElementById("expenses-empty");
     empty.hidden = rows.length > 0;
     empty.textContent = config.mileage_rate
-      ? "Lege eine Auslage mit Beleg oder eine Kilometererstattung an."
-      : "Lege eine Auslage mit Beleg an.";
+      ? say("expenses_empty_mileage")
+      : say("expenses_empty");
     updateTotals();
     updateTravel();
   }
@@ -358,12 +361,7 @@
         node(
           "span",
           file.message ||
-            {
-              ready: "Geprüft",
-              pending: "Wird geprüft …",
-              uploading: "Wird hochgeladen …",
-              failed: "Prüfung fehlgeschlagen",
-            }[file.state],
+            say(`file_${file.state}`),
           `file-status ${file.state}`,
         ),
       );
@@ -375,7 +373,7 @@
         button.type = "button";
         button.setAttribute(
           "aria-label",
-          `Beleg ${delta === -1 ? "nach oben" : "nach unten"} verschieben`,
+          say(delta === -1 ? "move_receipt_up" : "move_receipt_down"),
         );
         button.disabled =
           row.removing || index + delta < 0 || index + delta >= row.files.length;
@@ -388,7 +386,7 @@
         });
         item.append(button);
       }
-      const remove = node("button", "Entfernen");
+      const remove = node("button", say("remove"));
       remove.type = "button";
       remove.disabled = row.removing || file.state === "uploading";
       remove.addEventListener("click", async () => {
@@ -407,7 +405,7 @@
       });
       item.append(remove);
       if (file.state === "pending" && !file.polling) {
-        const retry = node("button", "Status erneut prüfen");
+        const retry = node("button", say("check_again"));
         retry.type = "button";
         retry.disabled = row.removing;
         retry.addEventListener("click", async () => {
@@ -464,7 +462,7 @@
   }
   async function uploadFile(blob, kind, expenseId, onUpdate) {
     if (config.preview)
-      throw new Error("Vorschau: Hochladen ist nicht möglich.");
+      throw new Error(say("preview_upload"));
     const data = new FormData();
     for (const [key, value] of Object.entries({
       draft_id: config.draft_id,
@@ -483,7 +481,9 @@
         if (event.lengthComputable)
           onUpdate?.({
             state: "uploading",
-            message: `Upload ${Math.round((event.loaded / event.total) * 100)} %`,
+            message: say("upload_progress", {
+              percent: Math.round((event.loaded / event.total) * 100),
+            }),
           });
       });
       xhr.onload = () => {
@@ -491,26 +491,20 @@
         try {
           value = JSON.parse(xhr.responseText);
         } catch {
-          reject(
-            new Error(
-              "Der Upload ist fehlgeschlagen. Bitte versuche es erneut.",
-            ),
-          );
+          reject(new Error(say("upload_failed_retry")));
           return;
         }
         if (xhr.status >= 200 && xhr.status < 300) resolve(value);
-        else reject(new Error(value.error || "Der Upload ist fehlgeschlagen."));
+        else reject(new Error(value.error || say("upload_failed")));
       };
       xhr.onerror = xhr.ontimeout = () =>
-        reject(
-          new Error("Der Upload wurde unterbrochen. Bitte versuche es erneut."),
-        );
+        reject(new Error(say("upload_interrupted")));
       xhr.send(data);
     });
     return pollUpload(result, onUpdate);
   }
   async function pollUpload(result, onUpdate) {
-    onUpdate?.({ ...result, state: "pending", message: "Wird geprüft …" });
+    onUpdate?.({ ...result, state: "pending", message: say("file_pending") });
     for (let attempt = 0; attempt < 36; attempt++) {
       let status;
       try {
@@ -519,8 +513,7 @@
         if (!error.retryable) throw error;
         status = {
           state: "pending",
-          message:
-            "Die Verbindung ist verzögert. Die Prüfung bleibt gespeichert.",
+          message: say("connection_slow"),
         };
       }
       onUpdate?.(status);
@@ -534,8 +527,7 @@
     const delayed = {
       ...result,
       state: "pending",
-      message:
-        "Die Prüfung dauert länger. Bitte prüfe den Status später erneut; die Datei bleibt gespeichert.",
+      message: say("check_slow"),
     };
     onUpdate?.(delayed);
     return delayed;
@@ -663,6 +655,7 @@
     upload: (blob, update) => uploadFile(blob, "signature", null, update),
     poll: pollUpload,
     remove: (url) => api(url, { method: "DELETE" }),
+    text: config.text,
     onChange(status) {
       document.getElementById("retry-signature").hidden = !status.canRetry;
       signatureControls.forEach((id) => {
@@ -670,8 +663,8 @@
       });
       if (status.state === "replacing") {
         resetSignatureView();
-        signatureStatus.textContent = "Unterschrift wird hochgeladen und geprüft …";
-      } else if (status.state === "ready") signatureStatus.textContent = "Unterschrift geprüft.";
+        signatureStatus.textContent = say("signature_uploading");
+      } else if (status.state === "ready") signatureStatus.textContent = say("signature_ready");
       else if (status.message) signatureStatus.textContent = status.message;
     },
   });
@@ -695,7 +688,7 @@
       return true;
     } catch (error) {
       showError(error.message);
-      signatureStatus.textContent = "Bitte lösche die Unterschrift oder versuche es erneut.";
+      signatureStatus.textContent = say("signature_retry");
       return false;
     } finally {
       signatureViewBusy = false;
@@ -731,7 +724,7 @@
     context.lineTo(x, y);
     context.stroke();
     hasInk = true;
-    signatureStatus.textContent = "Unterschrift gezeichnet.";
+    signatureStatus.textContent = say("signature_drawn");
   });
   canvas.addEventListener("pointerup", () => (drawing = false));
   canvas.addEventListener("pointercancel", () => (drawing = false));
@@ -751,11 +744,11 @@
         return;
       }
       await signatureAction(async () => {
-        signatureStatus.textContent = "Unterschrift wird hochgeladen und geprüft …";
+        signatureStatus.textContent = say("signature_uploading");
         await signature.replace(file);
         resetSignatureView();
         signatureStatus.textContent = signature.status().state === "ready"
-          ? `Unterschrift geprüft: ${file.name}` : signature.status().message;
+          ? say("signature_ready_file", { name: file.name }) : signature.status().message;
         const image = await createImageBitmap(file);
         const scale = Math.min(
           canvas.width / image.width,
@@ -801,9 +794,7 @@
           row.files.some((file) => file.state !== "ready"),
       )
     ) {
-      showError(
-        "Jede Auslage benötigt mindestens einen Beleg, und alle Dateien müssen geprüft sein.",
-      );
+      showError(say("receipts_missing"));
       return;
     }
     if (
@@ -812,9 +803,7 @@
         return amount === null || amount <= 0n;
       })
     ) {
-      showError(
-        "Bitte gib für jede Position einen positiven Betrag in Euro bzw. eine Entfernung in ganzen Kilometern ein.",
-      );
+      showError(say("amounts_invalid"));
       return;
     }
     if (
@@ -830,29 +819,18 @@
     content.replaceChildren();
     const descriptions = node("dl");
     const travel = tripFields && !form.elements.trip_destination.disabled;
-    for (const [name, label] of [
-      ["full_name", "Name"],
-      ["email", "E-Mail"],
-      ["street", "Straße und Hausnummer"],
-      ["postal_code", "PLZ"],
-      ["city", "Ort"],
-      ["country", "Land"],
-      ["account_holder", "Kontoinhaber:in"],
-      ["iban", "IBAN"],
-      ["bic", "BIC"],
-      ["purpose", "Anlass/Projektbezug"],
-      ["purpose_details", "Ergänzung"],
-      ["trip_destination", "Zielort"],
-      ["trip_start", "Reisebeginn"],
-      ["trip_end", "Reiseende"],
+    for (const name of [
+      "full_name", "email", "street", "postal_code", "city", "country", "account_holder",
+      "iban", "bic", "purpose", "purpose_details", "trip_destination", "trip_start", "trip_end",
     ]) {
+      const label = say(`review_${name}`);
       if (name.startsWith("trip_") && !travel) continue;
       const element = form.elements.namedItem(name);
       const value =
         element instanceof HTMLSelectElement
           ? element.selectedOptions[0]?.text
-          : element?.type === "date"
-            ? element.value.split("-").reverse().join(".")
+          : element?.type === "date" && element.value
+            ? formatDate(element.value)
             : element?.value;
       if (value) descriptions.append(node("dt", label), node("dd", value));
     }
@@ -865,12 +843,20 @@
         item.append(
           node(
             "p",
-            `${index + 1}. Fahrt ${data.route_from} – ${data.route_to}${data.round_trip ? " und zurück" : ""} · ${amount}`,
+            `${index + 1}. ${say(data.round_trip ? "review_trip_return" : "review_trip", {
+              start: data.route_from, end: data.route_to,
+            })} · ${amount}`,
             "review-title",
           ),
           node(
             "p",
-            `Hinfahrt: ${data.travel_date.split("-").reverse().join(".")}${data.round_trip ? ` · Rückfahrt: ${data.return_date.split("-").reverse().join(".")}` : ""} · Kennzeichen: ${data.vehicle_registration}`,
+            [
+              say("review_outward", { date: formatDate(data.travel_date) }),
+              ...(data.round_trip
+                ? [say("review_return", { date: formatDate(data.return_date) })]
+                : []),
+              say("review_registration", { plate: data.vehicle_registration }),
+            ].join(" · "),
           ),
         );
       else
@@ -878,14 +864,16 @@
           node("p", `${index + 1}. ${data.merchant} · ${amount}`, "review-title"),
           node(
             "p",
-            data.receipt_reference.trim() ? `Referenz ${data.receipt_reference}` : "",
+            data.receipt_reference.trim()
+              ? say("review_reference", { reference: data.receipt_reference })
+              : "",
           ),
         );
       if (row.files.length)
         item.append(node("small", row.files.map((file) => file.name).join(" · ")));
       content.append(item);
     });
-    content.append(node("p", `Summe: ${money(updateTotals())}`, "totals"));
+    content.append(node("p", say("review_total", { amount: money(updateTotals()) }), "totals"));
     details.hidden = true;
     review.hidden = false;
     review.querySelector("h2").focus();
@@ -918,16 +906,16 @@
       !form.elements.declaration.checked ||
       !form.elements.privacy_acknowledged.checked
     ) {
-      showError("Bitte bestätige die Erklärung und den Datenschutzhinweis.");
+      showError(say("consent_missing"));
       return;
     }
     if (!hasInk && !["ready", "pending"].includes(signature.status().state)) {
-      showError("Bitte unterschreibe oder lade eine Unterschrift hoch.");
+      showError(say("signature_required"));
       return;
     }
     submitting = true;
     const button = document.getElementById("submit-button");
-    button.textContent = "Wird eingereicht …";
+    button.textContent = say("submitting");
     review
       .querySelectorAll("button,input")
       .forEach((element) => (element.disabled = true));
@@ -974,7 +962,7 @@
       review
         .querySelectorAll("button,input")
         .forEach((element) => (element.disabled = false));
-      button.textContent = "Antrag einreichen →";
+      button.textContent = say("submit");
     }
   });
   window.addEventListener("beforeunload", (event) => {

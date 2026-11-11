@@ -2,9 +2,11 @@
 // The Signature lifecycle has no DOM dependency. The form supplies network access
 // and renders a read-only status; the upload handle never escapes this module.
 ((root) => {
-  function createSignature({ upload, poll, remove, onChange = () => {} }) {
+  // `text` holds the messages in the app language; a missing one shows its key.
+  function createSignature({ upload, poll, remove, onChange = () => {}, text = {} }) {
     let current = null, busy = false, generation = 0;
-    const changed = () => new Error("Die Unterschrift wurde geändert. Bitte versuche es erneut.");
+    const say = (key) => text[key] || key;
+    const changed = () => new Error(say("signature_changed"));
     function status() {
       return Object.freeze({
         state: current?.state || "empty", busy,
@@ -14,7 +16,7 @@
     }
     function notify() { onChange(status()); }
     async function run(action) {
-      if (busy) throw new Error("Die Unterschrift wird noch verarbeitet.");
+      if (busy) throw new Error(say("signature_busy"));
       busy = true;
       notify();
       try { return await action(); }
@@ -70,7 +72,7 @@
           const version = ++generation;
           await discard();
           if (version !== generation) throw changed();
-          if (!blob) throw new Error("Bitte zeichne oder lade eine Unterschrift hoch.");
+          if (!blob) throw new Error(say("signature_missing"));
           current = { state: "replacing" };
           notify();
           await receive((update) => upload(blob, update));
@@ -86,11 +88,11 @@
             if (version !== generation) throw changed();
             const blob = await getDrawing();
             if (version !== generation) throw changed();
-            if (!blob) throw new Error("Bitte zeichne oder lade eine Unterschrift hoch.");
+            if (!blob) throw new Error(say("signature_missing"));
             await receive((update) => upload(blob, update));
           }
           if (current?.state !== "ready")
-            throw new Error(current?.message || "Bitte warte, bis die Unterschrift geprüft ist.");
+            throw new Error(current?.message || say("signature_wait"));
           return current.id;
         });
       },

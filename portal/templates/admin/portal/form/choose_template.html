@@ -1,10 +1,10 @@
 {% extends "admin/base_site.html" %}{% load ui %}
-{% block breadcrumbs %}{% include "admin/portal/breadcrumbs.html" with current="Neues Formular" %}{% endblock %}
+{% block breadcrumbs %}{% include "admin/portal/breadcrumbs.html" with current="New form" %}{% endblock %}
 {% block content_title %}
 <div class="grid gap-1">
-  <p class="text-sm font-medium text-muted-foreground">Schritt 1 von 2</p>
-  <h1 class="page-title">Vorlage wählen</h1>
-  <p class="max-w-2xl text-sm text-muted-foreground">Die Vorlage legt fest, welche internen Werte (z. B. KST, KTR) du angibst und welche Angaben Teilnehmende machen. Sie kann später nicht geändert werden.</p>
+  <p class="text-sm font-medium text-muted-foreground">Step 1 of 2</p>
+  <h1 class="page-title">Choose a template</h1>
+  <p class="max-w-2xl text-sm text-muted-foreground">The template sets which internal values (e.g. KST, KTR) you enter and which details participants give. It cannot be changed later.</p>
 </div>
 {% endblock %}
 {% block content %}
@@ -17,13 +17,13 @@
       <span class="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">{% icon "layout-template" %}</span>
       <span class="font-semibold">{{ template.name }}</span>
       {% if template.description %}<span class="text-sm text-muted-foreground">{{ template.description|linebreaksbr }}</span>{% endif %}
-      <span class="mt-auto inline-flex items-center gap-1 text-sm font-medium text-primary">Diese Vorlage verwenden{% icon "arrow-right" class="size-4 transition-transform group-hover:translate-x-0.5" %}</span>
+      <span class="mt-auto inline-flex items-center gap-1 text-sm font-medium text-primary">Use this template{% icon "arrow-right" class="size-4 transition-transform group-hover:translate-x-0.5" %}</span>
     </a>
   </li>
   {% endfor %}
 </ul>
 {% else %}
-{% component "card" class="items-center py-12 text-center" %}{% icon "layout-template" class="size-8 text-muted-foreground" %}{% component "card_content" class="grid gap-1" %}<p class="font-medium">Es gibt noch keine Vorlage</p><p class="text-sm text-muted-foreground">Vorlagen legen Vorlagen-Admins im Bereich Admin an.</p>{% endcomponent %}{% endcomponent %}
+{% component "card" class="items-center py-12 text-center" %}{% icon "layout-template" class="size-8 text-muted-foreground" %}{% component "card_content" class="grid gap-1" %}<p class="font-medium">There are no templates yet</p><p class="text-sm text-muted-foreground">Template admins create templates in the Admin section.</p>{% endcomponent %}{% endcomponent %}
 {% endif %}
 </div>
 {% endblock %}

@@ -1,4 +1,5 @@
-"""The admin area: templates, forms, the privacy notice and claims, behind Keycloak."""
+"""The admin area, always in English: claims, forms, templates, the privacy notice and the
+General settings, behind Keycloak."""
 
 import logging
 import uuid
@@ -12,19 +13,23 @@ from django.db import IntegrityError
 from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.response import TemplateResponse
+from django.templatetags.static import static
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from mozilla_django_oidc.views import OIDCLogoutView
 
-from portal import admin_navigation, roles
+from portal import admin_navigation, app_settings, roles
+from portal.constants import APP_NAME
 from portal.models import (
+    AppSettings,
     Claim,
     Form,
     FormTemplate,
     Operation,
     PrivacyNotice,
     TemplateField,
+    timezone_names,
 )
 from portal.roles import is_form_editor, is_template_admin
 from portal.services import delivery, operations, publication, retention
@@ -34,9 +39,9 @@ logger = logging.getLogger(__name__)
 
 
 class PortalAdminSite(admin.AdminSite):
-    site_header = settings.PORTAL_NAME
-    site_title = "Erstattungsportal"
-    index_title = "Verwaltung"
+    site_header = APP_NAME
+    site_title = APP_NAME
+    index_title = "Administration"
     site_url = "/"
     enable_nav_sidebar = False
 
@@ -78,10 +83,10 @@ class PortalAdminSite(admin.AdminSite):
 
     def get_urls(self):
         return [
-            path("kein-zugriff/", self.no_access, name="no_access"),
-            path("suche/", self.admin_view(self.search), name="search"),
+            path("no-access/", self.no_access, name="no_access"),
+            path("search/", self.admin_view(self.search), name="search"),
             path(
-                "suche/vorschlaege/",
+                "search/suggestions/",
                 self.admin_view(self.search_suggestions),
                 name="search_suggestions",
             ),
@@ -97,7 +102,7 @@ class PortalAdminSite(admin.AdminSite):
         return TemplateResponse(
             request,
             "admin/portal/search.html",
-            {**self.each_context(request), "title": "Suche", "query": query, "groups": groups},
+            {**self.each_context(request), "title": "Search", "query": query, "groups": groups},
         )
 
     def search_suggestions(self, request):
@@ -107,6 +112,116 @@ class PortalAdminSite(admin.AdminSite):
 
 
 site = PortalAdminSite(name="admin")
+
+
+class GeneralSettingsForm(forms.ModelForm):
+    timezone = forms.ChoiceField(label="Timezone")
+    favicon_file = forms.FileField(
+        label="New favicon",
+        required=False,
+        help_text="PNG, ICO or SVG, at most 100 KB. Square images of at least 32 × 32 pixels "
+        "look best.",
+    )
+    remove_favicon = forms.BooleanField(label="Use the standard favicon", required=False)
+
+    class Meta:
+        model = AppSettings
+        fields = ["language", "timezone", "date_format"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["timezone"].choices = [
+            (name, name.replace("_", " ")) for name in timezone_names()
+        ]
+        self.fields["timezone"].help_text = AppSettings._meta.get_field("timezone").help_text
+
+    def clean_favicon_file(self):
+        upload = self.cleaned_data.get("favicon_file")
+        if not upload:
+            return None
+        if upload.size > app_settings.MAX_FAVICON_BYTES:
+            raise forms.ValidationError("The favicon may be at most 100 KB.")
+        content = upload.read()
+        media_type = app_settings.favicon_type(content)
+        if media_type is None:
+            raise forms.ValidationError("Upload a PNG, ICO or SVG file.")
+        return content, media_type
+
+    def save(self, commit=True):
+        general = super().save(commit=False)
+        if self.cleaned_data.get("favicon_file"):
+            general.set_favicon(*self.cleaned_data["favicon_file"])
+        elif self.cleaned_data.get("remove_favicon"):
+            general.set_favicon(b"")
+        if commit:
+            general.save()
+        return general
+
+
+@admin.register(AppSettings, site=site)
+class AppSettingsAdmin(admin.ModelAdmin):
+    """The General tab: one settings row, edited in place."""
+
+    form = GeneralSettingsForm
+    change_form_template = "admin/portal/appsettings/change_form.html"
+    fieldsets = [
+        ("Language and dates", {"fields": ["language", "timezone", "date_format"]}),
+        (
+            "Favicon",
+            {
+                "fields": ["current_favicon", "favicon_file", "remove_favicon"],
+                "description": "The icon in browser tabs, on public pages and in the admin area.",
+            },
+        ),
+    ]
+    readonly_fields = ["current_favicon"]
+
+    def has_module_permission(self, request):
+        return is_template_admin(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return is_template_admin(request.user)
+
+    def has_change_permission(self, request, obj=None):
+        return is_template_admin(request.user)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_object(self, request, object_id, from_field=None):
+        return AppSettings.load() if str(object_id) == "1" else None
+
+    def changelist_view(self, request, extra_context=None):
+        return redirect("admin:portal_appsettings_change", 1)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = {
+            **(extra_context or {}),
+            "title": "General",
+            "show_save_and_continue": False,
+            "show_save_and_add_another": False,
+        }
+        return super().change_view(request, object_id, form_url, extra_context)
+
+    def response_change(self, request, obj):
+        messages.success(request, "The general settings were saved.")
+        return redirect("admin:portal_appsettings_change", 1)
+
+    @admin.display(description="Current favicon")
+    def current_favicon(self, obj):
+        if obj.favicon_digest:
+            url, label = reverse("favicon", args=[obj.favicon_digest]), "Custom favicon"
+        else:
+            url, label = static("portal/brand/logo.svg"), "Standard favicon"
+        return format_html(
+            '<span class="inline-flex items-center gap-3"><img src="{}" alt="" width="32" '
+            'height="32" class="size-8 rounded-md border bg-background object-contain">{}</span>',
+            url,
+            label,
+        )
 
 
 class RoleAdmin(admin.ModelAdmin):
@@ -131,10 +246,9 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(PrivacyNotice, site=site)
 class PrivacyNoticeAdmin(RoleAdmin):
     list_description = (
-        "Teilnehmende sehen immer die neueste Version. Jede Änderung wird als neue Version "
-        "gespeichert."
+        "Participants always see the latest version. Every change is saved as a new version."
     )
-    add_label = "Neue Version"
+    add_label = "New version"
     list_display = ["__str__", "created_at", "created_by", "is_current"]
     fields = ["text"]
 
@@ -150,14 +264,14 @@ class PrivacyNoticeAdmin(RoleAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-    @admin.display(description="Aktuell", boolean=True)
+    @admin.display(description="Current", boolean=True)
     def is_current(self, obj):
         current = PrivacyNotice.current()
         return bool(current and current.pk == obj.pk)
 
     def get_form(self, request, obj=None, change=False, **kwargs):
         kwargs["help_texts"] = {
-            "text": "Eine Leerzeile trennt Absätze. Eine Zeile mit „# “ am Anfang wird zur Überschrift."
+            "text": "A blank line separates paragraphs. A line starting with “# ” becomes a heading."
         }
         return super().get_form(request, obj, change, **kwargs)
 
@@ -194,21 +308,19 @@ class TemplateFieldInline(admin.TabularInline):
 
 @admin.register(FormTemplate, site=site)
 class FormTemplateAdmin(RoleAdmin):
-    list_description = (
-        "Vorlagen legen fest, welche internen Werte und Angaben ein Formular abfragt."
-    )
-    add_label = "Vorlage anlegen"
-    search_placeholder = "Name oder Beschreibung …"
+    list_description = "Templates set which internal values and details a form asks for."
+    add_label = "Add template"
+    search_placeholder = "Name or description …"
     list_display = ["name", "travel", "mileage_enabled", "form_count", "updated_at"]
     search_fields = ["name", "description"]
     inlines = [TemplateFieldInline]
     fieldsets = [
         (None, {"fields": ["name", "description"]}),
-        ("Für Teilnehmende", {"fields": ["intro", "travel", "mileage_enabled", "mileage_rate"]}),
-        ("Erklärung", {"fields": ["declaration", "declaration_version"]}),
+        ("For participants", {"fields": ["intro", "travel", "mileage_enabled", "mileage_rate"]}),
+        ("Declaration", {"fields": ["declaration", "declaration_version"]}),
     ]
 
-    @admin.display(description="Formulare")
+    @admin.display(description="Forms")
     def form_count(self, obj):
         return obj.forms.count()
 
@@ -220,10 +332,10 @@ class FormTemplateAdmin(RoleAdmin):
 class FormAdmin(admin.ModelAdmin):
     change_form_template = "admin/portal/form/change_form.html"
     delete_confirmation_template = "admin/portal/form/delete_confirmation.html"
-    list_description = "Über den Link eines Formulars reichen Teilnehmende ihre Auslagen ein."
-    add_label = "Formular anlegen"
-    search_placeholder = "Name oder Kurzname …"
-    empty_description = "Lege ein Formular aus einer Vorlage an und teile den Link."
+    list_description = "Participants submit their expenses through a form's link."
+    add_label = "Add form"
+    search_placeholder = "Name or short name …"
+    empty_description = "Create a form from a template and share its link."
     list_display = [
         "name",
         "template",
@@ -258,7 +370,7 @@ class FormAdmin(admin.ModelAdmin):
 
     def delete_view(self, request, object_id, extra_context=None):
         if request.method == "POST" and request.POST.get("post") != "yes":
-            return JsonResponse({"error": "Bitte bestätige das Löschen des Entwurfs."}, status=400)
+            return JsonResponse({"error": "Please confirm deleting the draft."}, status=400)
         return super().delete_view(request, object_id, extra_context)
 
     def get_queryset(self, request):
@@ -282,7 +394,7 @@ class FormAdmin(admin.ModelAdmin):
                 {
                     **self.admin_site.each_context(request),
                     "opts": self.model._meta,
-                    "title": "Vorlage für das neue Formular wählen",
+                    "title": "Choose a template for the new form",
                     "templates": FormTemplate.objects.all(),
                 },
             )
@@ -304,10 +416,10 @@ class FormAdmin(admin.ModelAdmin):
         if values:
             fieldsets.append(
                 (
-                    "Interne Werte",
+                    "Internal values",
                     {
                         "fields": values,
-                        "description": "Nicht sichtbar für Teilnehmende, erscheinen in der PDF.",
+                        "description": "Not visible to participants; printed in the PDF.",
                     },
                 )
             )
@@ -315,8 +427,8 @@ class FormAdmin(admin.ModelAdmin):
         if template.travel != FormTemplate.Travel.OFF:
             participant += ["trip_start", "trip_end"]
         fieldsets += [
-            ("Für Teilnehmende", {"fields": participant}),
-            ("Versand und Kontakt", {"fields": ["recipient", "support_email"]}),
+            ("For participants", {"fields": participant}),
+            ("Delivery and contact", {"fields": ["recipient", "support_email"]}),
         ]
         return fieldsets
 
@@ -344,7 +456,7 @@ class FormAdmin(admin.ModelAdmin):
             variant="success" if obj.status == Form.Status.PUBLISHED else "secondary",
         )
 
-    @admin.display(description="Vorlage")
+    @admin.display(description="Template")
     def template_name(self, obj):
         return obj.template.name if obj and obj.template_id else ""
 
@@ -359,11 +471,11 @@ class FormAdmin(admin.ModelAdmin):
         request = getattr(self, "_request", None)
         return request.build_absolute_uri(url) if request else url
 
-    @admin.display(description="Jetzt geöffnet", boolean=True)
+    @admin.display(description="Open now", boolean=True)
     def open_now(self, obj):
         return obj.is_open()
 
-    @admin.display(description="Interne Werte vollständig", boolean=True)
+    @admin.display(description="Internal values complete", boolean=True)
     def values_complete(self, obj):
         return not obj.internal_value_errors()
 
@@ -376,9 +488,7 @@ class FormAdmin(admin.ModelAdmin):
         try:
             creation_key = self._creation_key(request) if object_id is None else None
         except ValueError:
-            return JsonResponse(
-                {"error": "Ungültige Anfrage. Bitte lade die Seite neu."}, status=400
-            )
+            return JsonResponse({"error": "Invalid request. Please reload the page."}, status=400)
         existing = creation_key and publication.created(request.user, creation_key)
         if existing:
             object_id = str(existing.pk)
@@ -395,8 +505,8 @@ class FormAdmin(admin.ModelAdmin):
         ):
             messages.warning(
                 request,
-                "Die Vorlage wurde geändert. Das Formular bleibt geschlossen, bis diese "
-                f"internen Werte passen: {', '.join(form.internal_value_errors())}.",
+                "The template was changed. The form stays closed until these internal "
+                f"values fit: {', '.join(form.internal_value_errors())}.",
             )
         try:
             publication.status_after(form, request.POST.get("_publication", ""))
@@ -423,7 +533,7 @@ class FormAdmin(admin.ModelAdmin):
         if self._autosave(request) and response.status_code == 302:
             # A deleted form must never turn an autosave into a second new form.
             return JsonResponse(
-                {"error": "Das Formular ist nicht mehr verfügbar. Bitte lade die Seite neu."},
+                {"error": "The form is no longer available. Please reload the page."},
                 status=404,
             )
         return response
@@ -468,13 +578,13 @@ class FormAdmin(admin.ModelAdmin):
 
 
 DELIVERY_STATUS = {
-    "pending": "Versand wartet",
-    "sending": "Wird versendet",
-    "provider_accepted": "Vom Versanddienst angenommen",
-    "paused": "Versand verzögert",
-    "delivered": "Zugestellt",
-    "failed": "Versand fehlgeschlagen",
-    "send_unknown": "Versandstatus unklar",
+    "pending": "Waiting to send",
+    "sending": "Sending",
+    "provider_accepted": "Accepted by the email service",
+    "paused": "Sending delayed",
+    "delivered": "Delivered",
+    "failed": "Sending failed",
+    "send_unknown": "Delivery unclear",
 }
 
 
@@ -533,27 +643,24 @@ class StatusFilter(admin.SimpleListFilter):
 
 class RetryForm(forms.Form):
     reason = forms.CharField(
-        label="Grund", max_length=500, widget=forms.Textarea(attrs={"rows": 3})
+        label="Reason", max_length=500, widget=forms.Textarea(attrs={"rows": 3})
     )
     acknowledge_duplicate_risk = forms.BooleanField(
-        label=(
-            "Ich habe den Versand geprüft und nehme in Kauf, dass Finance den Antrag "
-            "doppelt erhalten kann."
-        ),
+        label=("I have checked the delivery and accept that Finance may receive the claim twice."),
         required=False,
     )
 
 
 class DeleteForm(forms.Form):
     reason = forms.CharField(
-        label="Grund", max_length=500, widget=forms.Textarea(attrs={"rows": 3})
+        label="Reason", max_length=500, widget=forms.Textarea(attrs={"rows": 3})
     )
 
 
 # A bulk deletion purges in the request; larger cleanups run in several steps.
 MAX_BULK_DELETE = 100
 
-OPERATION_LABELS = {"retry": "Erneut verarbeitet", "delete": "Gelöscht"}
+OPERATION_LABELS = {"retry": "Processed again", "delete": "Deleted"}
 
 
 class OperationInline(admin.TabularInline):
@@ -562,8 +669,8 @@ class OperationInline(admin.TabularInline):
     fields = ["when", "what", "who", "why"]
     readonly_fields = fields
     can_delete = False
-    verbose_name = "Aktion"
-    verbose_name_plural = "Protokollierte Aktionen"
+    verbose_name = "action"
+    verbose_name_plural = "Logged actions"
 
     def has_view_permission(self, request, obj=None):
         return is_form_editor(request.user)
@@ -574,28 +681,28 @@ class OperationInline(admin.TabularInline):
     def has_change_permission(self, request, obj=None):
         return False
 
-    @admin.display(description="Zeitpunkt")
+    @admin.display(description="When")
     def when(self, obj):
         return obj.created_at
 
-    @admin.display(description="Aktion")
+    @admin.display(description="Action")
     def what(self, obj):
         return OPERATION_LABELS.get(obj.action, obj.action)
 
-    @admin.display(description="Durch")
+    @admin.display(description="By")
     def who(self, obj):
         return obj.actor
 
-    @admin.display(description="Grund")
+    @admin.display(description="Reason")
     def why(self, obj):
         return obj.reason
 
 
 @admin.register(Claim, site=site)
 class ClaimAdmin(admin.ModelAdmin):
-    list_description = "Eingereichte Anträge und ihr Verarbeitungsstand."
-    search_placeholder = "Name, E-Mail oder Referenz …"
-    empty_description = "Sobald Teilnehmende ein Formular einreichen, erscheint der Antrag hier."
+    list_description = "Submitted claims and how far they have been processed."
+    search_placeholder = "Name, email or reference …"
+    empty_description = "As soon as participants submit a form, the claim appears here."
     list_display = [
         "short_reference",
         "form",
@@ -626,7 +733,7 @@ class ClaimAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Verarbeitung",
+            "Processing",
             {"fields": ["status", "error", "pdf_removed_at", "retention_due", "overdue"]},
         ),
     ]
@@ -671,11 +778,11 @@ class ClaimAdmin(admin.ModelAdmin):
         except ValueError:
             return super().get_search_results(request, queryset, search_term)
 
-    @admin.display(description="Referenz")
+    @admin.display(description="Reference")
     def reference_display(self, obj):
         return obj.reference
 
-    @admin.display(description="Referenz", ordering="id")
+    @admin.display(description="Reference", ordering="id")
     def short_reference(self, obj):
         return obj.bookkeeping_reference or str(obj.id)[:8]
 
@@ -683,14 +790,14 @@ class ClaimAdmin(admin.ModelAdmin):
     def status(self, obj):
         return claim_status_badge(obj)
 
-    @admin.display(description="Fehler")
+    @admin.display(description="Error")
     def error(self, obj):
         return delivery.operator_status(obj).error_code or "—"
 
-    @admin.display(description="Klärung")
+    @admin.display(description="Follow-up")
     def overdue(self, obj):
         if delivery.operator_status(obj).overdue:
-            return render_component("badge", "Überfällig", variant="warning")
+            return render_component("badge", "Overdue", variant="warning")
         return "—"
 
     def has_purge_permission(self, request):
@@ -700,12 +807,12 @@ class ClaimAdmin(admin.ModelAdmin):
     def get_urls(self):
         return [
             path(
-                "<uuid:claim_id>/erneut-versuchen/",
+                "<uuid:claim_id>/retry/",
                 self.admin_site.admin_view(self.retry_view),
                 name="portal_claim_retry",
             ),
             path(
-                "<uuid:claim_id>/loeschen/",
+                "<uuid:claim_id>/purge/",
                 self.admin_site.admin_view(self.purge_view),
                 name="portal_claim_purge",
             ),
@@ -714,12 +821,11 @@ class ClaimAdmin(admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         claim = self.get_object(request, object_id)
+        if claim is None:
+            # Django redirects with a message, e.g. for an outdated link.
+            return super().change_view(request, object_id, form_url, extra_context)
         # A deleted claim has nothing left to process or delete.
-        operable = (
-            claim is not None
-            and is_template_admin(request.user)
-            and claim.state not in DELETED_STATES
-        )
+        operable = is_template_admin(request.user) and claim.state not in DELETED_STATES
         extra_context = {
             **(extra_context or {}),
             "can_retry": operable,
@@ -734,7 +840,7 @@ class ClaimAdmin(admin.ModelAdmin):
             raise PermissionDenied
         claim = get_object_or_404(self.get_queryset(request), pk=claim_id)
         if claim.state in DELETED_STATES:
-            messages.info(request, "Dieser Antrag wurde bereits gelöscht.")
+            messages.info(request, "This claim has already been deleted.")
             return redirect("admin:portal_claim_change", claim.pk)
         form = DeleteForm(request.POST or None)
         if request.method == "POST" and form.is_valid():
@@ -744,14 +850,14 @@ class ClaimAdmin(admin.ModelAdmin):
             form.add_error(None, refused[0][1])
         return self._delete_confirmation(request, [claim], form)
 
-    @admin.action(description="Ausgewählte Anträge löschen", permissions=["purge"])
+    @admin.action(description="Delete selected claims", permissions=["purge"])
     def delete_claims(self, request, queryset):
         claims = list(queryset.exclude(state__in=DELETED_STATES)[: MAX_BULK_DELETE + 1])
         if not claims:
-            messages.info(request, "Die ausgewählten Anträge wurden bereits gelöscht.")
+            messages.info(request, "The selected claims have already been deleted.")
             return None
         if len(claims) > MAX_BULK_DELETE:
-            messages.error(request, f"Bitte wähle höchstens {MAX_BULK_DELETE} Anträge auf einmal.")
+            messages.error(request, f"Please select at most {MAX_BULK_DELETE} claims at once.")
             return None
         # The changelist's action form submits first; the confirmation page sends `post`.
         form = DeleteForm(request.POST if request.POST.get("post") == "yes" else None)
@@ -780,15 +886,13 @@ class ClaimAdmin(admin.ModelAdmin):
         if deleted:
             messages.success(
                 request,
-                "Der Antrag wurde gelöscht."
-                if deleted == 1
-                else f"{deleted} Anträge wurden gelöscht.",
+                "The claim was deleted." if deleted == 1 else f"{deleted} claims were deleted.",
             )
         if resuming:
             messages.warning(
                 request,
-                "Die Löschung wurde begonnen und wird in wenigen Minuten automatisch "
-                f"abgeschlossen ({resuming} {'Antrag' if resuming == 1 else 'Anträge'}).",
+                "Deletion has started and finishes automatically within a few minutes "
+                f"({resuming} {'claim' if resuming == 1 else 'claims'}).",
             )
         return refused
 
@@ -808,7 +912,7 @@ class ClaimAdmin(admin.ModelAdmin):
             {
                 **self.admin_site.each_context(request),
                 "opts": self.model._meta,
-                "title": "Antrag löschen?" if len(rows) == 1 else f"{len(rows)} Anträge löschen?",
+                "title": "Delete claim?" if len(rows) == 1 else f"Delete {len(rows)} claims?",
                 "rows": rows,
                 "sent_count": sent,
                 "unsent_count": len(rows) - sent,
@@ -834,7 +938,7 @@ class ClaimAdmin(admin.ModelAdmin):
             except operations.ActionRefused as exc:
                 form.add_error(None, str(exc))
             else:
-                messages.success(request, "Die Verarbeitung wurde erneut gestartet.")
+                messages.success(request, "Processing has started again.")
                 return redirect("admin:portal_claim_change", claim.pk)
         return TemplateResponse(
             request,
@@ -842,7 +946,7 @@ class ClaimAdmin(admin.ModelAdmin):
             {
                 **self.admin_site.each_context(request),
                 "opts": self.model._meta,
-                "title": "Antrag erneut verarbeiten",
+                "title": "Process claim again",
                 "claim": claim,
                 "status": claim_status(claim),
                 "status_badge": claim_status_badge(claim),

@@ -23,7 +23,7 @@
   let observed = serialize();
 
   function publicationError(action) {
-    return action === "publish" ? "Veröffentlichen fehlgeschlagen." : "Unveröffentlichen fehlgeschlagen.";
+    return action === "publish" ? "Publishing failed." : "Unpublishing failed.";
   }
 
   function setSaveStatus(state, message) {
@@ -55,7 +55,7 @@
   function showErrors(data) {
     clearErrors();
     const summary = document.createElement("p");
-    summary.textContent = data.error || "Bitte korrigiere die markierten Felder.";
+    summary.textContent = data.error || "Please correct the marked fields.";
     errors.append(summary);
     for (const [name, messages] of Object.entries(data.errors || {})) {
       const fields = Array.from(form.elements).filter((field) =>
@@ -84,7 +84,7 @@
     revision += 1;
     dirty = true;
     setSaveStatus(saving ? "saving" : "pending",
-      saving ? "Wird gespeichert …" : "Ungespeicherte Änderungen …");
+      saving ? "Saving …" : "Unsaved changes …");
     window.clearTimeout(timer);
     timer = window.setTimeout(save, 600);
   }
@@ -97,7 +97,7 @@
     const slug = form.elements.namedItem("slug");
     if (creating && !slug.value) {
       const name = form.elements.namedItem("name").value;
-      slug.value = window.URLify(name, slug.maxLength) || `formular-${creationKey.slice(0, 12)}`;
+      slug.value = window.URLify(name, slug.maxLength) || `form-${creationKey.slice(0, 12)}`;
     }
     // Freeze the generated link before sending, including when the first response is lost.
     window.django?.jQuery("#id_slug").data("_changed", true);
@@ -108,8 +108,8 @@
     if (action) data.set("_publication", action);
     saving = true;
     retry.hidden = true;
-    setSaveStatus("saving", action === "publish" ? "Wird veröffentlicht …" :
-      action === "unpublish" ? "Wird zurückgezogen …" : "Wird gespeichert …");
+    setSaveStatus("saving", action === "publish" ? "Publishing …" :
+      action === "unpublish" ? "Unpublishing …" : "Saving …");
     try {
       const response = await fetch(form.action || window.location.href, {
         method: "POST",
@@ -119,12 +119,12 @@
         signal: AbortSignal.timeout(20000),
       });
       if (response.redirected || !response.headers.get("Content-Type")?.includes("application/json")) {
-        throw new Error("Die Sitzung ist möglicherweise abgelaufen. Bitte lade die Seite neu.");
+        throw new Error("Your session may have expired. Please reload the page.");
       }
       const result = await response.json();
       if (!response.ok) {
         showErrors(result);
-        throw new Error(action ? publicationError(action) : "Änderungen wurden nicht gespeichert.");
+        throw new Error(action ? publicationError(action) : "Changes were not saved.");
       }
       clearErrors();
       if (action ||
@@ -142,7 +142,7 @@
       badge.dataset.status = result.status;
       document.querySelector("[data-draft-badge]").hidden = result.status !== "draft";
       document.querySelector("[data-published-badge]").hidden = result.status !== "published";
-      toggle.textContent = result.status === "published" ? "Unveröffentlichen" : "Veröffentlichen";
+      toggle.textContent = result.status === "published" ? "Unpublish" : "Publish";
       toggle.value = result.status === "published" ? "unpublish" : "publish";
       preview.href = result.link;
       preview.hidden = false;
@@ -156,15 +156,15 @@
       dirty = revision !== startedAt;
       setSaveStatus(failedPublication ? "error" : dirty ? "pending" : "saved",
         failedPublication ? publicationError(failedPublication) :
-          dirty ? "Ungespeicherte Änderungen …" : "Alle Änderungen gespeichert.");
+          dirty ? "Unsaved changes …" : "All changes saved.");
       retry.hidden = !failedPublication;
     } catch (error) {
       dirty = true;
       if (action) failedPublication = action;
       setSaveStatus("error", failedPublication ? publicationError(failedPublication) :
-        "Speichern fehlgeschlagen. Deine Änderungen sind noch nicht gespeichert.");
+        "Saving failed. Your changes are not saved yet.");
       if (errors.hidden) showErrors({ error: error.name === "TypeError" || error.name === "TimeoutError" ?
-        "Keine Verbindung. Bitte prüfe deine Internetverbindung und versuche es erneut." : error.message });
+        "No connection. Please check your internet connection and try again." : error.message });
       retry.hidden = false;
       if (action) form.querySelector('[aria-invalid="true"]')?.focus();
     } finally {

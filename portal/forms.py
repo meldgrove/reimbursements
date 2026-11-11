@@ -4,7 +4,8 @@ import unicodedata
 from django import forms
 from stdnum import bic, iban
 
-from portal.countries import COUNTRIES
+from portal.countries import countries
+from portal.i18n import t, t_lazy
 from portal.models import FormTemplate
 
 # IBAN countries in the SEPA scheme. Other IBANs also need a BIC for the transfer.
@@ -13,9 +14,9 @@ SEPA_COUNTRIES = frozenset(
     "NO PL PT RO SE SI SK SM VA".split()
 )
 POSTAL_CODE_FORMATS = {
-    "DE": (r"\d{5}", "Bitte gib eine fünfstellige Postleitzahl ein."),
-    "AT": (r"\d{4}", "Bitte gib eine vierstellige Postleitzahl ein."),
-    "CH": (r"\d{4}", "Bitte gib eine vierstellige Postleitzahl ein."),
+    "DE": (r"\d{5}", t_lazy("Please enter a five-digit postcode.")),
+    "AT": (r"\d{4}", t_lazy("Please enter a four-digit postcode.")),
+    "CH": (r"\d{4}", t_lazy("Please enter a four-digit postcode.")),
 }
 OTHER_POSTAL_CODE = r"[A-Za-z0-9](?:[A-Za-z0-9 -]{0,10}[A-Za-z0-9])?"
 
@@ -29,7 +30,7 @@ def validate_person_name(value, *, extra=""):
         for character in value
     ):
         raise forms.ValidationError(
-            "Bitte gib den Namen nur mit Buchstaben, Leerzeichen, Bindestrich oder Apostroph an."
+            t("Please enter the name using only letters, spaces, hyphens or apostrophes.")
         )
 
 
@@ -43,32 +44,32 @@ def date_field(label):
 
 
 class ClaimForm(forms.Form):
-    full_name = forms.CharField(label="Vorname Nachname", max_length=200)
-    email = forms.EmailField(label="E-Mail-Adresse", max_length=254)
-    street = forms.CharField(label="Straße und Hausnummer", max_length=200)
-    postal_code = forms.CharField(label="PLZ", max_length=12)
-    city = forms.CharField(label="Ort", max_length=100)
-    country = forms.ChoiceField(label="Land", choices=list(COUNTRIES.items()), initial="DE")
-    account_holder = forms.CharField(label="Kontoinhaber:in", max_length=200)
-    iban = forms.CharField(label="IBAN", max_length=60)
-    bic = forms.CharField(label="BIC", max_length=20, required=False)
+    full_name = forms.CharField(label=t_lazy("First and last name"), max_length=200)
+    email = forms.EmailField(label=t_lazy("Email address"), max_length=254)
+    street = forms.CharField(label=t_lazy("Street and house number"), max_length=200)
+    postal_code = forms.CharField(label=t_lazy("Postcode"), max_length=12)
+    city = forms.CharField(label=t_lazy("Town or city"), max_length=100)
+    country = forms.ChoiceField(label=t_lazy("Country"), choices=countries, initial="DE")
+    account_holder = forms.CharField(label=t_lazy("Account holder"), max_length=200)
+    iban = forms.CharField(label=t_lazy("IBAN"), max_length=60)
+    bic = forms.CharField(label=t_lazy("BIC"), max_length=20, required=False)
     purpose = forms.CharField(
-        label="Anlass/Bezug zum Projekt oder der Veranstaltung",
+        label=t_lazy("Occasion/connection to the project or event"),
         max_length=3000,
         widget=forms.Textarea(attrs={"rows": 4}),
     )
     purpose_details = forms.CharField(
-        label="Ergänzung (optional)",
+        label=t_lazy("Additional details (optional)"),
         max_length=3000,
         required=False,
         widget=forms.Textarea(attrs={"rows": 3}),
     )
-    is_trip = forms.BooleanField(label="Meine Auslagen gehören zu einer Reise", required=False)
-    trip_destination = forms.CharField(label="Zielort", max_length=200, required=False)
-    trip_start = date_field("Reisebeginn")
-    trip_end = date_field("Reiseende")
-    declaration = forms.BooleanField(label="Erklärung bestätigen")
-    privacy_acknowledged = forms.BooleanField(label="Datenschutzhinweis gelesen")
+    is_trip = forms.BooleanField(label=t_lazy("My expenses belong to a trip"), required=False)
+    trip_destination = forms.CharField(label=t_lazy("Destination"), max_length=200, required=False)
+    trip_start = date_field(t_lazy("Trip start"))
+    trip_end = date_field(t_lazy("Trip end"))
+    declaration = forms.BooleanField(label=t_lazy("Confirm the declaration"))
+    privacy_acknowledged = forms.BooleanField(label=t_lazy("Privacy notice read"))
 
     def __init__(self, *args, form, has_mileage=False, **kwargs):
         self.portal_form = form
@@ -137,13 +138,13 @@ class ClaimForm(forms.Form):
     def clean_iban(self):
         value = self.cleaned_data["iban"].replace(" ", "").replace(" ", "").upper()
         if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", value) or not iban.is_valid(value):
-            raise forms.ValidationError("Bitte gib eine gültige IBAN ein.")
+            raise forms.ValidationError(t("Please enter a valid IBAN."))
         return value
 
     def clean_bic(self):
         value = self.cleaned_data["bic"].replace(" ", "").upper()
         if value and not bic.is_valid(value):
-            raise forms.ValidationError("Bitte gib eine gültige BIC mit 8 oder 11 Zeichen ein.")
+            raise forms.ValidationError(t("Please enter a valid BIC with 8 or 11 characters."))
         return value
 
     def clean(self):
@@ -151,23 +152,23 @@ class ClaimForm(forms.Form):
         country, postal_code = data.get("country"), data.get("postal_code")
         if country and postal_code:
             pattern, message = POSTAL_CODE_FORMATS.get(
-                country, (OTHER_POSTAL_CODE, "Bitte gib eine gültige Postleitzahl ein.")
+                country, (OTHER_POSTAL_CODE, t("Please enter a valid postcode."))
             )
             if not re.fullmatch(pattern, postal_code):
-                self.add_error("postal_code", message)
+                self.add_error("postal_code", str(message))
         account = data.get("iban")
         if account and account[:2] not in SEPA_COUNTRIES and not data.get("bic"):
-            self.add_error("bic", "Für Konten außerhalb des SEPA-Raums ist die BIC erforderlich.")
+            self.add_error("bic", t("Accounts outside the SEPA area need a BIC."))
         if not self.portal_form.purpose_choices():
             data["purpose_details"] = ""
         if not self.travel_required():
             data["trip_destination"], data["trip_start"], data["trip_end"] = "", None, None
             return data
         if not data.get("trip_destination", "").strip():
-            self.add_error("trip_destination", "Bitte gib den Zielort an.")
+            self.add_error("trip_destination", t("Please enter the destination."))
         start, end = data.get("trip_start"), data.get("trip_end")
         if not start or not end:
-            self.add_error("trip_end", "Bitte gib beide Reisedaten an.")
+            self.add_error("trip_end", t("Please enter both trip dates."))
         elif start > end:
-            self.add_error("trip_end", "Das Reiseende darf nicht vor dem Reisebeginn liegen.")
+            self.add_error("trip_end", t("The trip cannot end before it starts."))
         return data

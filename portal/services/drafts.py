@@ -26,6 +26,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare
 
+from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Draft, Form, PrivacyNotice
 from portal.services import network_budget
@@ -55,7 +56,7 @@ class AlreadySubmitted(IntakeError):
     """The draft is already a claim. Submit replays it; every other edit is refused."""
 
     def __init__(self, draft):
-        super().__init__("Dieses Formular wurde bereits eingereicht.", status=409)
+        super().__init__(t("This form has already been submitted."), status=409)
         self.draft = draft
 
 
@@ -64,7 +65,7 @@ class Outdated(IntakeError):
 
     def __init__(self):
         super().__init__(
-            "Das Formular wurde aktualisiert. Bitte lade es neu und prüfe die Angaben erneut.",
+            t("The form was updated. Please reload it and check your details again."),
             status=409,
         )
 
@@ -76,9 +77,9 @@ def digest(value):
 def _ensure_accepting(form, revision):
     """`revision` is the draft's; None checks a form before a draft exists."""
     if not form.is_open():
-        raise IntakeError("Dieses Formular ist für neue Anträge geschlossen.", status=409)
+        raise IntakeError(t("This form is closed for new claims."), status=409)
     if not recipient_approved(form.recipient) or PrivacyNotice.current() is None:
-        raise IntakeError("Das Formular ist derzeit nicht verfügbar.", status=503)
+        raise IntakeError(t("The form is currently unavailable."), status=503)
     if revision is not None and form.revision() != revision:
         raise Outdated()
 
@@ -97,13 +98,11 @@ def gate(participant, form_slug, draft_id, token, action):
         drafts = Draft.objects.select_for_update(of=("self",)) if action.edits else Draft.objects
         draft = drafts.get(pk=draft_id, form__slug=form_slug, session_hash=participant.binding())
     except (Draft.DoesNotExist, ValueError, TypeError) as exc:
-        raise IntakeError("Das Formular wurde nicht gefunden.", status=404) from exc
+        raise IntakeError(t("The form was not found."), status=404) from exc
     if not isinstance(token, str) or not constant_time_compare(draft.token_hash, digest(token)):
-        raise IntakeError("Das Formular wurde nicht gefunden.", status=404)
+        raise IntakeError(t("The form was not found."), status=404)
     if not draft.claim_id and draft.expires_at <= timezone.now():
-        raise IntakeError(
-            "Das Formular ist abgelaufen. Bitte öffne das Formular erneut.", status=410
-        )
+        raise IntakeError(t("The form has expired. Please open the form again."), status=410)
     forms = Form.objects.select_related("template")
     if action.locks_form:
         forms = forms.select_for_update(of=("self",))
@@ -140,9 +139,7 @@ def open_draft(participant, form):
         Draft.objects.filter(claim__isnull=True, expires_at__gt=now).count()
         >= settings.MAX_ACTIVE_DRAFTS
     ):
-        raise IntakeError(
-            "Das Formular ist gerade ausgelastet. Bitte versuche es später erneut.", status=503
-        )
+        raise IntakeError(t("The form is busy right now. Please try again later."), status=503)
     if (
         binding
         and Draft.objects.filter(
@@ -150,10 +147,10 @@ def open_draft(participant, form):
         ).count()
         >= MAX_DRAFTS_PER_SESSION
     ):
-        raise IntakeError("Zu viele neue Formulare. Bitte versuche es später erneut.", status=429)
+        raise IntakeError(t("Too many new forms. Please try again later."), status=429)
     if not network_budget.charge_draft(participant.network):
         raise IntakeError(
-            "Zu viele neue Formulare aus diesem Netzwerk. Bitte versuche es später erneut.",
+            t("Too many new forms from this network. Please try again later."),
             status=429,
         )
     # Only admitted visitors get a session.

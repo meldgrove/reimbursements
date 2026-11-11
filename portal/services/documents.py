@@ -12,6 +12,9 @@ from pathlib import Path
 from django.conf import settings
 from django.template.loader import render_to_string
 
+from portal import app_settings
+from portal.constants import APP_NAME
+from portal.i18n import language, t
 from portal.services.capacity import temporary_workspace, workspace_lock
 from portal.services.storage import (
     normalized_upload_key,
@@ -192,6 +195,11 @@ def validate_upload(upload):
 
 
 def build_claim_pdf(claim, workspace):
+    with app_settings.for_claim(claim):
+        return _build_claim_pdf(claim, workspace)
+
+
+def _build_claim_pdf(claim, workspace):
     uploads = list(claim.uploads.all())
     signature = next(upload for upload in uploads if upload.kind == "signature")
     signature_path = path_for(signature.normalized_key)
@@ -212,7 +220,11 @@ def build_claim_pdf(claim, workspace):
                     "media_type": upload.media_type,
                     "label": " · ".join(
                         filter(
-                            None, [f"Position {expense.position + 1}", expense.receipt_reference]
+                            None,
+                            [
+                                t("Item {number}", number=expense.position + 1),
+                                expense.receipt_reference,
+                            ],
                         )
                     ),
                 }
@@ -220,11 +232,17 @@ def build_claim_pdf(claim, workspace):
     manifest = {
         "html": render_to_string(
             "portal/summary.html",
-            {"claim": claim, "expenses": expenses, "signature_uri": signature_path.as_uri()},
+            {
+                "claim": claim,
+                "expenses": expenses,
+                "signature_uri": signature_path.as_uri(),
+                "app_name": APP_NAME,
+                "page_language": language(),
+            },
         ),
         "allowed_assets": [str(signature_path)],
         "receipts": receipts,
-        "reference": claim.reference,
+        "title": t("Reimbursement {reference}", reference=claim.reference),
         "max_bytes": settings.MAX_FINAL_PDF_BYTES,
     }
     manifest_path = Path(workspace) / "manifest.json"

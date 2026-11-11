@@ -1,16 +1,16 @@
-{% load ui %}<dialog id="search-dialog" aria-label="Suche" data-search-dialog class="search-dialog m-auto mt-[min(12vh,6rem)] w-[min(40rem,calc(100%-2rem))] max-w-none overflow-hidden rounded-xl border bg-popover p-0 text-popover-foreground shadow-2xl backdrop:bg-black/50">
+{% load ui %}<dialog id="search-dialog" aria-label="Search" data-search-dialog class="search-dialog m-auto mt-[min(12vh,6rem)] w-[min(40rem,calc(100%-2rem))] max-w-none overflow-hidden rounded-xl border bg-popover p-0 text-popover-foreground shadow-2xl backdrop:bg-black/50">
   <form action="{% url 'admin:search' %}" method="get" role="search" data-search-form data-suggestions-url="{% url 'admin:search_suggestions' %}" class="flex max-h-[calc(100dvh-min(12vh,6rem)-1.5rem)] flex-col">
     <div class="flex h-12 shrink-0 items-center gap-2 border-b px-3">
       {% icon "search" class="size-4 shrink-0 opacity-50" %}
-      <label class="sr-only" for="search-input">Anträge, Formulare und Seiten durchsuchen</label>
-      <input id="search-input" type="search" name="q" placeholder="Anträge, Formulare und Seiten durchsuchen …" autocomplete="off" maxlength="100" role="combobox" aria-autocomplete="list" aria-controls="search-results" aria-expanded="false" aria-describedby="search-status" data-search-input class="h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden">
-      <button type="button" data-search-close aria-label="Suche schließen" class="shrink-0">{% component "kbd" %}Esc{% endcomponent %}</button>
+      <label class="sr-only" for="search-input">Search claims, forms and pages</label>
+      <input id="search-input" type="search" name="q" placeholder="Search claims, forms and pages …" autocomplete="off" maxlength="100" role="combobox" aria-autocomplete="list" aria-controls="search-results" aria-expanded="false" aria-describedby="search-status" data-search-input class="h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden">
+      <button type="button" data-search-close aria-label="Close search" class="shrink-0">{% component "kbd" %}Esc{% endcomponent %}</button>
     </div>
-    <p id="search-status" role="status" data-search-status class="px-4 py-6 text-center text-sm text-muted-foreground">Suche nach Name, E-Mail, vollständiger Referenz, Formular oder Seite.</p>
-    <div id="search-results" role="listbox" aria-label="Suchergebnisse" data-search-results hidden class="min-h-0 overflow-y-auto overflow-x-hidden p-1"></div>
+    <p id="search-status" role="status" data-search-status class="px-4 py-6 text-center text-sm text-muted-foreground">Search by name, email, full reference, form or page.</p>
+    <div id="search-results" role="listbox" aria-label="Search results" data-search-results hidden class="min-h-0 overflow-y-auto overflow-x-hidden p-1"></div>
     <div class="flex shrink-0 items-center justify-between gap-2 border-t bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      <span class="flex items-center gap-3"><span class="flex items-center gap-1">{% component "kbd" %}↑{% endcomponent %}{% component "kbd" %}↓{% endcomponent %} Auswählen</span><span class="flex items-center gap-1">{% component "kbd" %}{% icon "corner-down-left" class="size-3" %}{% endcomponent %} Öffnen</span></span>
-      {% component "button" variant="ghost" size="xs" type="submit" data_search_all=True disabled=True %}Alle Ergebnisse{% icon "arrow-right" %}{% endcomponent %}
+      <span class="flex items-center gap-3"><span class="flex items-center gap-1">{% component "kbd" %}↑{% endcomponent %}{% component "kbd" %}↓{% endcomponent %} Select</span><span class="flex items-center gap-1">{% component "kbd" %}{% icon "corner-down-left" class="size-3" %}{% endcomponent %} Open</span></span>
+      {% component "button" variant="ghost" size="xs" type="submit" data_search_all=True disabled=True %}All results{% icon "arrow-right" %}{% endcomponent %}
     </div>
   </form>
 </dialog>

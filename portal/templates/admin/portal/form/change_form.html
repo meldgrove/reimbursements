@@ -4,35 +4,35 @@
 <div class="grid gap-4">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div class="grid min-w-0 gap-1">
-      <p class="text-sm font-medium text-muted-foreground">{{ opts.verbose_name }}</p>
-      <h1 class="page-title break-words" data-form-title>{% if add %}Formular anlegen{% else %}{{ original }}{% endif %}</h1>
+      <p class="text-sm font-medium text-muted-foreground">{{ opts.verbose_name|capfirst }}</p>
+      <h1 class="page-title break-words" data-form-title>{% if add %}Add form{% else %}{{ original }}{% endif %}</h1>
     </div>
     <div class="flex flex-wrap items-center gap-2" data-form-toolbar>
       {% if has_change_permission or add %}
       {% if original.status == 'published' %}
-      {% component "button" type="button" size="sm" form="form_form" value="unpublish" data_publication_toggle=True %}Unveröffentlichen{% endcomponent %}
+      {% component "button" type="button" size="sm" form="form_form" value="unpublish" data_publication_toggle=True %}Unpublish{% endcomponent %}
       {% else %}
-      {% component "button" type="button" size="sm" form="form_form" value="publish" data_publication_toggle=True %}Veröffentlichen{% endcomponent %}
+      {% component "button" type="button" size="sm" form="form_form" value="publish" data_publication_toggle=True %}Publish{% endcomponent %}
       {% endif %}
       {% endif %}
       {% if original %}{% url 'form_page' original.slug as preview_url %}{% else %}{% firstof '#' as preview_url %}{% endif %}
-      {% component "button" variant="outline" size="sm" href=preview_url data_form_preview=True hidden=add target="_blank" rel="noopener" %}Vorschau{% endcomponent %}
+      {% component "button" variant="outline" size="sm" href=preview_url data_form_preview=True hidden=add target="_blank" rel="noopener" %}Preview{% endcomponent %}
       {% if change and not is_popup %}
       {% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}
-      {% component "button" variant="outline" size="sm" href=history_url %}{% icon "history" %}Verlauf{% endcomponent %}
+      {% component "button" variant="outline" size="sm" href=history_url %}{% icon "history" %}History{% endcomponent %}
       {% endif %}
       {% if original %}
       {% url opts|admin_urlname:'delete' original.pk|admin_urlquote as delete_url %}
       {% else %}{% firstof '#' as delete_url %}{% endif %}
       {% if has_change_permission or add %}
-      {% component "button" variant="outline" size="sm" href=delete_url data_form_delete=True hidden=form_delete_hidden %}{% icon "trash" %}Löschen{% endcomponent %}
+      {% component "button" variant="outline" size="sm" href=delete_url data_form_delete=True hidden=form_delete_hidden %}{% icon "trash" %}Delete{% endcomponent %}
       {% endif %}
     </div>
   </div>
   <div class="flex flex-wrap items-center gap-3">
     <span data-form-status data-status="{{ original.status|default:'draft' }}">
-      <span data-draft-badge{% if original.status == 'published' %} hidden{% endif %}>{% component "badge" variant="secondary" %}Entwurf{% endcomponent %}</span>
-      <span data-published-badge{% if original.status != 'published' %} hidden{% endif %}>{% component "badge" variant="success" %}Veröffentlicht{% endcomponent %}</span>
+      <span data-draft-badge{% if original.status == 'published' %} hidden{% endif %}>{% component "badge" variant="secondary" %}Draft{% endcomponent %}</span>
+      <span data-published-badge{% if original.status != 'published' %} hidden{% endif %}>{% component "badge" variant="success" %}Published{% endcomponent %}</span>
     </span>
     <span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground" role="status" aria-live="polite" aria-atomic="true" data-autosave-indicator data-save-state="{% if add %}idle{% else %}saved{% endif %}">
       <span data-save-symbol="idle"{% if not add %} hidden{% endif %}>{% icon "info" %}</span>
@@ -40,15 +40,15 @@
       <span data-save-symbol="saving" hidden>{% icon "loader" class="size-4 animate-spin motion-reduce:animate-none" %}</span>
       <span data-save-symbol="saved"{% if add %} hidden{% endif %}>{% icon "circle-check" class="size-4 text-success" %}</span>
       <span data-save-symbol="error" hidden>{% icon "circle-alert" class="size-4 text-destructive" %}</span>
-      <span data-autosave-status>{% if add %}Änderungen werden automatisch gespeichert.{% else %}Alle Änderungen gespeichert.{% endif %}</span>
+      <span data-autosave-status>{% if add %}Changes are saved automatically.{% else %}All changes saved.{% endif %}</span>
     </span>
-    {% component "button" type="button" variant="outline" size="sm" data_autosave_retry=True hidden=True %}Erneut versuchen{% endcomponent %}
+    {% component "button" type="button" variant="outline" size="sm" data_autosave_retry=True hidden=True %}Try again{% endcomponent %}
   </div>
 </div>
 {% endblock %}
 {% block form_top %}
 <div class="errornote mb-4" data-autosave-errors role="alert" hidden></div>
-<noscript><p class="errornote">Bitte aktiviere JavaScript, damit Änderungen automatisch gespeichert werden.</p></noscript>
+<noscript><p class="errornote">Please enable JavaScript so that changes are saved automatically.</p></noscript>
 {% endblock %}
 {% block submit_buttons_top %}{% endblock %}
 {% block submit_buttons_bottom %}{% endblock %}

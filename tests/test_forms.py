@@ -66,11 +66,10 @@ def test_landing_page_redirects_to_the_open_primary_form(client, form, template)
 
 def test_footer_uses_operator_configuration(client, settings):
     assert b"Impressum" not in client.get("/").content
-    settings.PORTAL_NAME = "Testportal"
     settings.PORTAL_OPERATOR = "Beispielverein"
     settings.PORTAL_LEGAL_URL = "https://example.invalid/legal/"
     page = client.get("/").content.decode()
-    assert "Testportal" in page and "Beispielverein" in page
+    assert "Meldgrove Reimbursement" in page and "Beispielverein" in page
     assert 'href="https://example.invalid/legal/"' in page
 
 

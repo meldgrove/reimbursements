@@ -1,31 +1,23 @@
-{% load static ui %}<!doctype html>
-<html lang="de">
+{% load static portal_text ui %}<!doctype html>
+<html lang="{{ page_language }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex,nofollow">
-<title>{% block title %}Erstattung{% endblock %} · {{ portal_name }}</title>
-<link rel="icon" type="image/svg+xml" href="{% static 'portal/brand/logo.svg' %}">
+<title>{% block title %}{% t "Reimbursement" %}{% endblock %} · {{ app_name }}</title>
+<link rel="icon" type="{{ favicon_type }}" href="{{ favicon_url }}">
 <link rel="stylesheet" href="{% static 'portal/ui.css' %}">
 </head>
 <body class="flex min-h-dvh flex-col bg-muted/40">
-<a class="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium shadow-md focus:not-sr-only focus:fixed focus:top-3 focus:left-3" href="#main">Zum Inhalt</a>
-<header class="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-  <div class="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-4 px-4 sm:px-6">
-    <a class="flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" href="/">
-      <img src="{% static 'portal/brand/logo.svg' %}" alt="" width="32" height="32" class="size-8 rounded-md">
-      <span class="grid leading-tight"><span class="text-sm font-semibold">{{ portal_name }}</span><span class="text-xs text-muted-foreground">Erstattungsportal</span></span>
-    </a>
-  </div>
-</header>
+<a class="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium shadow-md focus:not-sr-only focus:fixed focus:top-3 focus:left-3" href="#main">{% t "Skip to content" %}</a>
 <main id="main" class="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">{% block content %}{% endblock %}</main>
 <footer class="border-t bg-background">
   <div class="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-6 text-sm text-muted-foreground sm:px-6">
     {% if portal_operator %}<span>{{ portal_operator }}</span>{% endif %}
-    {% if portal_legal_url %}<a class="hover:text-foreground hover:underline" href="{{ portal_legal_url }}">Impressum</a>{% endif %}
-    <a class="hover:text-foreground hover:underline" href="{% url 'privacy' %}">Datenschutz</a>
-    {% if form.support_email %}<span>Fragen zur Erstattung? <a class="font-medium text-foreground hover:underline" href="mailto:{{ form.support_email }}">{{ form.support_email }}</a></span>{% endif %}
+    {% if portal_legal_url %}<a class="hover:text-foreground hover:underline" href="{{ portal_legal_url }}">{% t "Legal notice" %}</a>{% endif %}
+    <a class="hover:text-foreground hover:underline" href="{% url 'privacy' %}">{% t "Privacy" %}</a>
+    {% if form.support_email %}<span>{% t_html 'Questions about your reimbursement? <a class="font-medium text-foreground hover:underline" href="mailto:{email}">{email}</a>' email=form.support_email %}</span>{% endif %}
   </div>
 </footer>
 {% block scripts %}{% endblock %}

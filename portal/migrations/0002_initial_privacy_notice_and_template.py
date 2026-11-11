@@ -2,8 +2,15 @@ from decimal import Decimal
 
 from django.db import migrations
 
-from portal.constants import DECLARATION, DECLARATION_VERSION
 from portal.privacy_notice import DEFAULT_PRIVACY_NOTICE
+
+# The declaration as it was when this migration was written; the app's default now
+# follows the app language.
+DECLARATION = (
+    "Hiermit bestätige ich, dass die angegebenen Auslagen tatsächlich entstanden sind, "
+    "dem genannten Zweck dienen und bisher nicht erstattet wurden."
+)
+DECLARATION_VERSION = "reimbursement-v1"
 
 
 def seed(apps, schema_editor):

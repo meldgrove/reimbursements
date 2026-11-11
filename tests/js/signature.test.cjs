@@ -2,6 +2,14 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { createSignature } = require("../../portal/static/portal/signature.js");
 
+// The form passes these messages in the app language.
+const text = {
+  signature_changed: "The signature changed. Please try again.",
+  signature_busy: "The signature is still being processed.",
+  signature_missing: "Please draw or upload a signature.",
+  signature_wait: "Please wait until the signature has been checked.",
+};
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -31,6 +39,7 @@ function setup() {
       handles.delete(url.split("/")[1]);
     },
     onChange(status) { statuses.push(status); },
+    text,
   });
   return {
     signature, handles, events, statuses,
@@ -76,7 +85,7 @@ test("delayed checks and ensureReady reuse pending identity instead of uploading
   const f = setup();
   f.mode("pending");
   await f.signature.replace("image");
-  await assert.rejects(f.signature.ensureReady(() => assert.fail("must not upload")), /geprüft/);
+  await assert.rejects(f.signature.ensureReady(() => assert.fail("must not upload")), /has been checked/);
   assert.equal(f.signature.status().canRetry, true);
   f.mode("ready");
   assert.equal(await f.signature.ensureReady(() => assert.fail("must reuse pending upload")), "1");
@@ -103,10 +112,10 @@ test("late polling results stay obsolete and retain their cleanup handle", async
   f.pollReply(reply);
   const retry = f.signature.retry();
   assert.equal(f.signature.status().busy, true);
-  await assert.rejects(f.signature.clear(), /verarbeitet/);
+  await assert.rejects(f.signature.clear(), /still being processed/);
   f.signature.invalidate();
   reply.resolve({ id: "1", state: "ready" });
-  await assert.rejects(retry, /geändert/);
+  await assert.rejects(retry, /signature changed/);
   assert.equal(f.signature.status().state, "obsolete");
   await f.signature.clear();
   assert.equal(f.handles.size, 0);
@@ -121,6 +130,6 @@ test("a drawing changed while being captured cannot be uploaded or submitted", a
   await Promise.resolve();
   f.signature.invalidate();
   drawing.resolve("old drawing");
-  await assert.rejects(ready, /geändert/);
+  await assert.rejects(ready, /signature changed/);
   assert.equal(f.handles.size, 0);
 });

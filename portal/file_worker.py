@@ -15,6 +15,7 @@ from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import DictionaryObject, IndirectObject
 
 from portal.constants import (
+    APP_NAME,
     MAX_IMAGE_PIXELS,
     MAX_NORMALIZED_FILE_BYTES,
     MAX_PDF_PAGES,
@@ -254,8 +255,8 @@ def build_pdf(manifest_path, output):
                 previous_label = label
         writer.add_metadata(
             {
-                "/Title": f"Erstattung {manifest['reference']}",
-                "/Producer": "Erstattungsportal",
+                "/Title": manifest["title"],
+                "/Producer": APP_NAME,
             }
         )
         # Keep each page's content stream independent. Deduplicating streams before

@@ -4,9 +4,10 @@
 
 Follow [Coolify deployment](coolify.md). The application is one Coolify resource
 (web, worker, ClamAV, migrations) on one domain; PostgreSQL is a separate Coolify
-database resource reached through Connect To Predefined Network. Forms, templates
-and the privacy notice are managed in the admin area at `/admin/`, which signs in
-through Keycloak and grants roles from the `groups` claim.
+database resource reached through Connect To Predefined Network. Forms, templates,
+the privacy notice and the General settings (app language, timezone, date format,
+favicon) are managed in the admin area at `/admin/`, which signs in through Keycloak
+and grants roles from the `groups` claim.
 
 Use a TLS reverse proxy for the public hostname. Expose only the web
 HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports.
@@ -123,12 +124,12 @@ an approved private process.
 
 ## Recovery commands
 
-Template admins can retry a claim in the admin area (Anträge > Erneut verarbeiten);
+Template admins can retry a claim in the admin area (Claims > Process again);
 it records their sign-in address and reason. Form editors see the claims of their
 forms, with name, email, total and status, but no banking or receipt data.
 
-Template admins can also delete claims, for example test submissions: **Löschen** on
-a claim, or the list action **Ausgewählte Anträge löschen** for up to 100 at once.
+Template admins can also delete claims, for example test submissions: **Delete** on
+a claim, or the list action **Delete selected claims** for up to 100 at once.
 A confirmation page lists the claims and says whether Finance may already hold their
 PDF; deletion needs a reason and records it with their address. It deletes the claim
 immediately: the claim, its files, personal and banking data are removed, it no longer
