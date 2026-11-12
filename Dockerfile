@@ -32,6 +32,9 @@ COPY --from=assets /app/portal/static/portal/ui.css portal/static/portal/ui.css
 RUN env -i PATH="$PATH" PYTHONDONTWRITEBYTECODE=1 DJANGO_DEBUG=1 DEPLOYMENT_ENV=development \
     /app/.venv/bin/python manage.py collectstatic --noinput \
     && mkdir -p var/private && chown -R portal:portal /app
+# The release workflow sets the version; images built from source have none.
+ARG APP_VERSION=""
+ENV APP_VERSION=${APP_VERSION}
 USER portal
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000

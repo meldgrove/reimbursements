@@ -1,0 +1,235 @@
+# Started by hand from the Actions tab: bundles everything merged since the last
+# release into one version. See docs/releases.md.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to increase
+        required: true
+        type: choice
+        options: [patch, minor, major]
+      dry_run:
+        description: "Dry run: show the next version and its notes, change nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  tag:
+    name: Version commit and tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read # find the CI run for this commit
+      contents: write # push the version commit and tag, preview the notes
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      previous: ${{ steps.previous.outputs.tag }}
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Start releases from main, not ${GITHUB_REF_NAME}."
+          exit 1
+
+      # Once a ruleset protects main, only a bypass actor may push the version
+      # commit. docs/releases.md describes the GitHub App for that.
+      - name: Create release app token
+        id: app-token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      # Credentials stay configured: the last step pushes with them.
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: Read the uv version from the Dockerfile
+        id: uv
+        run: |
+          version=$(sed -nE 's|^FROM ghcr\.io/astral-sh/uv:([0-9.]+)@.*|\1|p' Dockerfile)
+          if [ -z "$version" ]; then
+            echo "::error::Found no pinned uv image in the Dockerfile."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # The same uv as the image build, so it writes a lockfile the build accepts.
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          enable-cache: false
+
+      - name: Find the previous release
+        id: previous
+        run: |
+          current=$(uv version --short)
+          previous=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+          if [ -n "$previous" ]; then
+            if [ "$previous" != "v$current" ]; then
+              echo "::error::pyproject.toml says $current, but the latest tag is $previous. Make them match first."
+              exit 1
+            fi
+            if [ "$(git rev-list -n 1 "$previous")" = "$(git rev-parse HEAD)" ]; then
+              echo "::error::Nothing to release: main has no changes since $previous."
+              exit 1
+            fi
+          fi
+          echo "tag=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Require a passing CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yaml/runs?head_sha=$GITHUB_SHA&status=success" --jq .total_count)
+          if [ "$passed" = 0 ]; then
+            echo "::error::CI has not passed for $GITHUB_SHA. Wait for CI on main to finish, then start the release again."
+            exit 1
+          fi
+
+      - name: Increase the version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          uv version --bump "$BUMP" --no-sync
+          uv lock --check
+          version=$(uv version --short)
+          if git rev-parse --quiet --verify "refs/tags/v$version" > /dev/null; then
+            echo "::error::Tag v$version already exists."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag the version
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock
+          git commit --quiet --message "chore(release): $TAG"
+          git tag --annotate "$TAG" --message "$TAG"
+          git show --stat --format='%H %s' HEAD
+
+      - name: Preview the release notes
+        if: inputs.dry_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
+        run: |
+          args=(-f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA")
+          if [ -n "$PREVIOUS" ]; then
+            args+=(-f "previous_tag_name=$PREVIOUS")
+          fi
+          notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body)
+          {
+            echo "## Dry run: $TAG"
+            echo
+            echo "Nothing was pushed. A real run would release these changes:"
+            echo
+            echo "$notes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Atomic: if main moved since this run started, neither the commit nor the
+      # tag lands, and nothing is released.
+      - name: Push the commit and tag together
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: git push --atomic origin HEAD:refs/heads/main "refs/tags/$TAG"
+
+  # Safe to re-run alone after a failure: it rebuilds from the pushed tag.
+  publish:
+    name: Image and GitHub Release
+    needs: tag
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # create the GitHub Release
+      packages: write # push the image
+      id-token: write # sign the provenance attestation
+      attestations: write # store the provenance attestation
+      artifact-metadata: write # record where the image is stored
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+      TAG: ${{ needs.tag.outputs.tag }}
+      PREVIOUS: ${{ needs.tag.outputs.previous }}
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+
+      - name: Log in to the GitHub container registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and push the production image
+        id: image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          # X.Y.Z and X.Y. X only from 1.0.0: before that, a minor release may need operator action.
+          tags=(--tag "$image:$VERSION" --tag "$image:${VERSION%.*}")
+          if [ "${VERSION%%.*}" != 0 ]; then
+            tags+=(--tag "$image:${VERSION%%.*}")
+          fi
+          docker buildx build --target runtime --push \
+            --build-arg "APP_VERSION=$VERSION" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --metadata-file "$RUNNER_TEMP/image.json" \
+            "${tags[@]}" .
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists."
+            exit 0
+          fi
+          args=(--verify-tag --generate-notes --title "$TAG")
+          args+=(--notes "Image: \`$IMAGE:$VERSION\` (\`$DIGEST\`)"$'\n')
+          if [ -n "$PREVIOUS" ]; then
+            args+=(--notes-start-tag "$PREVIOUS")
+          fi
+          gh release create "$TAG" "${args[@]}"

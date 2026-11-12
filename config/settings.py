@@ -11,6 +11,8 @@ from portal.constants import MAX_PDF_PAGES as MAX_PDF_PAGES
 BASE_DIR = Path(__file__).resolve().parent.parent
 PORTAL_OPERATOR = os.getenv("PORTAL_OPERATOR", "")
 PORTAL_LEGAL_URL = os.getenv("PORTAL_LEGAL_URL", "")
+# Set in release images (Dockerfile); empty in images built from source.
+APP_VERSION = os.getenv("APP_VERSION", "")
 DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 DEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV", "development" if DEBUG else "production")
 if DEPLOYMENT_ENV not in {"development", "staging", "production"} or DEBUG != (
@@ -276,5 +278,6 @@ if SENTRY_DSN:
     error_reporting.start(
         dsn=SENTRY_DSN,
         environment=os.getenv("SENTRY_ENVIRONMENT") or DEPLOYMENT_ENV,
-        release=os.getenv("SENTRY_RELEASE"),
+        release=os.getenv("SENTRY_RELEASE")
+        or (f"reimbursements@{APP_VERSION}" if APP_VERSION else None),
     )

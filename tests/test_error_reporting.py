@@ -134,8 +134,15 @@ def test_reports_name_the_process(argv, name):
         ({}, "inactive"),
         # Without SENTRY_RELEASE, the SDK may fall back to the checkout's git commit.
         ({"SENTRY_DSN": DSN}, "development "),
+        # Release images name their version.
+        ({"SENTRY_DSN": DSN, "APP_VERSION": "1.2.3"}, "development reimbursements@1.2.3"),
         (
-            {"SENTRY_DSN": DSN, "SENTRY_ENVIRONMENT": "staging", "SENTRY_RELEASE": "abc123"},
+            {
+                "SENTRY_DSN": DSN,
+                "SENTRY_ENVIRONMENT": "staging",
+                "SENTRY_RELEASE": "abc123",
+                "APP_VERSION": "1.2.3",
+            },
             "staging abc123",
         ),
     ],

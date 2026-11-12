@@ -72,3 +72,6 @@ Run the [release checks](production-readiness.md). The migration job must comple
 before web and worker start. For upgrades, stop old workers before migrations and
 preserve database, private files and scanner volumes. Back up the database and
 private files together before deployment.
+Before an upgrade, read the GitHub release notes of every version since the
+deployed one; a major version lists the operator actions it needs. See
+[releases](releases.md).

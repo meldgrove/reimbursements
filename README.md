@@ -105,3 +105,12 @@ or use `watch` while editing templates.
 
 See the [form contract](docs/form-contract.md) for validation and document behavior,
 and [release checks](docs/production-readiness.md) for deployment verification.
+
+## Releases
+
+Releases bundle the changes merged since the previous one. A major version means
+an upgrade needs operator action, a minor version adds features, and a patch
+fixes problems. Each release publishes the production image as
+`ghcr.io/meldgrove/reimbursements:<version>` and lists its changes on the GitHub
+Releases page. Maintainers cut releases from GitHub Actions; see
+[releases](docs/releases.md).
