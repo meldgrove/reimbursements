@@ -110,9 +110,9 @@ and [release checks](docs/production-readiness.md) for deployment verification.
 
 ## Releases
 
-Releases bundle the changes merged since the previous one. A major version means
-an upgrade needs operator action, a minor version adds features, and a patch
-fixes problems. Each release publishes the production image for amd64 and arm64
+Releases bundle the changes merged since the previous one. A patch fixes problems,
+a minor version adds features and may need operator action (its notes say which),
+and a major version is reserved for really big changes. Each release publishes the production image for amd64 and arm64
 as `ghcr.io/meldgrove/reimbursements:<version>` and lists its changes on the GitHub
 Releases page. Maintainers cut releases from GitHub Actions; see
 [releases](docs/releases.md). Deployments can install the releases of their series
