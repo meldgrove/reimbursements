@@ -1,235 +1,430 @@
-# Started by hand from the Actions tab: bundles everything merged since the last
-# release into one version. See docs/releases.md.
+# Maintainers start a release in Actions > Release > Run workflow; the steps
+# are in docs/releases.md. Every Meldgrove repository uses this
+# workflow; only this line, the pull request paths, and env differ.
+#
+#   prepare  refuses unless started from main, CI passed for the commit, and
+#            something changed since the last release. Raises the version in
+#            package.json or pyproject.toml, commits "chore(release): vX.Y.Z",
+#            tags it, and pushes both at once. A release candidate
+#            (vX.Y.Z-rc.N) only tags.
+#   image    builds and starts the image on amd64 and arm64, pushes it by digest
+#   publish  tags both platforms as one image (X.Y.Z, X.Y, X from 1.0.0,
+#            latest), attests its provenance, and creates the GitHub Release
+#
+# A dry run does everything except push and publish. Pull requests that change
+# the image build and start both platforms without publishing anything.
+# Only GitHub-owned actions pinned by commit SHA (repository Actions settings):
+# Docker, uv and npm run through their command lines.
+
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version part to increase
-        required: true
+        description: Version part to raise (the first release keeps the version in the file)
         type: choice
         options: [patch, minor, major]
-      dry_run:
-        description: "Dry run: show the next version and its notes, change nothing"
+        default: patch
+      candidate:
+        description: "Release candidate: publish vX.Y.Z-rc.N for testing (no version commit, no latest)"
         type: boolean
         default: false
+      dry_run:
+        description: "Dry run: build, show the version and notes, publish nothing"
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - scripts/start-web.sh
+      - .github/workflows/release.yaml
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.ref) || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/meldgrove/reimbursements
+  # Dockerfile stage to publish; empty publishes the last stage.
+  TARGET: runtime
+  # This workflow must have passed for the commit being released.
+  CI_WORKFLOW: ci.yaml
+  # Linked from the release notes.
+  UPGRADE_DOC: docs/coolify.md
+  TITLE: Meldgrove Reimbursement
+  DESCRIPTION: Self-hosted reimbursement forms, receipt processing, and email delivery.
+  # SPDX identifier; empty when the repository has no license yet.
+  LICENSE: ""
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  tag:
-    name: Version commit and tag
+  prepare:
+    name: Version and tag
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      actions: read # find the CI run for this commit
+      actions: read # find the CI run of the commit
       contents: write # push the version commit and tag, preview the notes
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
-      previous: ${{ steps.previous.outputs.tag }}
+      previous: ${{ steps.version.outputs.previous }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      tags: ${{ steps.version.outputs.tags }}
+      ref: ${{ steps.version.outputs.ref }}
+      revision: ${{ steps.version.outputs.revision }}
+      publish: ${{ steps.version.outputs.publish }}
     steps:
       - name: Require main
-        if: github.ref != 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
         run: |
           echo "::error::Start releases from main, not ${GITHUB_REF_NAME}."
           exit 1
 
       # Once a ruleset protects main, only a bypass actor may push the version
-      # commit. docs/releases.md describes the GitHub App for that.
+      # commit: a GitHub App, set up as the release steps describe.
       - name: Create release app token
         id: app-token
-        if: vars.RELEASE_APP_CLIENT_ID != ''
+        if: github.event_name == 'workflow_dispatch' && vars.RELEASE_APP_CLIENT_ID != ''
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
-      # Credentials stay configured: the last step pushes with them.
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # every tag
           token: ${{ steps.app-token.outputs.token || github.token }}
+          # A release pushes with these credentials; pull requests need none.
+          persist-credentials: ${{ github.event_name == 'workflow_dispatch' }}
 
-      - name: Read the uv version from the Dockerfile
-        id: uv
-        run: |
-          version=$(sed -nE 's|^FROM ghcr\.io/astral-sh/uv:([0-9.]+)@.*|\1|p' Dockerfile)
-          if [ -z "$version" ]; then
-            echo "::error::Found no pinned uv image in the Dockerfile."
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # The same uv as the image build, so it writes a lockfile the build accepts.
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: ${{ steps.uv.outputs.version }}
-          enable-cache: false
-
-      - name: Find the previous release
-        id: previous
-        run: |
-          current=$(uv version --short)
-          previous=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
-          if [ -n "$previous" ]; then
-            if [ "$previous" != "v$current" ]; then
-              echo "::error::pyproject.toml says $current, but the latest tag is $previous. Make them match first."
-              exit 1
-            fi
-            if [ "$(git rev-list -n 1 "$previous")" = "$(git rev-parse HEAD)" ]; then
-              echo "::error::Nothing to release: main has no changes since $previous."
-              exit 1
-            fi
-          fi
-          echo "tag=$previous" >> "$GITHUB_OUTPUT"
-
-      - name: Require a passing CI run for this commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yaml/runs?head_sha=$GITHUB_SHA&status=success" --jq .total_count)
-          if [ "$passed" = 0 ]; then
-            echo "::error::CI has not passed for $GITHUB_SHA. Wait for CI on main to finish, then start the release again."
-            exit 1
-          fi
-
-      - name: Increase the version
+      - name: Version
         id: version
         env:
+          EVENT: ${{ github.event_name }}
           BUMP: ${{ inputs.bump }}
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          uv version --bump "$BUMP" --no-sync
-          uv lock --check
-          version=$(uv version --short)
-          if git rev-parse --quiet --verify "refs/tags/v$version" > /dev/null; then
-            echo "::error::Tag v$version already exists."
+          fail() {
+            echo "::error::$1"
             exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          }
 
-      - name: Commit and tag the version
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
+          # The version lives in pyproject.toml (uv) or package.json (npm). It
+          # changes with the uv or Node.js image that the Dockerfile pins.
+          if [ -f pyproject.toml ]; then
+            files=(pyproject.toml uv.lock)
+            current=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+            set_version() {
+              local image container
+              image=$(sed -nE 's|^FROM (ghcr\.io/astral-sh/uv:[^ ]+).*|\1|p' Dockerfile | head -n 1)
+              [ -n "$image" ] || fail "Found no pinned uv image in the Dockerfile."
+              # The image has no Python, which uv needs to lock: run its binary here.
+              container=$(docker create "$image")
+              docker cp --quiet "$container:/uv" "$RUNNER_TEMP/uv"
+              docker rm "$container" > /dev/null
+              "$RUNNER_TEMP/uv" version "$1" --no-sync
+            }
+          else
+            files=(package.json package-lock.json)
+            current=$(jq -r .version package.json)
+            set_version() {
+              local image
+              image=$(sed -nE 's|^FROM (node:[^ ]+).*|\1|p' Dockerfile | head -n 1)
+              [ -n "$image" ] || fail "Found no Node.js image in the Dockerfile."
+              docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp --env npm_config_update_notifier=false \
+                --volume "$PWD:/src" --workdir /src "$image" \
+                npm version "$1" --no-git-tag-version --ignore-scripts > /dev/null
+            }
+          fi
+          [[ $current =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "${files[0]} has the version '$current'; expected X.Y.Z."
+
+          if [ "$EVENT" = pull_request ]; then
+            {
+              echo "version=$current"
+              echo "ref=$GITHUB_SHA"
+              echo "publish=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$CI_WORKFLOW/runs?head_sha=$GITHUB_SHA&status=success" --jq .total_count)
+          [ "$passed" != 0 ] || fail "CI has not passed for $GITHUB_SHA. Wait for CI on main to finish, then start the release again."
+
+          # The newest release without a suffix, e.g. v1.2.3.
+          previous=$(git tag --list 'v[0-9]*' --sort=-version:refname | awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found = 1 }')
+          if [ -n "$previous" ]; then
+            [ "$previous" = "v$current" ] || fail "${files[0]} says $current, but the latest release is $previous. Make them match first."
+            [ "$(git rev-parse "$previous^{commit}")" != "$(git rev-parse HEAD)" ] || fail "Nothing to release: main has no changes since $previous."
+            IFS=. read -r major minor patch <<< "$current"
+            case "$BUMP" in
+              major) next="$((major + 1)).0.0" ;;
+              minor) next="$major.$((minor + 1)).0" ;;
+              *) next="$major.$minor.$((patch + 1))" ;;
+            esac
+          else
+            next="$current"
+            echo "::notice::First release: it keeps the version $current from ${files[0]}."
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml uv.lock
-          git commit --quiet --message "chore(release): $TAG"
-          git tag --annotate "$TAG" --message "$TAG"
+          commit=false
+          if [ "$CANDIDATE" = true ]; then
+            # A candidate tags the commit as it is: the file keeps the version
+            # of the last release until the real one.
+            [ -z "$(git tag --points-at HEAD --list "v$next-rc.*")" ] || fail "This commit is already a candidate for $next."
+            last=$(git tag --list "v$next-rc.*" | sed -nE 's/^v.*-rc\.([0-9]+)$/\1/p' | sort -n | tail -n 1)
+            version="$next-rc.$((${last:-0} + 1))"
+            prerelease=true
+          else
+            version="$next"
+            prerelease=false
+            if [ "$version" != "$current" ]; then
+              set_version "$version"
+              git add -- "${files[@]}"
+              if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+                fail "Changing the version touched more than ${files[*]}: $(git status --porcelain | tr '\n' ' ')"
+              fi
+              git commit --quiet --message "chore(release): v$version"
+              commit=true
+            fi
+          fi
+          tag="v$version"
+          ! git rev-parse --quiet --verify "refs/tags/$tag" > /dev/null || fail "The tag $tag exists already."
+          git tag --annotate "$tag" --message "$tag"
           git show --stat --format='%H %s' HEAD
 
-      - name: Preview the release notes
-        if: inputs.dry_run
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          PREVIOUS: ${{ steps.previous.outputs.tag }}
-        run: |
-          args=(-f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA")
-          if [ -n "$PREVIOUS" ]; then
-            args+=(-f "previous_tag_name=$PREVIOUS")
+          # X.Y.Z always. Releases add X.Y, X from 1.0.0 (before that a minor
+          # release may need operator action), and latest.
+          tags="$IMAGE:$version"
+          if [ "$prerelease" = false ]; then
+            tags="$tags $IMAGE:${version%.*}"
+            if [ "${version%%.*}" != 0 ]; then
+              tags="$tags $IMAGE:${version%%.*}"
+            fi
+            tags="$tags $IMAGE:latest"
           fi
-          notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body)
+
+          publish=true
+          ref="$tag"
+          notes_from=(-f "tag_name=$tag" -f "target_commitish=$GITHUB_SHA")
+          if [ -n "$previous" ]; then
+            notes_from+=(-f "previous_tag_name=$previous")
+          fi
+          if [ "$DRY_RUN" = true ]; then
+            publish=false
+            ref="$GITHUB_SHA"
+            notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${notes_from[@]}" --jq .body)
+          elif [ "$commit" = true ]; then
+            # Atomic: if main moved since this run started, neither lands.
+            git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag" \
+              || fail "Pushed nothing: main changed during the release. Start it again."
+          else
+            git push origin "refs/tags/$tag"
+          fi
+
           {
-            echo "## Dry run: $TAG"
+            if [ "$DRY_RUN" = true ]; then
+              echo "## Dry run: $tag"
+              echo
+              echo "Nothing was pushed or published. A real run would publish:"
+            else
+              echo "## $tag"
+            fi
             echo
-            echo "Nothing was pushed. A real run would release these changes:"
-            echo
-            echo "$notes"
+            for t in $tags; do echo "- \`$t\`"; done
+            if [ "$DRY_RUN" = true ]; then
+              echo
+              echo "$notes"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Atomic: if main moved since this run started, neither the commit nor the
-      # tag lands, and nothing is released.
-      - name: Push the commit and tag together
-        if: ${{ !inputs.dry_run }}
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-        run: git push --atomic origin HEAD:refs/heads/main "refs/tags/$TAG"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "previous=$previous"
+            echo "prerelease=$prerelease"
+            echo "tags=$tags"
+            echo "ref=$ref"
+            echo "revision=$(git rev-parse HEAD)"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
 
-  # Safe to re-run alone after a failure: it rebuilds from the pushed tag.
-  publish:
-    name: Image and GitHub Release
-    needs: tag
-    if: ${{ !inputs.dry_run }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  image:
+    name: Image (${{ matrix.arch }})
+    needs: prepare
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
-      contents: write # create the GitHub Release
-      packages: write # push the image
-      id-token: write # sign the provenance attestation
-      attestations: write # store the provenance attestation
-      artifact-metadata: write # record where the image is stored
+      contents: read
+      packages: write # push the image by digest
     env:
-      VERSION: ${{ needs.tag.outputs.version }}
-      TAG: ${{ needs.tag.outputs.tag }}
-      PREVIOUS: ${{ needs.tag.outputs.previous }}
+      ARCH: ${{ matrix.arch }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PUBLISH: ${{ needs.prepare.outputs.publish }}
     steps:
-      - name: Check out the release tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.ref }}
           persist-credentials: false
 
-      - name: Log in to the GitHub container registry
+      - name: Build
+        run: |
+          # A BuildKit container: it can push an image by its digest alone.
+          docker buildx create --use --driver docker-container > /dev/null
+          # The commit time, not the build time: the push step builds again
+          # from the cache and must produce the same image.
+          args=(--platform "linux/$ARCH" --provenance=false
+            --build-arg "APP_VERSION=$VERSION"
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            --label "org.opencontainers.image.version=$VERSION"
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)"
+            --label "org.opencontainers.image.created=$(git log -1 --format=%cI)")
+          if [ -n "$TARGET" ]; then
+            args+=(--target "$TARGET")
+          fi
+          printf '%s\n' "${args[@]}" > "$RUNNER_TEMP/build-args"
+          docker buildx build "${args[@]}" --output type=docker,name=release:test .
+
+      - name: The image starts on its platform, as a non-root user, with its version
+        run: |
+          machine=$(docker run --rm --entrypoint uname release:test -m)
+          case "$ARCH:$machine" in
+            amd64:x86_64 | arm64:aarch64) ;;
+            *) echo "::error::The $ARCH image runs on $machine." && exit 1 ;;
+          esac
+          test "$(docker run --rm --entrypoint id release:test -u)" != 0
+          test "$(docker run --rm --entrypoint printenv release:test APP_VERSION)" = "$VERSION"
+
+      - name: Push by digest
+        if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-
-      - name: Build and push the production image
-        id: image
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          # X.Y.Z and X.Y. X only from 1.0.0: before that, a minor release may need operator action.
-          tags=(--tag "$image:$VERSION" --tag "$image:${VERSION%.*}")
-          if [ "${VERSION%%.*}" != 0 ]; then
-            tags+=(--tag "$image:${VERSION%%.*}")
-          fi
-          docker buildx build --target runtime --push \
-            --build-arg "APP_VERSION=$VERSION" \
-            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-            --label "org.opencontainers.image.version=$VERSION" \
-            --metadata-file "$RUNNER_TEMP/image.json" \
-            "${tags[@]}" .
-          echo "name=$image" >> "$GITHUB_OUTPUT"
-          echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")" >> "$GITHUB_OUTPUT"
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          mapfile -t args < "$RUNNER_TEMP/build-args"
+          # The same build again, from the cache, pushed without a tag: the
+          # publish job tags both platforms together.
+          docker buildx build "${args[@]}" \
+            --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file "$RUNNER_TEMP/metadata.json" .
+          mkdir -p "$RUNNER_TEMP/digests"
+          jq -er '."containerimage.digest"' "$RUNNER_TEMP/metadata.json" > "$RUNNER_TEMP/digests/$ARCH"
 
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: env.PUBLISH == 'true'
         with:
-          subject-name: ${{ steps.image.outputs.name }}
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # Safe to re-run alone after a failure ("Re-run failed jobs"): it starts
+  # again from the pushed tag.
+  publish:
+    name: Publish
+    needs: [prepare, image]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the GitHub Release
+      packages: write # tag the image, store the attestation
+      id-token: write # sign the attestation
+      attestations: write
+      artifact-metadata: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PREVIOUS: ${{ needs.prepare.outputs.previous }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      TAGS: ${{ needs.prepare.outputs.tags }}
+      REVISION: ${{ needs.prepare.outputs.revision }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Tag both platforms as one image
+        id: image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          args=()
+          for tag in $TAGS; do args+=(--tag "$tag"); done
+          annotations=(
+            "org.opencontainers.image.title=$TITLE"
+            "org.opencontainers.image.description=$DESCRIPTION"
+            "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            "org.opencontainers.image.version=$VERSION"
+            "org.opencontainers.image.revision=$REVISION"
+          )
+          if [ -n "$LICENSE" ]; then
+            annotations+=("org.opencontainers.image.licenses=$LICENSE")
+          fi
+          for annotation in "${annotations[@]}"; do args+=(--annotation "index:$annotation"); done
+          test "$(find "$RUNNER_TEMP/digests" -type f | wc -l)" -eq 2
+          for file in "$RUNNER_TEMP"/digests/*; do args+=("$IMAGE@$(cat "$file")"); done
+          docker buildx imagetools create "${args[@]}"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -er .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
 
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG already exists."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "The release $TAG exists already."
             exit 0
           fi
-          args=(--verify-tag --generate-notes --title "$TAG")
-          args+=(--notes "Image: \`$IMAGE:$VERSION\` (\`$DIGEST\`)"$'\n')
+          notes_from=(-f "tag_name=$TAG")
           if [ -n "$PREVIOUS" ]; then
-            args+=(--notes-start-tag "$PREVIOUS")
+            notes_from+=(-f "previous_tag_name=$PREVIOUS")
           fi
-          gh release create "$TAG" "${args[@]}"
+          notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${notes_from[@]}" --jq .body)
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          body=$(printf '%s\n' \
+            "Image: \`$IMAGE:$VERSION\` for linux/amd64 and linux/arm64 (\`$DIGEST\`)" \
+            "" \
+            "Upgrade: [${UPGRADE_DOC%%#*}]($repo_url/blob/$TAG/$UPGRADE_DOC). Check where the image was built: \`gh attestation verify oci://$IMAGE:$VERSION --repo $GITHUB_REPOSITORY\`" \
+            "" \
+            "$notes")
+          latest=true
+          if [ "$PRERELEASE" = true ]; then latest=false; fi
+          gh api "repos/$GITHUB_REPOSITORY/releases" \
+            -f tag_name="$TAG" \
+            -f name="$TAG" \
+            -f body="$body" \
+            -F prerelease="$PRERELEASE" \
+            -f make_latest="$latest" \
+            --jq .html_url
