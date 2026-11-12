@@ -2,9 +2,11 @@
 
 Use `compose.yaml` for the web process, worker, scanner and migration job: create a
 Docker Compose resource from this repository and set its Docker Compose location to
-`/compose.yaml`. Run PostgreSQL as a separate resource on the same private network.
-Route only the web service to a public HTTPS hostname. Keep all persistent volumes
-across upgrades. Use `compose.dev.yaml` locally.
+`/compose.yaml`. It runs the published release image; `REIMBURSEMENTS_VERSION` names
+the release series, such as `0.1` (see [automatic updates](updates.md)). Run
+PostgreSQL as a separate resource on the same private network. Route only the web
+service to a public HTTPS hostname. Keep all persistent volumes across upgrades. Use
+`compose.dev.yaml` locally.
 
 ## Database and storage
 
@@ -60,6 +62,10 @@ for ambiguous delivery outcomes and retry controls.
 Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. See
 [operations](operations.md#monitoring-and-maintenance) for what a report contains.
 
+Optionally set `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN` to install new
+releases of the series automatically. [Automatic updates](updates.md) explains where
+Coolify shows both values, and the backups to set up first.
+
 ## First launch and upgrades
 
 Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your
@@ -74,7 +80,8 @@ through it before accepting participant data, and verify its PDF.
 Run the [release checks](production-readiness.md). The migration job must complete
 before web and worker start. For upgrades, stop old workers before migrations and
 preserve database, private files and scanner volumes. Back up the database and
-private files together before deployment.
-Before an upgrade, read the GitHub release notes of every version since the
+private files together before a manual upgrade; automatic updates rely on scheduled
+backups instead.
+Before a manual upgrade, read the GitHub release notes of every version since the
 deployed one; a major version lists the operator actions it needs. See
-[releases](releases.md).
+[releases](releases.md) and [automatic updates](updates.md).

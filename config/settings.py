@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
@@ -207,6 +208,15 @@ TEST_RECIPIENT_ALLOWLIST = list(
     filter(None, os.getenv("TEST_RECIPIENT_ALLOWLIST", "").lower().split(","))
 )
 HEALTHCHECK_TOKEN = os.getenv("HEALTHCHECK_TOKEN", "")
+# Automatic updates (docs/updates.md): off while the deploy link is empty. The worker
+# calls the link, with the token as a bearer token, for each new release of its series.
+UPDATE_DEPLOY_HOOK_URL = os.getenv("UPDATE_DEPLOY_HOOK_URL", "")
+UPDATE_DEPLOY_HOOK_TOKEN = os.getenv("UPDATE_DEPLOY_HOOK_TOKEN", "")
+if UPDATE_DEPLOY_HOOK_URL and not (
+    urlsplit(UPDATE_DEPLOY_HOOK_URL).scheme in {"http", "https"}
+    and urlsplit(UPDATE_DEPLOY_HOOK_URL).hostname
+):
+    raise ImproperlyConfigured("UPDATE_DEPLOY_HOOK_URL must be an http(s) URL.")
 REDACTED_LOG_FORMAT = "{levelname} {name} {message}"
 LOGGING = {
     "version": 1,

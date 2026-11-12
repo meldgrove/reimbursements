@@ -1,0 +1,7 @@
+{% load ui %}{% if update_notices %}
+<ul class="flex flex-col gap-2" data-update-notices>
+  {% for notice in update_notices %}
+  <li>{% if notice.level == "warning" %}{% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_description" %}{{ notice.text }}{% if notice.link %} <a class="font-medium underline underline-offset-4" href="{{ notice.link }}" rel="noopener noreferrer">Release notes</a>{% endif %}{% endcomponent %}{% endcomponent %}{% else %}{% component "alert" variant="info" %}{% icon "info" %}{% component "alert_description" %}{{ notice.text }}{% if notice.link %} <a class="font-medium underline underline-offset-4" href="{{ notice.link }}" rel="noopener noreferrer">Release notes</a>{% endif %}{% endcomponent %}{% endcomponent %}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}

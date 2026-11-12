@@ -53,3 +53,12 @@ are in [the form contract](docs/form-contract.md); operations in
 - **Evidence**: what MailerSend says about a sent email, from a webhook or a lookup.
   The MailerSend adapter translates it; the Evidence module (`portal/services/evidence.py`)
   applies it to the email's record and reconciles the unsettled emails of every sender.
+
+## Updates
+
+- **Release series**: the releases a deployment may install without operator action: the
+  same major version, and before 1.0 the same minor version. Its image tag (`0.1`, or `1`
+  from 1.0) always names its newest release; `REIMBURSEMENTS_VERSION` chooses it.
+- **Deploy link**: the hosting platform's URL that redeploys the app. With automatic
+  updates on, the worker calls it once for each newer release of the series
+  (`portal/services/updates.py`, [automatic updates](docs/updates.md)).
