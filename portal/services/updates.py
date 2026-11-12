@@ -128,6 +128,9 @@ def request_deploy(state, now):
             response = http.post(settings.UPDATE_DEPLOY_HOOK_URL, headers=headers)
     except httpx.HTTPError:
         state.request_failure = "unreachable"
+    except (httpx.InvalidURL, ValueError):
+        # A link or token httpx cannot send, such as a named port or non-ASCII text.
+        state.request_failure = "invalid"
     else:
         state.request_failure = "" if response.is_success else f"HTTP {response.status_code}"
     if not state.request_failure:

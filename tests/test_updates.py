@@ -154,6 +154,20 @@ def test_a_failed_deploy_link_is_called_again_an_hour_later(network, status, fai
     assert UpdateCheck.load().requested_at == now + timedelta(hours=1)
 
 
+@pytest.mark.parametrize(
+    ("url", "token"),
+    [(HOOK, "tökén"), ("https://deploy.example.invalid:port/hook", "deploy-only-token")],
+)
+def test_a_malformed_deploy_link_is_reported_instead_of_stopping_the_worker(
+    network, settings, url, token
+):
+    settings.UPDATE_DEPLOY_HOOK_URL, settings.UPDATE_DEPLOY_HOOK_TOKEN = url, token
+    network.releases = [release("v0.1.3")]
+    updates.check()
+    state = UpdateCheck.load()
+    assert (state.requested_at, state.request_failure) == (None, "invalid")
+
+
 def test_the_deploy_link_works_without_a_token(network, settings):
     settings.UPDATE_DEPLOY_HOOK_TOKEN = ""
     network.releases = [release("v0.1.3")]
