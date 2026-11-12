@@ -1,7 +1,6 @@
 """The admin area, always in English: claims, forms, templates, the privacy notice and the
 General settings, behind Keycloak."""
 
-import logging
 import uuid
 
 from django import forms
@@ -32,10 +31,8 @@ from portal.models import (
     timezone_names,
 )
 from portal.roles import is_form_editor, is_template_admin
-from portal.services import claim_status, delivery, operations, publication, retention
+from portal.services import claim_status, delivery, operations, publication
 from portal.templatetags.ui import render_component
-
-logger = logging.getLogger(__name__)
 
 
 class PortalAdminSite(admin.AdminSite):
@@ -830,17 +827,14 @@ class ClaimAdmin(admin.ModelAdmin):
         deleted, resuming, refused = 0, 0, []
         for claim in claims:
             try:
-                operations.delete(
+                finished = operations.delete(
                     claim.pk, actor=request.user.email or request.user.get_username(), reason=reason
                 )
             except operations.ActionRefused as exc:
                 refused.append((claim, str(exc)))
-            except (OSError, retention.ClaimBusy):
-                # The claim stays purging; the worker's cleanup finishes it.
-                logger.error("purge_failed reference=%s", claim.pk)
-                resuming += 1
             else:
-                deleted += 1
+                deleted += finished
+                resuming += not finished
         if deleted:
             messages.success(
                 request,
@@ -900,6 +894,10 @@ class ClaimAdmin(admin.ModelAdmin):
             else:
                 messages.success(request, "Processing has started again.")
                 return redirect("admin:portal_claim_change", claim.pk)
+        try:
+            plan, refused = operations.plan_retry(claim), ""
+        except operations.ActionRefused as exc:
+            plan, refused = None, str(exc)
         return TemplateResponse(
             request,
             "admin/portal/claim/retry.html",
@@ -909,7 +907,8 @@ class ClaimAdmin(admin.ModelAdmin):
                 "title": "Process claim again",
                 "claim": claim,
                 "status_badge": claim_status_badge(claim),
-                "duplicate_risk": delivery.duplicate_risk(claim),
+                "plan": plan,
+                "refused": refused,
                 "form": form,
             },
         )

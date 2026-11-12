@@ -3,7 +3,7 @@
 {% block content_title %}
 <div class="grid gap-1">
   <h1 class="page-title">Process claim again</h1>
-  <p class="text-sm text-muted-foreground">A failed PDF creation starts again. A created PDF is sent to the receiving inbox again.</p>
+  <p class="text-sm text-muted-foreground">{% if plan.action == "render" %}The PDF is created again.{% elif plan.action == "resend" %}The PDF is sent to the receiving inbox again.{% else %}A failed PDF creation starts again. A created PDF is sent to the receiving inbox again.{% endif %}</p>
 </div>
 {% endblock %}
 {% block content %}
@@ -15,9 +15,16 @@
     <div class="grid gap-1 px-6 py-3 sm:grid-cols-[10rem_1fr]"><dt class="text-muted-foreground">Current status</dt><dd>{{ status_badge }}</dd></div>
   </dl>
   {% endcomponent %}
-  {% if duplicate_risk %}
-  {% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_title" %}Duplicate delivery possible{% endcomponent %}{% component "alert_description" %}The last delivery did not clearly fail. Check with the email service or with Finance whether the email arrived before you send it again.{% endcomponent %}{% endcomponent %}
+  {% if refused %}
+  {% component "alert" variant="info" %}{% icon "circle-alert" %}{% component "alert_title" %}Not possible right now{% endcomponent %}{% component "alert_description" %}{{ refused }}{% endcomponent %}{% endcomponent %}
+  {% elif plan.duplicate_risk %}
+  {% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_title" %}Duplicate delivery possible{% endcomponent %}{% component "alert_description" %}An earlier delivery did not clearly fail. Check with the email service or with Finance whether the email arrived before you send it again.{% endcomponent %}{% endcomponent %}
   {% endif %}
+  {% if refused %}
+  <div class="submit-row">
+    {% url 'admin:portal_claim_change' claim.pk as claim_url %}{% component "button" variant="outline" href=claim_url %}Back to the claim{% endcomponent %}
+  </div>
+  {% else %}
   <form method="post" class="flex flex-col gap-6">{% csrf_token %}
     {% if form.non_field_errors %}<p class="errornote">{{ form.non_field_errors|join:" " }}</p>{% endif %}
     <fieldset class="module aligned">
@@ -27,17 +34,20 @@
           <div class="field-input">{{ form.reason }}{{ form.reason.errors }}<div class="help">Logged with your name on the claim.</div></div>
         </div>
       </div>
+      {% if plan.duplicate_risk %}
       <div class="form-row{% if form.acknowledge_duplicate_risk.errors %} errors{% endif %}">
         <div class="field-grid">
           <span></span>
           <div class="field-input"><div class="checkbox-row items-start">{{ form.acknowledge_duplicate_risk }}<label for="{{ form.acknowledge_duplicate_risk.id_for_label }}" class="font-normal">{{ form.acknowledge_duplicate_risk.label }}</label></div>{{ form.acknowledge_duplicate_risk.errors }}</div>
         </div>
       </div>
+      {% endif %}
     </fieldset>
     <div class="submit-row">
       {% component "button" type="submit" %}{% icon "refresh-cw" %}Process again{% endcomponent %}
       {% url 'admin:portal_claim_change' claim.pk as claim_url %}{% component "button" variant="outline" href=claim_url %}Cancel{% endcomponent %}
     </div>
   </form>
+  {% endif %}
 </div>
 {% endblock %}

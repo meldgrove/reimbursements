@@ -28,6 +28,10 @@ are in [the form contract](docs/form-contract.md); operations in
   processing state until a Finance delivery exists, then the delivery's state, and
   `purging` while it is deleted. One rule, in `portal/services/claim_status.py`.
   Participants see three outcomes: processing, problem or delivered.
+- **Retry**: an operator processing a claim again: building a PDF that was never
+  produced, or sending the PDF to Finance again. A resend needs the operator's
+  acknowledgment while Finance may hold a copy, that is, while any earlier send did not
+  definitely fail. `operations.plan_retry` says what a retry would do before it runs.
 - **Retention**: when a claim's PDF and content are deleted, and deleting them. A claim
   is resolved once Finance has its PDF (`portal/services/retention.py`).
 

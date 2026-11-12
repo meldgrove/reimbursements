@@ -191,8 +191,10 @@ operational correlation until content purge deletes the claim.
 
 `retry_claim` records the host actor and reason. It retries failed renders only
 before a PDF has become ready, and cannot resend once the PDF has been deleted. Delivery retries reuse the existing immutable PDF
-and destination. An ambiguous send, paused/accepted send, or intentional resend
-requires explicit duplicate-risk acknowledgment. A new claim is required for
+and destination. While any earlier send may have reached Finance (an ambiguous,
+paused, accepted or delivered send), a resend requires explicit duplicate-risk
+acknowledgment, even after a later send failed. The admin page says what a retry would
+do, or why it is not possible, before it runs. A new claim is required for
 changed participant data; Finance handles replacement and late-submission policy.
 If a closed form needs another claim, reopen it in the admin area. The MVP has no automatic replacement or payment cancellation.
 

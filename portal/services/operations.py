@@ -1,10 +1,11 @@
 """Audited operator actions on claims, shared by the admin area and management commands."""
 
 import logging
+from dataclasses import dataclass
 
 from django.db import transaction
 
-from portal.job_kinds import RENDER
+from portal import job_kinds
 from portal.models import Claim, Operation
 from portal.services import delivery, queue, retention
 
@@ -19,12 +20,24 @@ class ActionRefused(Exception):
         self.code = code
 
 
-@transaction.atomic
-def retry(claim_id, *, actor, reason, acknowledge_duplicate_risk=False):
-    """Retry a failed render, or send again. Possible duplicates need acknowledgment."""
-    claim = Claim.objects.select_for_update().for_reference(claim_id).get()
-    if not reason.strip():
-        raise ActionRefused("reason_missing", "Please give a reason.")
+RENDER, RESEND = "render", "resend"
+
+
+@dataclass(frozen=True)
+class Retry:
+    """What processing a claim again does now.
+
+    `action` is RENDER, building a PDF that was never produced, or RESEND, sending the PDF
+    to Finance again. A resend with `duplicate_risk` needs the operator's acknowledgment,
+    because Finance may already hold the PDF.
+    """
+
+    action: str
+    duplicate_risk: bool = False
+
+
+def plan_retry(claim):
+    """What a retry of `claim` would do now. Raises ActionRefused when it cannot run."""
     if queue.claim_has_active_job(claim):
         raise ActionRefused("active_job", "This claim is already being processed.")
     if claim.state == Claim.State.READY:
@@ -33,19 +46,32 @@ def retry(claim_id, *, actor, reason, acknowledge_duplicate_risk=False):
                 "pdf_removed",
                 "The PDF has already been deleted and cannot be sent again.",
             )
-        try:
-            delivery.retry(claim, acknowledge_duplicate_risk=acknowledge_duplicate_risk)
-        except delivery.DuplicateRisk as exc:
-            raise ActionRefused(
-                "duplicate_risk",
-                "The email may already have arrived. Check the delivery first, then "
-                "acknowledge the risk of a duplicate delivery.",
-            ) from exc
-    elif not RENDER.requeue(claim):
+        return Retry(RESEND, duplicate_risk=delivery.may_have_reached_finance(claim))
+    if claim.state == Claim.State.FAILED and not claim.pdf_key:
+        return Retry(RENDER)
+    raise ActionRefused(
+        "not_retryable",
+        "This claim cannot be processed again in its current state.",
+    )
+
+
+@transaction.atomic
+def retry(claim_id, *, actor, reason, acknowledge_duplicate_risk=False):
+    """Carry out `plan_retry`. A resend that may duplicate needs acknowledgment."""
+    claim = Claim.objects.select_for_update().for_reference(claim_id).get()
+    if not reason.strip():
+        raise ActionRefused("reason_missing", "Please give a reason.")
+    plan = plan_retry(claim)
+    if plan.duplicate_risk and not acknowledge_duplicate_risk:
         raise ActionRefused(
-            "not_retryable",
-            "This claim cannot be processed again in its current state.",
+            "duplicate_risk",
+            "The email may already have arrived. Check the delivery first, then "
+            "acknowledge the risk of a duplicate delivery.",
         )
+    if plan.action == RESEND:
+        delivery.resend(claim)
+    else:
+        job_kinds.RENDER.requeue(claim)
     Operation.objects.create(claim=claim, action="retry", actor=actor, reason=reason.strip()[:500])
     return claim
 
@@ -55,8 +81,9 @@ def delete(claim_id, *, actor, reason):
 
     Pending processing and sending stop, and the claim's record is deleted with its
     content. The audited operation remains without a link to the claim. A copy Finance
-    already received stays with Finance. An OSError or ClaimBusy after the purge has
-    begun leaves the claim purging, and the worker's cleanup finishes it.
+    already received stays with Finance. Returns True once the claim is gone, or False
+    when the purge began but could not finish now: the claim stays purging and the
+    worker's cleanup finishes it.
     """
     with transaction.atomic():
         claim = Claim.objects.select_for_update().for_reference(claim_id).first()
@@ -76,5 +103,9 @@ def delete(claim_id, *, actor, reason):
         )
     # Evidence outside the database, so a restored backup can be purged again.
     logger.info("claim_deleted reference=%s", claim.pk)
-    retention.purge_claim(claim.pk)
-    return claim
+    try:
+        retention.purge_claim(claim.pk)
+    except (OSError, retention.ClaimBusy):
+        logger.error("purge_failed reference=%s", claim.pk)
+        return False
+    return True

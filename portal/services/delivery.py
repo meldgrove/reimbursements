@@ -2,9 +2,10 @@
 
 A Delivery's state is derived from its attempts. Attempts change only through send
 results recorded here and provider evidence, which the Evidence module applies through
-`settle`. A send whose outcome is unknown is never repeated automatically: an operator
-retry has to acknowledge the duplicate risk. Failures before transmission are definite,
-because nothing reached the provider.
+`settle`. A send whose outcome is unknown is never repeated automatically. Finance may
+hold a copy unless every send definitely failed; an operator resend then has to
+acknowledge the duplicate risk. Failures before transmission are definite, because
+nothing reached the provider.
 """
 
 import hashlib
@@ -32,10 +33,6 @@ from portal.services.transport import (
 
 # The provider holds or delivered the message: never send again automatically.
 NO_AUTOMATIC_SEND = frozenset({DELIVERED, ACCEPTED, PAUSED, UNKNOWN})
-
-
-class DuplicateRisk(Exception):
-    """The previous send may have reached the provider."""
 
 
 def schedule(claim):
@@ -149,28 +146,15 @@ def settle(attempt_id, apply):
         refresh(delivery)
 
 
-def has_duplicate_risk(delivery):
-    """Sending again could reach Finance twice: only a definite failure is safe to repeat."""
-    return delivery.state != FAILED
-
-
-def duplicate_risk(claim):
-    """A retry of the claim's delivery has to acknowledge that Finance may get it twice."""
-    delivery = getattr(claim, "delivery", None)
-    return bool(delivery and has_duplicate_risk(delivery))
-
-
 def may_have_reached_finance(claim):
     """Some send of the claim's PDF did not definitely fail, so Finance may hold a copy."""
     delivery = getattr(claim, "delivery", None)
     return bool(delivery and delivery.attempts.exclude(state=FAILED).exists())
 
 
-def retry(claim, *, acknowledge_duplicate_risk=False):
-    """Operator retry. Only a definite failure is retried without acknowledgment."""
+def resend(claim):
+    """Operator retry: queue the claim's PDF for Finance again, whatever earlier sends did."""
     delivery = _lock_delivery(claim=claim)
-    if has_duplicate_risk(delivery) and not acknowledge_duplicate_risk:
-        raise DuplicateRisk
     delivery.state, delivery.error_code = PENDING, ""
     delivery.save()
     queue.enqueue("send", delivery, again=True)

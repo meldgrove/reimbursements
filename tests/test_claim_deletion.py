@@ -20,7 +20,7 @@ def test_operator_deletion_removes_the_claim_for_good_and_is_audited(accepted):
     assert files and all(path.exists() for path in files)
     assert Job.objects.filter(state="pending").exists()
 
-    operations.delete(accepted.pk, actor="admin@example.invalid", reason=" Testeinreichung ")
+    assert operations.delete(accepted.pk, actor="admin@example.invalid", reason=" Testeinreichung ")
 
     assert not Claim.objects.exists()
     assert not any(path.exists() for path in files)
@@ -68,8 +68,7 @@ def test_interrupted_deletion_is_finished_by_cleanup(accepted):
     directory = path_for(accepted.uploads.first().source_key).parent
     directory.chmod(0o500)
     try:
-        with pytest.raises(OSError):
-            operations.delete(accepted.pk, actor="admin", reason="Test")
+        assert operations.delete(accepted.pk, actor="admin", reason="Test") is False
     finally:
         directory.chmod(0o700)
     accepted.refresh_from_db()

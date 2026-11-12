@@ -122,13 +122,10 @@ class Render:
         return INTERRUPTED
 
     def requeue(self, claim):
-        """Operator retry of a claim whose PDF was never produced. False otherwise."""
-        if claim.state != Claim.State.FAILED or claim.pdf_key:
-            return False
+        """Operator retry of a locked claim whose PDF was never produced."""
         claim.state, claim.error_code = Claim.State.RECEIVED, ""
         claim.save()
         queue.enqueue("render", claim, again=True)
-        return True
 
 
 class _Email:

@@ -13,7 +13,7 @@ from django.utils import timezone
 from portal.jobs import reclaim_stale_jobs, run_one
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent, Job, Operation
 from portal.services import delivery as deliveries
-from portal.services import evidence, mailersend, outbound
+from portal.services import evidence, mailersend, operations, outbound
 from portal.services.storage import path_for
 
 pytestmark = pytest.mark.django_db
@@ -367,13 +367,54 @@ def test_participant_sees_three_outcomes(prepared, claim_state, delivery_state, 
     assert (result["state"], result["final"]) == (status, final)
 
 
-@pytest.mark.parametrize("state", ["pending", "provider_accepted", "send_unknown", "delivered"])
-def test_duplicate_risk_is_what_a_retry_refuses_without_acknowledgment(delivery, state):
-    Delivery.objects.filter(pk=delivery.pk).update(state=state)
-    claim = Claim.objects.select_related("delivery").get(pk=delivery.claim_id)
-    assert deliveries.duplicate_risk(claim)
-    with pytest.raises(deliveries.DuplicateRisk):
-        deliveries.retry(claim)
+@pytest.mark.parametrize(
+    ("states", "risk"),
+    [
+        ([], False),
+        (["failed"], False),
+        (["send_unknown", "failed"], True),
+        (["provider_accepted"], True),
+        (["delivered"], True),
+    ],
+)
+def test_a_resend_needs_acknowledgment_while_finance_may_hold_a_copy(delivery, states, risk):
+    for state in states:
+        DeliveryAttempt.objects.create(delivery=delivery, state=state)
+    deliveries.refresh(delivery)
+    claim = Claim.objects.get(pk=delivery.claim_id)
+    assert deliveries.may_have_reached_finance(claim) is risk
+    assert operations.plan_retry(claim) == operations.Retry(operations.RESEND, risk)
+    if risk:
+        with pytest.raises(operations.ActionRefused) as refused:
+            operations.retry(claim.pk, actor="operator", reason="Checked")
+        assert refused.value.code == "duplicate_risk"
+    operations.retry(claim.pk, actor="operator", reason="Checked", acknowledge_duplicate_risk=True)
+    delivery.refresh_from_db()
+    assert delivery.state == "pending"
+    assert Job.objects.filter(kind="send", state="pending").count() == 1
+
+
+@pytest.mark.parametrize(
+    ("state", "active_job", "plan"),
+    [
+        (Claim.State.FAILED, False, operations.Retry(operations.RENDER)),
+        (Claim.State.FAILED, True, "active_job"),
+        (Claim.State.READY, False, "pdf_removed"),
+        (Claim.State.RECEIVED, False, "not_retryable"),
+        (Claim.State.PURGING, False, "not_retryable"),
+    ],
+)
+def test_what_a_retry_would_do(accepted, state, active_job, plan):
+    Job.objects.exclude(kind="render").delete()
+    Job.objects.update(state="pending" if active_job else "done")
+    Claim.objects.filter(pk=accepted.pk).update(state=state, pdf_key="")
+    claim = Claim.objects.get(pk=accepted.pk)
+    if isinstance(plan, operations.Retry):
+        assert operations.plan_retry(claim) == plan
+    else:
+        with pytest.raises(operations.ActionRefused) as refused:
+            operations.plan_retry(claim)
+        assert refused.value.code == plan
 
 
 def test_mailersend_reads_back_the_attempt_tag_it_sends(delivery, settings, monkeypatch):
