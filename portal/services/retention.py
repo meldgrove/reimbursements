@@ -2,7 +2,9 @@
 
 A claim is resolved once Finance has its PDF. The PDF then goes after PDF_RETENTION_DAYS,
 everything else CONTENT_RETENTION_DAYS after submission, never before the PDF. An
-unresolved claim keeps everything until an operator resolves or deletes it.
+unresolved claim keeps everything until an operator resolves, archives or deletes it.
+Archiving needs no resolution: an archived claim that is not resolved goes on its
+resolution date, CONTENT_RETENTION_DAYS after submission.
 """
 
 import logging
@@ -36,11 +38,25 @@ def resolution_due(submitted_at):
     return submitted_at + timedelta(days=settings.CONTENT_RETENTION_DAYS)
 
 
+def _content_due_by(now):
+    """Claims whose content is due for deletion at `now`; see `content_due`."""
+    return Q(retention_due__lte=now) | Q(
+        archived_at__isnull=False, retention_due__isnull=True, resolution_due__lte=now
+    )
+
+
+def content_due(claim):
+    """When the claim's remaining content is deleted, or None while it awaits resolution."""
+    if claim.retention_due is None and claim.archived_at is not None:
+        return claim.resolution_due
+    return claim.retention_due
+
+
 def follow_delivery(claim, state, delivered_at):
     """Set the deletion dates of a claim the caller locked from its Finance delivery's state.
 
     A delivered claim is resolved. A failed or unclear delivery holds everything until an
-    operator resolves it. Any other state changes nothing.
+    operator resolves or archives it. Any other state changes nothing.
     """
     if state == DELIVERED:
         claim.pdf_due = delivered_at + timedelta(days=settings.PDF_RETENTION_DAYS)
@@ -142,7 +158,7 @@ def cleanup(*, execute=False):
         .values_list("pk", flat=True)
     )
     due = list(
-        Claim.objects.filter(Q(retention_due__lte=now) | Q(state=Claim.State.PURGING)).values_list(
+        Claim.objects.filter(_content_due_by(now) | Q(state=Claim.State.PURGING)).values_list(
             "pk", flat=True
         )
     )
@@ -151,7 +167,9 @@ def cleanup(*, execute=False):
     )
     unresolved = (
         Claim.objects.filter(
-            resolution_due__lte=now + timedelta(days=3), retention_due__isnull=True
+            resolution_due__lte=now + timedelta(days=3),
+            retention_due__isnull=True,
+            archived_at__isnull=True,
         )
         .exclude(state=Claim.State.PURGING)
         .count()

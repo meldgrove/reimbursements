@@ -7,7 +7,9 @@ are in [the form contract](docs/form-contract.md); operations in
 ## Intake
 
 - **Form**: what participants fill in at `/f/<slug>/`, made from a **Template** that
-  sets its internal values, travel mode, mileage and **Declaration**.
+  sets its internal values, travel mode, mileage and **Declaration**. Its status is
+  draft, published or archived; an **Archived** form is closed and left out of the
+  forms list (`portal/services/publication.py`).
 - **Draft**: one participant's session-bound, token-authorized copy of a form, opened
   against the form's revision. Every participant action passes the Draft gate with a
   named action: READ, REVIEW, REMOVE, UPLOAD or SUBMIT (`portal/services/drafts.py`).
@@ -32,8 +34,11 @@ are in [the form contract](docs/form-contract.md); operations in
   produced, or sending the PDF to Finance again. A resend needs the operator's
   acknowledgment while Finance may hold a copy, that is, while any earlier send did not
   definitely fail. `operations.plan_retry` says what a retry would do before it runs.
+- **Archived claim**: a claim an operator moved out of the claims list. It keeps its
+  status; the Status filter lists it only under Archived (`claim_status.listed`).
 - **Retention**: when a claim's PDF and content are deleted, and deleting them. A claim
-  is resolved once Finance has its PDF (`portal/services/retention.py`).
+  is resolved once Finance has its PDF. An archived claim needs no resolution and is
+  deleted at the latest on its resolution date (`portal/services/retention.py`).
 
 ## Email
 

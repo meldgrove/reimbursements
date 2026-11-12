@@ -1,0 +1,38 @@
+{% extends "admin/base_site.html" %}{% load ui %}
+{% block breadcrumbs %}{% if bulk %}{% include "admin/portal/breadcrumbs.html" with current="Archive" %}{% else %}{% with claim=claims.0 %}{% url 'admin:portal_claim_change' claim.pk as claim_url %}{% include "admin/portal/breadcrumbs.html" with parent_label=claim.reference|truncatechars:12 parent_url=claim_url current="Archive" %}{% endwith %}{% endif %}{% endblock %}
+{% block content_title %}
+<div class="grid gap-1">
+  <h1 class="page-title">{{ title }}</h1>
+  <p class="text-sm text-muted-foreground">Archived claims leave the claims list and no longer wait for a resolution.</p>
+</div>
+{% endblock %}
+{% block content %}
+<div id="content-main" class="flex max-w-3xl flex-col gap-6">
+  {% with count=rows|length %}
+  {% component "alert" variant="destructive" %}{% icon "triangle-alert" %}{% component "alert_title" %}{% if count == 1 %}{% if claims|length == 1 %}The claim is{% else %}1 claim is{% endif %} deleted for good within minutes{% else %}{{ count }} claims are deleted for good within minutes{% endif %}{% endcomponent %}{% component "alert_description" %}Not resolved within {{ retention_days }} days of submission, {% if count == 1 %}it is{% else %}they are{% endif %} kept only until resolved. Once archived, retention deletes {% if count == 1 %}it{% else %}them{% endif %} with name, address, bank details, expenses, receipts, signature and PDF. Unarchiving cannot bring {% if count == 1 %}it{% else %}them{% endif %} back.{% endcomponent %}{% endcomponent %}
+  {% endwith %}
+  {% component "card" class="gap-0 py-0" %}
+  <ul class="grid divide-y text-sm" aria-label="Claims deleted after archiving">
+    {% for row in rows %}
+    <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-6 py-3">
+      <span class="grid min-w-0 gap-0.5">
+        <span class="break-all font-medium">{{ row.claim.reference }}</span>
+        <span class="text-muted-foreground">{{ row.claim.form.name }} · submitted {{ row.claim.submitted_at|date:"DATE_FORMAT" }}{% if row.claim.full_name %} · {{ row.claim.full_name }}{% endif %}</span>
+      </span>
+      {{ row.status_badge }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endcomponent %}
+  {% if claims|length > rows|length %}<p class="text-sm text-muted-foreground">The other selected claims are archived and keep their usual deletion dates.</p>{% endif %}
+  <form method="post" class="submit-row">{% csrf_token %}
+    <input type="hidden" name="post" value="yes">
+    {% if bulk %}
+    <input type="hidden" name="action" value="archive_claims">
+    {% for claim in claims %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ claim.pk }}">{% endfor %}
+    {% endif %}
+    {% component "button" type="submit" variant="destructive" %}{% icon "archive" %}{% if claims|length == 1 %}Archive claim{% else %}Archive {{ claims|length }} claims{% endif %}{% endcomponent %}
+    {% if bulk %}{% url 'admin:portal_claim_changelist' as cancel_url %}{% else %}{% url 'admin:portal_claim_change' claims.0.pk as cancel_url %}{% endif %}{% component "button" variant="outline" href=cancel_url %}Cancel{% endcomponent %}
+  </form>
+</div>
+{% endblock %}

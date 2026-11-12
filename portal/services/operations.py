@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from django.db import transaction
+from django.utils import timezone
 
 from portal import job_kinds
 from portal.models import Claim, Operation
@@ -109,3 +110,33 @@ def delete(claim_id, *, actor, reason):
         logger.error("purge_failed reference=%s", claim.pk)
         return False
     return True
+
+
+def archive(claim_ids, *, actor):
+    """Hide claims from the claims list. Returns how many were archived.
+
+    Processing and sending go on. An archived claim needs no resolution: retention
+    deletes it like a resolved one, or on its resolution date if it was never resolved.
+    Claims that are archived already or being deleted are left as they are.
+    """
+    return _set_archived(claim_ids, timezone.now(), action="archive", actor=actor)
+
+
+def unarchive(claim_ids, *, actor):
+    """Return archived claims to the claims list. Returns how many were unarchived."""
+    return _set_archived(claim_ids, None, action="unarchive", actor=actor)
+
+
+@transaction.atomic
+def _set_archived(claim_ids, archived_at, *, action, actor):
+    claims = list(
+        Claim.objects.select_for_update()
+        .filter(pk__in=claim_ids, archived_at__isnull=archived_at is not None)
+        .exclude(state=Claim.State.PURGING)
+        .values_list("pk", flat=True)
+    )
+    Claim.objects.filter(pk__in=claims).update(archived_at=archived_at)
+    Operation.objects.bulk_create(
+        Operation(claim_id=pk, action=action, actor=actor, reason="") for pk in claims
+    )
+    return len(claims)

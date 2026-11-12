@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import pytest
 from django.core.management import call_command
+from django.utils import timezone
 
 from portal.models import Claim, Delivery
 from portal.services import claim_status
@@ -59,6 +60,31 @@ def test_filtering_by_a_status_lists_exactly_the_claims_showing_it(form):
     assert set(shown.values()) <= {code for code, _label in claim_status.CHOICES}
 
 
+def test_the_claims_list_shows_each_claim_under_exactly_one_status_option(form):
+    shown = {claim_in(form, *case[:2]).pk: case[2] for case in CASES}
+    archived = {claim_in(form, *case[:2]).pk for case in CASES}
+    Claim.objects.filter(pk__in=archived).update(archived_at=timezone.now())
+    claims = claim_status.annotate(Claim.objects.all())
+    assert set(claim_status.listed(claims).values_list("pk", flat=True)) == set(shown)
+    listed = {
+        code: set(claim_status.listed(claims, code).values_list("pk", flat=True))
+        for code, _label in claim_status.FILTER_CHOICES
+    }
+    assert listed.pop(claim_status.ARCHIVED) == archived
+    for code, pks in listed.items():
+        assert pks == {pk for pk, status in shown.items() if status == code}, code
+    # An unknown option filters nothing but still leaves the archived claims out.
+    assert set(claim_status.listed(claims, "unknown").values_list("pk", flat=True)) == set(shown)
+
+
+def test_archiving_keeps_the_status_participants_see(form):
+    claim = claim_in(form, Claim.State.READY, "delivered")
+    before = claim_status.of(claim)
+    Claim.objects.filter(pk=claim.pk).update(archived_at=timezone.now())
+    after = claim_status.of(Claim.objects.select_related("delivery").get())
+    assert (after.code, after.outcome, after.archived) == (before.code, "delivered", True)
+
+
 def test_error_comes_from_the_claim_before_its_delivery(form):
     claim = claim_in(form, Claim.State.FAILED, None)
     Claim.objects.filter(pk=claim.pk).update(error_code="document_process_failed")
@@ -78,6 +104,9 @@ def test_unresolved_claims_are_overdue_until_delivered_or_deleted(accepted):
     assert not claim_status.of(accepted, now=later).overdue
     accepted.retention_due, accepted.state = None, Claim.State.PURGING
     assert not claim_status.of(accepted, now=later).overdue
+    # Archived claims need no resolution; retention deletes them on that date.
+    accepted.state, accepted.archived_at = Claim.State.RECEIVED, later
+    assert not claim_status.of(accepted, now=later).overdue
 
 
 def test_claim_status_command_filters_by_the_shown_status(form):
@@ -87,3 +116,4 @@ def test_claim_status_command_filters_by_the_shown_status(form):
     call_command("claim_status", status="purging", stdout=output)
     rows = [json.loads(line) for line in output.getvalue().splitlines()][:-1]
     assert [row["status"] for row in rows] == ["purging", "purging"]
+    assert [row["archived"] for row in rows] == [False, False]

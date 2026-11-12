@@ -4,6 +4,9 @@ One rule decides it: the claim's processing state until a Finance delivery exist
 the delivery's state, while a claim being deleted shows that instead. The rule is a
 database expression, so the admin list, its Status filter, `claim_status` and the
 participant's Received page all read the same value.
+
+Archiving is not a status: an archived claim keeps it, but the claims list shows the
+claim only under the Status filter's own Archived option (`listed`).
 """
 
 from dataclasses import dataclass
@@ -49,6 +52,10 @@ CHOICES = [
     *((state, LABELS[state]) for state in Claim.State if state in DELETED),
 ]
 
+# The Status filter of the claims list: every status, then the archived claims.
+ARCHIVED = "archived"
+FILTER_CHOICES = [*CHOICES, (ARCHIVED, "Archived")]
+
 # What a participant sees: three outcomes; the detailed states stay internal.
 PROCESSING, PROBLEM = "processing", "problem"
 PROBLEMS = frozenset({Claim.State.FAILED, FAILED})
@@ -62,12 +69,25 @@ def annotate(claims):
     )
 
 
+def listed(claims, option=None):
+    """The claims from `annotate` the claims list shows for a Status filter option.
+
+    Archived claims are listed only under ARCHIVED, whatever their status; any other
+    option, or none, lists the claims that are not archived.
+    """
+    if option == ARCHIVED:
+        return claims.filter(archived_at__isnull=False)
+    claims = claims.filter(archived_at__isnull=True)
+    return claims.filter(status=option) if option in LABELS else claims
+
+
 @dataclass(frozen=True)
 class Status:
     code: str
     error_code: str
-    # Unresolved past its resolution date: neither delivered nor being deleted.
+    # Unresolved past its resolution date: not delivered, archived or being deleted.
     overdue: bool
+    archived: bool
 
     @property
     def label(self):
@@ -101,10 +121,13 @@ def of(claim, *, now=None):
         code = annotate(Claim.objects.filter(pk=claim.pk)).values_list("status", flat=True).get()
     delivery = getattr(claim, "delivery", None)
     purging = claim.state == Claim.State.PURGING
+    archived = claim.archived_at is not None
     return Status(
         code=code,
         error_code=claim.error_code or (delivery.error_code if delivery else ""),
         overdue=claim.resolution_due <= (now or timezone.now())
         and not claim.retention_due
-        and not purging,
+        and not purging
+        and not archived,
+        archived=archived,
     )

@@ -1,4 +1,4 @@
-// Publication regressions against a real admin editor; all save requests are intercepted.
+// Publication and archive regressions against a real admin editor; all save requests are intercepted.
 // Requires FORM_ADMIN_URL for an unused local draft and ADMIN_STORAGE_STATE for a local admin session.
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
@@ -19,6 +19,7 @@ if (!editorUrl || !storageState)
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto(editorUrl);
     const toggle = page.locator("[data-publication-toggle]");
+    const archiveToggle = page.locator("[data-archive-toggle]");
     const retry = page.locator("[data-autosave-retry]");
     const status = page.locator("[data-autosave-status]");
     const badge = page.locator("[data-form-status]");
@@ -28,6 +29,8 @@ if (!editorUrl || !storageState)
     const slug = await page.locator("#id_slug").inputValue();
     let serverStatus = await badge.getAttribute("data-status");
     assert.equal(serverStatus, "draft", "Use a draft form for this test.");
+    const statusAfter = { publish: "published", unpublish: "draft", archive: "archived", unarchive: "draft" };
+    const labels = { draft: "Draft", published: "Published", archived: "Archived" };
     const actions = [];
     let failure = null;
     let delayNextSave = null;
@@ -47,7 +50,7 @@ if (!editorUrl || !storageState)
       if (fail === "network") return route.abort("failed");
       if (fail === "http")
         return route.fulfill({ status: 503, json: { error: "Synthetic server failure" } });
-      if (action) serverStatus = action === "publish" ? "published" : "draft";
+      if (action) serverStatus = statusAfter[action];
       if (fail === "response-lost") return route.abort("failed");
       return route.fulfill({
         json: {
@@ -55,10 +58,11 @@ if (!editorUrl || !storageState)
           name: field(body, "name"),
           slug,
           status: serverStatus,
-          status_label: serverStatus === "published" ? "Published" : "Draft",
+          status_label: labels[serverStatus],
+          primary: false,
           link: `/f/${slug}/`,
           delete_url: pathname.replace(/change\/$/, "delete/"),
-          can_delete: serverStatus === "draft",
+          can_delete: serverStatus !== "published",
         },
       });
     });
@@ -67,13 +71,21 @@ if (!editorUrl || !storageState)
       await page.getByText("All changes saved.", { exact: true }).waitFor();
       assert.equal(await indicator.getAttribute("data-save-state"), "saved");
       assert.equal(await page.locator('[data-save-symbol="saved"]').isVisible(), true);
-      assert.equal(await deleteLink.isVisible(), serverStatus === "draft");
+      assert.equal(await deleteLink.isVisible(), serverStatus !== "published");
+      for (const name of Object.keys(labels)) {
+        assert.equal(await page.locator(`[data-${name}-badge]`).isVisible(), serverStatus === name);
+      }
+      // An archived form is unarchived as a draft before it can be published again.
+      assert.equal(await toggle.isVisible(), serverStatus !== "archived");
+      assert.equal(await archiveToggle.isVisible(), true);
+      assert.equal((await archiveToggle.textContent()).trim(),
+        serverStatus === "archived" ? "Unarchive" : "Archive");
     }
 
     async function failedThenRetry(action, mode, editWhileFailed = false) {
       failure = mode;
       const before = actions.length;
-      await toggle.click();
+      await (action.endsWith("archive") ? archiveToggle : toggle).click();
       await retry.waitFor({ state: "visible" });
       assert.equal(await indicator.getAttribute("data-save-state"), "error");
       assert.equal(await page.locator('[data-save-symbol="error"]').isVisible(), true);
@@ -89,7 +101,7 @@ if (!editorUrl || !storageState)
         if (mode === "response-lost") {
           // The ordinary save confirms the state of an earlier committed transition.
           await saved();
-          assert.equal(serverStatus, action === "publish" ? "published" : "draft");
+          assert.equal(serverStatus, statusAfter[action]);
           assert.equal(actions.at(-1), null);
           assert.equal(await retry.isVisible(), false);
           return;
@@ -102,7 +114,7 @@ if (!editorUrl || !storageState)
       await retry.click();
       await saved();
       assert.equal(actions.at(-1), action, "Explicit retry must preserve the requested transition.");
-      assert.equal(serverStatus, action === "publish" ? "published" : "draft");
+      assert.equal(serverStatus, statusAfter[action]);
       assert.equal(await badge.getAttribute("data-status"), serverStatus);
       assert.equal(await retry.isVisible(), false);
     }
@@ -138,6 +150,16 @@ if (!editorUrl || !storageState)
       }
       console.log("Passed implicit Enter submissions and explicit keyboard publication.");
     }
+
+    if (scenario === "all" || scenario === "archive") {
+      for (const mode of ["network", "http", "response-lost"]) {
+        await failedThenRetry("archive", mode);
+        await failedThenRetry("unarchive", mode);
+      }
+      await failedThenRetry("archive", "response-lost", true);
+      await failedThenRetry("unarchive", "network", true);
+      console.log("Passed archiving and unarchiving retries through the save queue.");
+    }
     if (scenario === "all") {
       let finishSave;
       delayNextSave = new Promise((resolve) => { finishSave = resolve; });
@@ -153,6 +175,7 @@ if (!editorUrl || !storageState)
       const toolbar = page.locator("[data-form-toolbar]");
       const controls = await Promise.all([
         toolbar.locator("[data-publication-toggle]").boundingBox(),
+        toolbar.locator("[data-archive-toggle]").boundingBox(),
         toolbar.getByRole("link", { name: "Preview", exact: true }).boundingBox(),
         toolbar.getByRole("link", { name: "History", exact: true }).boundingBox(),
       ]);

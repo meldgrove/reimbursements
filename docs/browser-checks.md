@@ -95,13 +95,14 @@ successful receipt validation and receipt-page status recovery. The upload route
 are intercepted and no valid claim is submitted. Run these browser scripts
 sequentially when using the local SQLite fallback; release checks use PostgreSQL.
 
-`tests/browser/admin-form-recovery.cjs` checks publication retries and keyboard
-submission in the admin editor. Set `FORM_ADMIN_URL` to the change URL of a local
+`tests/browser/admin-form-recovery.cjs` checks publication and archive retries and
+keyboard submission in the admin editor. Set `FORM_ADMIN_URL` to the change URL of a local
 draft with no participant drafts or claims. Set `ADMIN_STORAGE_STATE` to a
 Playwright storage-state file for a local admin session. It intercepts every save,
 so it leaves the draft unchanged. The
-test covers failed publish/unpublish requests, lost responses, edits after a
-failure, Enter in text fields, and keyboard activation of the publication button.
+test covers failed publish/unpublish/archive/unarchive requests, lost responses,
+edits after a failure, Enter in text fields, and keyboard activation of the
+publication button.
 It also verifies the save spinner/checkmark, toolbar alignment, deletion visibility,
 and cancellation from the deletion confirmation page.
 
