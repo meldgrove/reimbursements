@@ -110,7 +110,7 @@ services:
       retries: 3
 
   scanner:
-    image: clamav/clamav:1.4@sha256:3bba6dd5ac6663d55b80f86a3126e146612d93b593cc2617188d13f637d91260
+    image: clamav/clamav:1.5@sha256:45fe5149fbee5a46509c9848ef20d0c354b7b2323c9369f285939a37cf33422a
     volumes:
       - scanner_data:/var/lib/clamav
     restart: unless-stopped
