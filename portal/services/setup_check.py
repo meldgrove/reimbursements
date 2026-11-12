@@ -62,8 +62,6 @@ ACTOR = "verify_setup"
 FORM_NAME = "Setup check (not a real claim)"
 # The EICAR antivirus test file, in two parts so that this source is not detected itself.
 EICAR = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$" + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-# How long the clean-up waits for a job that still holds the claim or an upload.
-CLEANUP_SECONDS = 120
 SEND_PROBLEMS = {
     "provider_rejected": (
         "MailerSend refused the email. Check MAILERSEND_API_TOKEN and that "
@@ -82,6 +80,12 @@ def pause():
 
 def clock():
     return time.monotonic()
+
+
+def cleanup_seconds():
+    """How long the clean-up waits for a job that holds the claim or an upload: a job ends
+    within its lease, and a running worker reclaims an expired one within a minute."""
+    return settings.JOB_LEASE_SECONDS + 60
 
 
 def oidc_client():
@@ -287,7 +291,7 @@ class SetupCheck:
             recipient=self.finance,
             support_email=self.finance,
             status=Form.Status.PUBLISHED,
-            closes_at=timezone.now() + timedelta(seconds=self.timeout + CLEANUP_SECONDS),
+            closes_at=timezone.now() + timedelta(seconds=self.timeout + cleanup_seconds()),
         )
         try:
             if self.submit(form):
@@ -471,7 +475,7 @@ class SetupCheck:
         return self.report(OK, f"Participant confirmation to {self.participant} {where}")
 
     def remove(self, form, template):
-        deadline = clock() + CLEANUP_SECONDS
+        deadline = clock() + cleanup_seconds()
         while True:
             try:
                 if self.removed(form):
@@ -481,14 +485,18 @@ class SetupCheck:
             except (operations.ActionRefused, retention.ClaimBusy, OSError, ProtectedError):
                 pass
             if clock() >= deadline:
-                return self.report(
-                    FAIL,
-                    "Clean-up",
-                    f"A job still uses the test claim or form {form.slug}. The worker "
-                    "finishes deleting the claim; then delete the form and its template in "
-                    "the admin area.",
-                )
+                return self.report(FAIL, "Clean-up", self.leftovers(form, template))
             pause()
+
+    def leftovers(self, form, template):
+        if Claim.objects.filter(pk=self.claim_id).exists():
+            first = (
+                f"A job still holds claim {self.claim_id}. Once the worker runs and has "
+                "finished it, delete the claim in the admin area"
+            )
+        else:
+            first = "A job still holds an upload. The worker deletes it when its draft expires"
+        return f"{first}; then delete form {form.slug} and template {template.name!r}."
 
     def removed(self, form):
         """Delete the claim and drafts; True once only the form and template are left."""

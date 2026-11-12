@@ -21,7 +21,7 @@ from portal.models import (
     Operation,
     Upload,
 )
-from portal.services import outbound, setup_check
+from portal.services import operations, outbound, setup_check
 from portal.services.storage import write_heartbeat
 from tests.test_delivery import mock_provider
 from tests.test_scanner import FakeClamAV
@@ -127,6 +127,20 @@ def test_without_a_running_worker_no_claim_is_submitted(privacy_notice, settings
     assert "FAIL  Worker\n        No recent heartbeat." in output
     assert "skip  Test claim" in output
     assert nothing_left()
+
+
+def test_a_claim_a_job_still_holds_is_named_for_deletion(worker, monkeypatch, settings):
+    def busy(*args, **kwargs):
+        raise operations.ActionRefused("busy", "The claim is being processed.")
+
+    monkeypatch.setattr(operations, "delete", busy)
+    output, error = verify(to="finance@example.invalid")
+    claim = Claim.objects.get()
+    assert error == "Setup check failed: 1 problem."
+    assert f"FAIL  Clean-up\n        A job still holds claim {claim.pk}." in output
+    assert f"then delete form {claim.form.slug} and template 'Setup check " in output
+    # A running job ends within its lease, so the clean-up waits that long.
+    assert worker.now >= settings.JOB_LEASE_SECONDS + 60
 
 
 def signed_webhook(client, settings, attempt, kind):
