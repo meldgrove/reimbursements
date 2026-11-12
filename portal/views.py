@@ -279,7 +279,13 @@ def health_authorized(request):
 def healthz(request):
     if not health_authorized(request):
         raise Http404
-    return JsonResponse({"status": "OK", "timestamp": timezone.now().isoformat()})
+    return JsonResponse(
+        {
+            "status": "OK",
+            "version": settings.APP_VERSION or None,
+            "timestamp": timezone.now().isoformat(),
+        }
+    )
 
 
 @require_GET

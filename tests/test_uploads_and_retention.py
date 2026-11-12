@@ -219,6 +219,13 @@ def test_purged_claim_does_not_match_an_anonymous_session(accepted):
     assert Client().get(f"/received/{accepted.pk}/").status_code == 404
 
 
+def test_liveness_reports_the_release_version(client, settings):
+    settings.APP_VERSION = "1.2.3"
+    assert client.get("/-/healthz").json()["version"] == "1.2.3"
+    settings.APP_VERSION = ""
+    assert client.get("/-/healthz").json()["version"] is None
+
+
 def test_public_health_requires_deployment_token(client, settings):
     settings.DEBUG = False
     settings.HEALTHCHECK_TOKEN = "synthetic-health-token"

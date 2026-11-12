@@ -183,7 +183,7 @@ resolution and never resends automatically.
 
 ## Monitoring and maintenance
 
-`/-/healthz` checks only process liveness. `/-/readyz` checks database, writable
+`/-/healthz` checks only process liveness and reports the release version. `/-/readyz` checks database, writable
 storage/capacity, document confinement, the bounded workspace, scanner PING,
 worker heartbeat and oldest ready-job age (default maximum 900 seconds).
 Production probes require `X-Health-Token`. Health checks do not call MailerSend.
@@ -204,7 +204,8 @@ own log message, without exception values, request data, users, local variables
 or breadcrumbs. Library log messages keep only their template. Outgoing requests
 and document processes get no tracing headers or variables. The `process` tag
 is `web` or the management command, e.g. `run_jobs`. `SENTRY_ENVIRONMENT`
-defaults to `DEPLOYMENT_ENV`; `SENTRY_RELEASE` names the deployed version.
+defaults to `DEPLOYMENT_ENV`. `SENTRY_RELEASE` names the deployed version and
+defaults to `reimbursements@<version>` in [release images](releases.md).
 
 The worker reclaims expired leases and runs cleanup each minute, including deletion
 of expired Django sessions through the configured session backend. Active sessions
