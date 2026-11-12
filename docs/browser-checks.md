@@ -52,13 +52,29 @@ dependent fields, stale responses, expense amounts, server Expense errors after 
 reordering, return-date dependencies, and validation before review.
 It intercepts validation responses and sends no uploads or emails.
 
-The repeatable interaction smoke test is `tests/browser/smoke.cjs`. With Playwright
-available to Node, set `BASE_URL`, `FIXTURES_DIR` and `OUTPUT_DIR`, then run it with
-Node. Supply only synthetic `train.png`, two-page `hotel.pdf`, and `signature.png`
-fixtures. It verifies desktop/mobile completion, both signature paths, review
-reset, row/file association, mileage-only claims, totals, delivery, and cross-session
-receipt denial. Set `FORM_SLUG` to run against a different synthetic form, including
-a form with a single fixed purpose.
+The repeatable interaction smoke test is `tests/browser/smoke.cjs`. It verifies
+desktop/mobile completion, both signature paths, review reset, row/file association,
+mileage-only claims, totals, delivery, and cross-session receipt denial. Set
+`BASE_URL` and `OUTPUT_DIR` for its screenshots. Without `FIXTURES_DIR` it draws
+synthetic `train.png`, two-page `hotel.pdf` and `signature.png` itself;
+`node tests/browser/fixtures.cjs DIR` writes the same files for the scripts below. Set
+`FORM_SLUG` to run against a different synthetic form, including a form with a single
+fixed purpose.
+
+CI runs the smoke test and `verify_setup` on every pull request against the production
+image, as the `Browser and setup checks` job. To run that job locally:
+
+```bash
+(cd tests/browser && npm ci && npx playwright install chromium)
+export COMPOSE_FILE=compose.ci.yaml
+docker compose --env-file /dev/null build web
+docker compose --env-file /dev/null run --rm web python manage.py migrate --noinput
+docker compose --env-file /dev/null run --rm web python manage.py seed_demo
+docker compose --env-file /dev/null up --detach --wait web worker
+node tests/browser/smoke.cjs
+docker compose --env-file /dev/null exec web python manage.py verify_setup --to finance@example.invalid
+docker compose --env-file /dev/null down --volumes
+```
 
 Run `tests/browser/signature-recovery.cjs` with the same `BASE_URL` and
 `FIXTURES_DIR` to inject signature validation failures, polling errors, polling
@@ -105,4 +121,4 @@ portal and changes entries after review to verify authoritative submission check
 partial deletion failure, retry without losing file handles, replacement uploads,
 and cleanup when a file has already gone. Run it with the demo form or set
 `FORM_HTML` to a rendered demo page. Upload and deletion endpoints are intercepted;
-no receipt leaves the browser. It requires Playwright available to Node.
+no receipt leaves the browser. It needs Playwright from `npm ci` in `tests/browser`.

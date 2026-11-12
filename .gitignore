@@ -26,3 +26,4 @@ portal/static/portal/ui.css
 *.key
 playwright-report/
 test-results/
+node_modules/

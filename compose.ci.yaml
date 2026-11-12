@@ -1,3 +1,26 @@
+# CI: `checks` runs the server suite; `web` and `worker` run the production image for
+# the browser and setup checks. Inert test settings only.
+x-application: &application
+  image: reimbursements:ci
+  build:
+    context: .
+    target: runtime
+  environment:
+    DJANGO_DEBUG: "1"
+    DEPLOYMENT_ENV: development
+    DATABASE_URL: postgresql://reimbursement:ci-only@database:5432/reimbursement
+    ALLOWED_HOSTS: localhost,127.0.0.1,web
+    MAIL_DELIVERY_MODE: local
+    UPLOAD_SCANNER: disabled
+    REQUIRE_WORKER_HEARTBEAT: "1"
+  volumes:
+    - private_data:/app/var/private
+  tmpfs:
+    - /app/var/private/work:size=700m,mode=0700,uid=10001,gid=10001
+  depends_on:
+    database:
+      condition: service_healthy
+
 services:
   database:
     image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
@@ -37,3 +60,20 @@ services:
         python manage.py makemigrations --check --dry-run
         python scripts/check_production.py
         pytest -q
+
+  web:
+    <<: *application
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/-/healthz', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    <<: *application
+    command: ["python", "manage.py", "run_jobs"]
+
+volumes:
+  private_data:
