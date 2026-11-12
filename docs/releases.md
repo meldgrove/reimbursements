@@ -93,3 +93,7 @@ gh attestation verify oci://ghcr.io/meldgrove/reimbursements:X.Y.Z --owner meldg
 - **Protected `main`:** releases push only a tag, so the ruleset that requires
   pull requests on `main` needs no bypass actor. Do not restrict creating `v*`
   tags: the workflow pushes them with its own token.
+- **Code owners:** `.github/CODEOWNERS` assigns `.github/` (workflows and
+  release settings) to the `maintainers` team, so a pull request that
+  changes it asks the team for review. The team needs write access to the
+  repository, or GitHub ignores the line.
