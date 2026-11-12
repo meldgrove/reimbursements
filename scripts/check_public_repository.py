@@ -17,6 +17,7 @@ PUBLIC_HOSTS = {
     "files.pythonhosted.org",
     "github.com",
     "pypi.org",
+    "registry.npmjs.org",
     "www.w3.org",
 }
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "web", "database", "REPLACE_WITH_COOLIFY_DATABASE_HOST"}

@@ -64,9 +64,12 @@ Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. S
 
 Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your
 operator's notice, review the template declaration, and create a form with an
-approved recipient, support address and required internal values. Publish and send
-a synthetic claim before accepting participant data. Verify the PDF, participant
-confirmation, signed delivery callbacks and retention cleanup.
+approved recipient, support address and required internal values. Then run
+`python manage.py verify_setup --to <an approved Finance inbox>` in the web container.
+It sends a synthetic claim through the scanner, document sandbox, MailerSend and the
+signed delivery webhook, and deletes it again; see
+[setup check](operations.md#setup-check). Publish your form and send a synthetic claim
+through it before accepting participant data, and verify its PDF.
 
 Run the [release checks](production-readiness.md). The migration job must complete
 before web and worker start. For upgrades, stop old workers before migrations and

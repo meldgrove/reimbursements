@@ -94,9 +94,10 @@ python3 scripts/check_public_repository.py
 ```
 
 The [CI workflow](.github/workflows/ci.yaml) runs the server suite against disposable
-PostgreSQL and builds the production image. `compose.ci.yaml` contains only inert
-test settings. Browser interaction scripts are described in
-[browser checks](docs/browser-checks.md).
+PostgreSQL and builds the production image. A second job starts that image with a
+worker and runs the participant smoke test in Chromium and the setup check.
+`compose.ci.yaml` contains only inert test settings. [Browser checks](docs/browser-checks.md)
+describes the browser scripts and how to run that job locally.
 
 Interface templates use local components and inline geometric icons. Tailwind
 builds the stylesheet from `portal/assets/ui.css`. No remote fonts or client-side

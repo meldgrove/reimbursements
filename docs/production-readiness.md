@@ -2,9 +2,12 @@
 
 Require the CI workflow to pass for the revision being deployed. It checks lint,
 formatting, Django configuration, migration drift, the PostgreSQL regression suite,
-document confinement, and the production image with compiled styles.
+document confinement, and the production image with compiled styles. A second job
+runs that image with a worker: the participant smoke test in Chromium and
+`verify_setup` with local email delivery.
 
-Before accepting claims, verify the following in staging with synthetic data:
+Before accepting claims, run the [setup check](operations.md#setup-check) and verify
+the following in staging with synthetic data:
 
 - Operator identity, support address, privacy notice, declaration and internal accounting fields.
 - Both sign-in roles and the separation between form editors and template admins.

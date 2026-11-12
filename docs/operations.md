@@ -114,13 +114,41 @@ periods. `PDF_RETENTION_DAYS` (7) and `CONTENT_RETENTION_DAYS` (90) in
 together with the notice, the summary on the form page and a migration that
 publishes the updated notice. An already started purge always resumes.
 
-Run a complete dummy claim through the approved MailerSend route before
-launch. Check all pages, KST/KTR, declaration, signature, amounts, and compressed
-readability. The service compresses the complete PDF in bounded passes down to
+Run the [setup check](#setup-check) before launch, then a complete dummy claim
+through one of your forms and the approved MailerSend route. Check all pages,
+KST/KTR, declaration, signature, amounts, and compressed readability. The service compresses the complete PDF in bounded passes down to
 72 DPI / JPEG quality 50. If the complete document still exceeds the configured
 cap, it remains a processing exception. No page is silently removed and no partial
 attachment is sent. Inspect the retained sources and resolve with Finance through
 an approved private process.
+
+## Setup check
+
+After the first launch, each upgrade and any change of credentials, run in the web
+container, with the worker running:
+
+```bash
+python manage.py verify_setup --to finance@your-org.example.invalid
+```
+
+It checks the database, private storage, the worker's heartbeat, the document sandbox,
+ClamAV (including that it detects the EICAR test file) and the Keycloak realm's issuer,
+endpoints and signing key. Then it submits a synthetic claim through a temporary form:
+receipt and signature uploads, scanning, normalization, the PDF, the Finance email and
+the participant confirmation. With MailerSend it waits for the signed delivery webhook
+and the delivery. Each step prints `ok`, `skip` or `FAIL` with what to fix, and the
+command exits nonzero on any failure.
+
+`--to` must be one of `APPROVED_DELIVERY_RECIPIENTS`; that inbox receives a PDF titled
+"Setup check (not a real claim)". `--confirmation-to` receives the participant
+confirmation and defaults to `--to`. In staging, both must be on
+`TEST_RECIPIENT_ALLOWLIST`. `--timeout` (default 300 seconds) is how long the test
+claim may take, MailerSend's webhook included.
+
+The claim takes no bookkeeping reference, so Finance's numbering has no gap; its emails
+name its UUID. The check deletes the claim, form and template at the end, also after a
+failure, and logs the deletion with the actor `verify_setup`. The emails stay in the
+inboxes. Group mapping needs a person: sign in at `/admin/` once with each role.
 
 ## Recovery commands
 

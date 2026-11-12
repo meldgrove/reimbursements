@@ -25,3 +25,8 @@ updates:
       - dependency-name: postgres
         update-types:
           - version-update:semver-major
+  # Playwright for the browser checks; CI installs the Chromium of the locked version.
+  - package-ecosystem: npm
+    directory: /tests/browser
+    schedule:
+      interval: weekly
