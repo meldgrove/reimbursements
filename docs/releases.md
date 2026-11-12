@@ -39,8 +39,8 @@ steps needed". Dependabot's pull requests (`dependencies`) come last
 2. In GitHub, open Actions > Release > Run workflow. Choose patch, minor or major
    and tick "Dry run". It builds and starts the image on amd64 and arm64 and
    shows the version, image tags and notes, without publishing anything.
-3. Run it again without "Dry run". When the release needs operator action, untick
-   "Deploy" and deploy by hand after taking the steps.
+3. Run it again without "Dry run". Deployments that follow `latest` install it within
+   the hour, so have the upgrade steps of a release that needs them ready.
 4. When the release needs operator action, edit its notes on GitHub and add the
    upgrade steps at the top.
 
@@ -52,44 +52,22 @@ Otherwise it:
   only the tag;
 - builds the production image with the version for amd64 and arm64 and publishes
   it as `ghcr.io/meldgrove/reimbursements:X.Y.Z`, `:X.Y`, from 1.0.0 also `:X`,
-  and `:latest`. Deployments that run a series tag install the release
-  automatically when [automatic updates](updates.md) are on;
-- attests the image's build provenance and creates the GitHub Release;
-- deploys the release to the maintainers' server, if the repository has a deploy
-  link (below).
+  and `:latest`. Deployments that run a series tag or `latest` install the release
+  within the hour when [automatic updates](updates.md) are on;
+- attests the image's build provenance and creates the GitHub Release.
 
 If a job fails after the tag was pushed, fix the cause and use "Re-run failed
 jobs". It publishes from the tag. Do not start a new release for the same
 changes.
 
 **Release candidates:** tick "Release candidate" to publish `X.Y.Z-rc.N` for
-testing on a staging server. It publishes only that image tag (never `latest`),
-marks the GitHub Release as a prerelease, and deploys nothing. Release with the
-same choice of patch, minor or major afterwards.
+testing on a staging server. It publishes only that image tag (never `latest`) and
+marks the GitHub Release as a prerelease. Release with the same choice of patch, minor
+or major afterwards.
 
 Pull requests that change the `Dockerfile`, `.dockerignore`,
 `scripts/start-web.sh` or the workflow build and start both images without
 publishing.
-
-## Deploy after a release
-
-The maintainers' server installs every release as soon as it is out, instead of
-waiting for the hourly check of [automatic updates](updates.md). It runs the image
-tag `latest` (`REIMBURSEMENTS_VERSION=latest`) and leaves `UPDATE_DEPLOY_HOOK_URL`
-empty, so a release deploys once. The repository has two Actions secrets:
-
-- `DEPLOY_HOOK_URL`: a link that redeploys the app on `POST`. In Coolify, the
-  resource's Webhooks > Deploy Webhook.
-- `DEPLOY_HOOK_TOKEN`: its bearer token. In Coolify, an API token with only the
-  `deploy` permission.
-
-The Deploy job calls the link once the release is published; without
-`DEPLOY_HOOK_URL` it does nothing. GitHub's runners must reach the link over the
-internet. If the call fails, the release is still out: fix the cause and use
-"Re-run failed jobs", or deploy by hand.
-
-Other operators' servers are out of the workflow's reach. They use
-[automatic updates](updates.md) instead.
 
 ## Release images
 

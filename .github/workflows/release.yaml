@@ -10,8 +10,6 @@
 #   image    builds and starts the image on amd64 and arm64, pushes it by digest
 #   publish  tags both platforms as one image (X.Y.Z, X.Y, X from 1.0.0,
 #            latest), attests its provenance, and creates the GitHub Release
-#   deploy   calls the deploy link in the DEPLOY_HOOK_URL secret, if the
-#            repository has one, so the maintainers' own server runs the release
 #
 # A dry run does everything except push and publish. Pull requests that change
 # the image build and start both platforms without publishing anything.
@@ -29,17 +27,13 @@ on:
         options: [patch, minor, major]
         default: patch
       candidate:
-        description: "Release candidate: publish vX.Y.Z-rc.N for testing (no latest, no deploy)"
+        description: "Release candidate: publish vX.Y.Z-rc.N for testing (no latest)"
         type: boolean
         default: false
       dry_run:
         description: "Dry run: build, show the version and notes, publish nothing"
         type: boolean
         default: false
-      deploy:
-        description: "Deploy: afterwards, call the deploy link in the DEPLOY_HOOK_URL secret, if set"
-        type: boolean
-        default: true
   pull_request:
     paths:
       - Dockerfile
@@ -376,43 +370,3 @@ jobs:
             -F prerelease="$PRERELEASE" \
             -f make_latest="$latest" \
             --jq .html_url
-
-  # The maintainers' own server, when the repository has the secret
-  # DEPLOY_HOOK_URL: a deploy link that redeploys on POST (in Coolify the
-  # resource's Deploy Webhook) and DEPLOY_HOOK_TOKEN, its bearer token. That
-  # server runs the image tag latest, so the call installs this release.
-  # GitHub's runners must reach the link over the internet.
-  deploy:
-    name: Deploy
-    needs: [prepare, publish]
-    if: needs.prepare.outputs.prerelease == 'false' && inputs.deploy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - name: Call the deploy link
-        env:
-          URL: ${{ secrets.DEPLOY_HOOK_URL }}
-          TOKEN: ${{ secrets.DEPLOY_HOOK_TOKEN }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-        run: |
-          if [ -z "$URL" ]; then
-            echo "::notice::Nothing deployed: the repository has no DEPLOY_HOOK_URL secret."
-            exit 0
-          fi
-          auth=()
-          if [ -n "$TOKEN" ]; then auth=(--header "Authorization: Bearer $TOKEN"); fi
-          # Only the status is printed on success: the answer names the
-          # server's resources, and the logs of public repositories are public.
-          if ! status=$(curl --silent --show-error --max-time 60 --request POST "${auth[@]}" \
-            --output "$RUNNER_TEMP/answer" --write-out '%{http_code}' "$URL"); then
-            echo "::error::GitHub's runner could not reach the deploy link."
-            exit 1
-          fi
-          case "$status" in
-            2??) echo "Deployment of $TAG started (HTTP $status)." | tee -a "$GITHUB_STEP_SUMMARY" ;;
-            *)
-              echo "::error::The deploy link answered HTTP $status: $(head -c 300 "$RUNNER_TEMP/answer")"
-              exit 1
-              ;;
-          esac

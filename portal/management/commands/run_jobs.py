@@ -6,14 +6,13 @@ from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 
 from portal.jobs import reclaim_stale_jobs, run_one
-from portal.services import updates
 from portal.services.evidence import reconcile_unmatched
 from portal.services.retention import cleanup
 from portal.services.storage import write_heartbeat
 
 
 class Command(BaseCommand):
-    help = "Run the single MVP worker, including periodic recovery, deletion and update checks."
+    help = "Run the single MVP worker, including periodic recovery and deletion."
 
     def add_arguments(self, parser):
         parser.add_argument("--once", action="store_true")
@@ -32,7 +31,6 @@ class Command(BaseCommand):
                         logging.getLogger(__name__).warning(
                             "maintenance_attention %s", json.dumps(result)
                         )
-                    updates.check()
                     last_maintenance = time.monotonic()
                 write_heartbeat()
                 processed = run_one()

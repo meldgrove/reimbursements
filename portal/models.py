@@ -102,28 +102,6 @@ class AppSettings(models.Model):
         self.favicon_digest = hashlib.sha256(content).hexdigest()[:16] if content else ""
 
 
-class UpdateCheck(models.Model):
-    """The worker's last check for new releases: one row, see portal.services.updates."""
-
-    checked_at = models.DateTimeField(null=True)
-    succeeded_at = models.DateTimeField(null=True)
-    # The newest release outside the running series: it may need operator action.
-    available_version = models.CharField(max_length=32, blank=True)
-    available_url = models.URLField(max_length=300, blank=True)
-    # The newest release of the running series, and when the deploy link took it.
-    target_version = models.CharField(max_length=32, blank=True)
-    requested_at = models.DateTimeField(null=True)
-    request_failure = models.CharField(max_length=32, blank=True)
-
-    @classmethod
-    def load(cls):
-        return cls.objects.filter(pk=1).first() or cls(pk=1)
-
-    def save(self, *args, **kwargs):
-        self.pk = 1
-        super().save(*args, **kwargs)
-
-
 def default_declaration():
     """The standard declaration in the app language, for new templates."""
     with translation.override(AppSettings.load().language):

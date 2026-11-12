@@ -3,11 +3,13 @@
 # PostgreSQL is a separate Coolify resource; start it before deploying this stack.
 # Enable Connect To Predefined Network to reach its internal DATABASE_URL.
 # Local development uses compose.dev.yaml.
+# The release image. REIMBURSEMENTS_VERSION names a series such as 0.2, which gets every
+# 0.2.x release, latest for every release, or an exact version (docs/updates.md). Every
+# deploy pulls the tag again, so a redeploy installs the newest release of the tag.
+x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.2}
+
 x-application: &application
-  # The release image. REIMBURSEMENTS_VERSION names a series such as 0.1, which gets
-  # every 0.1.x release, or an exact version (docs/updates.md). Every deploy pulls the
-  # tag again, so a redeploy installs the newest release of the series.
-  image: ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.1}
+  image: *image
   pull_policy: always
   restart: unless-stopped
   pids_limit: 64
@@ -57,8 +59,6 @@ x-application: &application
     SENTRY_DSN: ${SENTRY_DSN:-}
     SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     SENTRY_RELEASE: ${SENTRY_RELEASE:-}
-    UPDATE_DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
-    UPDATE_DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
   volumes:
     - private_data:/app/var/private
   tmpfs:
@@ -121,6 +121,19 @@ services:
       start_period: 180s
       timeout: 10s
       retries: 5
+
+  # Automatic updates (docs/updates.md): off until UPDATE_DEPLOY_HOOK_URL is set. When
+  # the tag in REIMBURSEMENTS_VERSION points to a new image, it calls that deploy link,
+  # and Coolify deploys the new release.
+  updater:
+    image: ghcr.io/meldgrove/updater:0.1
+    pull_policy: always
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      IMAGE: *image
+      DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
+      DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
 
 volumes:
   private_data:

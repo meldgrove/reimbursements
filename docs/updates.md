@@ -1,56 +1,37 @@
 # Automatic updates
 
 Each release publishes the production image `ghcr.io/meldgrove/reimbursements` under
-its version and under its series (see [releases](releases.md)). `compose.yaml` runs the
-tag named in `REIMBURSEMENTS_VERSION` and pulls it again on every deploy. A redeploy
-therefore installs the newest release of the series.
+its version, its series and `latest` (see [releases](releases.md)). `compose.yaml` runs
+the tag named in `REIMBURSEMENTS_VERSION` and pulls it again on every deploy.
+
+The `updater` service in `compose.yaml` installs new releases. Once an hour it asks the
+registry whether that tag points to a new image. If so, it calls the hosting
+platform's deploy link, and the platform pulls the image, runs the migrations, and
+replaces web and worker. It is [Meldgrove Updater](https://github.com/meldgrove/updater),
+the same for every Meldgrove app. Until `UPDATE_DEPLOY_HOOK_URL` is set, it does
+nothing.
 
 ## Choose what to run
 
 | `REIMBURSEMENTS_VERSION` | Runs | Updates automatically to |
 | --- | --- | --- |
 | `0.2` | the newest 0.2.x release | 0.2.x, never 0.3.0 |
-| `1.2` (from 1.2.0) | the newest 1.2.x release | 1.2.x, never 1.3.0 |
+| `latest` | the newest release | every release |
 | `0.2.1` | exactly this release | nothing |
 
-A series only receives patch releases, which need no operator action. A new minor
-version may need operator action, so `0.2` never moves to 0.3.0, and `1.2` never to
-1.3.0. Moving to another series is a manual upgrade: read the release notes of every
-version since the deployed one, then change `REIMBURSEMENTS_VERSION`.
+A series such as `0.2` or `1.2` only receives patch releases, which need no operator
+action. A new minor version may need operator action, so `0.2` never moves to 0.3.0.
+Moving to another series is a manual upgrade: read the release notes of every version
+since the deployed one, then change `REIMBURSEMENTS_VERSION`.
 
-Do not combine automatic updates with `latest` or, from 1.0.0, a major version tag
-such as `1`. The worker still calls the deploy link only for patch releases, but the
-redeploy pulls whatever the tag points to, including a minor release whose upgrade
-steps nobody took.
-
-## How the worker updates the app
-
-Set `UPDATE_DEPLOY_HOOK_URL` to your hosting platform's deploy link: a URL that
-redeploys the app when it receives a `POST` request. The worker then reads the
-project's releases on GitHub once an hour:
-
-- **A newer release in the series:** the worker calls the deploy link once, with
-  `Authorization: Bearer <UPDATE_DEPLOY_HOOK_TOKEN>` when the token is set. The
-  platform pulls the image, runs the migrations, and replaces web and worker.
-- **A newer release outside the series:** nothing is installed. The admin area shows
-  it, with a link to its release notes.
-- **The deploy link fails:** the admin area shows the error, and the worker tries
-  again an hour later.
-- **The app still runs the old version an hour after the call:** the admin area says
-  so, and the worker does not call the deploy link again for that release. Usually
-  `REIMBURSEMENTS_VERSION` names an exact version instead of a series.
-
-Template admins see these messages on every admin page. Admin > General shows the
-running version and the last check. The worker needs to reach `api.github.com` and
-the deploy link. GitHub sees the server's address and the app version, and nothing
-else about the installation.
-
-Updates need a release image: an app built from source reports no version and is
-never updated.
+With `latest`, every release installs within the hour, including one whose notes list
+upgrade steps, before anyone has taken them. Watch the repository's releases on GitHub
+(Watch > Custom > Releases) and take the steps right away. From 1.0.0 a major version
+tag such as `1` exists too; it gets minor releases and carries the same risk.
 
 ## Switch it on
 
-### Coolify
+Set up [backups](#backups) first. Then, in Coolify:
 
 1. Under Settings > Advanced, turn on API Access if it is off.
 2. Under Keys & Tokens > API Tokens, create a token with only the `deploy` permission;
@@ -60,8 +41,9 @@ never updated.
 4. In the resource's environment variables, set `UPDATE_DEPLOY_HOOK_URL` to the
    webhook and `UPDATE_DEPLOY_HOOK_TOKEN` to the token. Redeploy.
 
-Admin > General then says "Automatic updates are on", and shows the time of the last
-check after the worker's first one.
+The `updater` container's log then says which tag it watches, and later each
+deployment it starts or that the platform refused. Admin > General shows the running
+version.
 
 ### Other platforms
 
@@ -80,10 +62,9 @@ every hour, for example with cron:
 0 * * * * cd /srv/reimbursements && docker compose up --detach --quiet-pull
 ```
 
-It pulls the series tag and replaces only containers whose image changed, after the
-migration job has finished. The admin area does not show releases outside the series
-in this setup. Watch the repository's releases on GitHub instead (Watch > Custom >
-Releases).
+It pulls the tag and replaces only containers whose image changed, after the migration
+job has finished. Watch the repository's releases on GitHub for releases outside the
+series (Watch > Custom > Releases).
 
 ## Backups
 

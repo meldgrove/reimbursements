@@ -115,5 +115,5 @@ a minor version adds features and may need operator action (its notes say which)
 and a major version is reserved for really big changes. Each release publishes the production image for amd64 and arm64
 as `ghcr.io/meldgrove/reimbursements:<version>` and lists its changes on the GitHub
 Releases page. Maintainers cut releases from GitHub Actions; see
-[releases](docs/releases.md). Deployments can install the releases of their series
-automatically; see [automatic updates](docs/updates.md).
+[releases](docs/releases.md). Deployments can install new releases automatically with
+the `updater` service; see [automatic updates](docs/updates.md).

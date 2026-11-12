@@ -96,7 +96,6 @@
     <div id="content" class="flex flex-col gap-6 rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
 {% endif %}
         {% block messages %}{% include "admin/portal/messages.html" %}{% endblock messages %}
-        {% include "admin/portal/update_notices.html" %}
         {% if settings_tabs %}{% include "admin/portal/settings_tabs.html" %}{% endif %}
         {% block pretitle %}{% endblock %}
         {% block content_title %}{% if title %}<h1 class="page-title">{{ title }}</h1>{% endif %}{% endblock %}
