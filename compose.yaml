@@ -4,9 +4,11 @@
 # Enable Connect To Predefined Network to reach its internal DATABASE_URL.
 # Local development uses compose.dev.yaml.
 x-application: &application
-  build:
-    context: .
-    target: runtime
+  # The release image. REIMBURSEMENTS_VERSION names a series such as 0.1, which gets
+  # every 0.1.x release, or an exact version (docs/updates.md). Every deploy pulls the
+  # tag again, so a redeploy installs the newest release of the series.
+  image: ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.1}
+  pull_policy: always
   restart: unless-stopped
   pids_limit: 64
   mem_limit: 512m
@@ -55,6 +57,8 @@ x-application: &application
     SENTRY_DSN: ${SENTRY_DSN:-}
     SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    UPDATE_DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
+    UPDATE_DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
   volumes:
     - private_data:/app/var/private
   tmpfs:

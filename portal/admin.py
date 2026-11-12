@@ -32,7 +32,14 @@ from portal.models import (
     timezone_names,
 )
 from portal.roles import is_form_editor, is_template_admin
-from portal.services import claim_status, delivery, operations, publication, retention
+from portal.services import (
+    claim_status,
+    delivery,
+    operations,
+    publication,
+    retention,
+    updates,
+)
 from portal.templatetags.ui import render_component
 
 
@@ -71,6 +78,8 @@ class PortalAdminSite(admin.AdminSite):
             context["nav_sections"] = admin_navigation.sections(request)
             context["settings_tabs"] = admin_navigation.settings_tabs(request)
             context["account_url"] = settings.KEYCLOAK_ACCOUNT_URL if settings.OIDC_ENABLED else ""
+        if is_template_admin(request.user):
+            context["update_notices"] = updates.notices()
         return context
 
     def index(self, request, extra_context=None):
@@ -164,6 +173,7 @@ class AppSettingsAdmin(admin.ModelAdmin):
     change_form_template = "admin/portal/appsettings/change_form.html"
     fieldsets = [
         ("Language and dates", {"fields": ["language", "timezone", "date_format"]}),
+        ("Version and updates", {"fields": ["update_status"]}),
         (
             "Favicon",
             {
@@ -172,7 +182,7 @@ class AppSettingsAdmin(admin.ModelAdmin):
             },
         ),
     ]
-    readonly_fields = ["current_favicon"]
+    readonly_fields = ["update_status", "current_favicon"]
 
     def has_module_permission(self, request):
         return is_template_admin(request.user)
@@ -207,6 +217,10 @@ class AppSettingsAdmin(admin.ModelAdmin):
     def response_change(self, request, obj):
         messages.success(request, "The general settings were saved.")
         return redirect("admin:portal_appsettings_change", 1)
+
+    @admin.display(description="Updates")
+    def update_status(self, obj):
+        return updates.summary()
 
     @admin.display(description="Current favicon")
     def current_favicon(self, obj):

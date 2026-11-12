@@ -47,7 +47,8 @@ it:
   lands and nothing is released; start it again;
 - builds the production image with the version for amd64 and arm64 and publishes
   it as `ghcr.io/meldgrove/reimbursements:X.Y.Z`, `:X.Y`, from 1.0.0 also `:X`,
-  and `:latest`;
+  and `:latest`. Deployments that run a series tag (`0.Y`, or `X` from 1.0.0) install
+  the release automatically when [automatic updates](updates.md) are on;
 - attests the image's build provenance and creates the GitHub Release.
 
 If a job fails after the tag was pushed, fix the cause and use "Re-run failed
