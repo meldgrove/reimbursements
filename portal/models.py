@@ -248,11 +248,15 @@ class TemplateField(models.Model):
 
 
 class Form(models.Model):
-    """A reimbursement form, drafted and published by its owners."""
+    """A reimbursement form, drafted and published by its owners.
+
+    An archived form is closed and left out of the forms list; it keeps its claims.
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         PUBLISHED = "published", "Published"
+        ARCHIVED = "archived", "Archived"
 
     template = models.ForeignKey(
         FormTemplate, on_delete=models.PROTECT, related_name="forms", verbose_name="Template"
@@ -522,6 +526,8 @@ class Claim(models.Model):
     supersedes = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="replacements"
     )
+    # Archived claims leave the claims list and need no resolution; see retention.
+    archived_at = models.DateTimeField("Archived", null=True, blank=True, db_index=True)
 
     class Meta:
         verbose_name = "claim"

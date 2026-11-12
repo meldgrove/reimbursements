@@ -77,6 +77,7 @@ def component(parser, token):
 
 
 ICONS = {
+    "archive": '<rect x="3" y="5" width="26" height="7" rx="1"/><path d="M5 12V27H27V12M13 18H19"/>',
     "arrow-down": '<path d="M16 6V26L8 18M16 26L24 18"/>',
     "arrow-up": '<path d="M16 26V6L8 14M16 6L24 14"/>',
     "arrow-left": '<path d="M26 16H6L14 8M6 16L14 24"/>',

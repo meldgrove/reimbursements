@@ -1,7 +1,8 @@
 """The admin sidebar, the settings tabs and the global search.
 
 Search reuses each ModelAdmin's queryset and search, so it finds exactly what the
-signed-in person may open from the admin lists.
+signed-in person may open from the admin lists. It also finds archived claims and
+forms, which the lists leave out, and marks them.
 """
 
 from dataclasses import dataclass
@@ -100,11 +101,13 @@ def settings_tabs(request):
 
 
 def _claim(claim):
-    return claim.full_name or "Claim", f"{claim.form.name} · {claim.reference}"
+    detail = f"{claim.form.name} · {claim.reference}"
+    return claim.full_name or "Claim", f"{detail} · Archived" if claim.archived_at else detail
 
 
 def _form(form):
-    return form.name, f"/f/{form.slug}/"
+    detail = f"/f/{form.slug}/"
+    return form.name, f"{detail} · Archived" if form.status == Form.Status.ARCHIVED else detail
 
 
 def _template(template):

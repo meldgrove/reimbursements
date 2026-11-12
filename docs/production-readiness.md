@@ -18,7 +18,8 @@ the following in staging with synthetic data:
 - Encrypted off-host backup and a matching database/private-file restore.
 
 The portal deletes delivered PDFs after 7 days and remaining claim content after
-90 days from submission. Unresolved delivery suspends deletion until resolution.
+90 days from submission. Unresolved delivery suspends deletion until resolution or
+archiving.
 Review external recipient retention separately. Replace the initial privacy setup
 notice before publishing forms.
 

@@ -73,9 +73,33 @@ def test_unpublishing_returns_a_form_to_draft_and_keeps_its_settings(form):
 
 def test_unknown_actions_are_refused(form):
     with pytest.raises(publication.Refused):
-        publication.status_after(form, "archive")
+        publication.status_after(form, "delete")
     assert publication.status_after(form, "") == Form.Status.PUBLISHED
     assert publication.status_after(None, "") == Form.Status.DRAFT
+
+
+def test_archiving_closes_a_form_and_gives_up_the_start_page(form):
+    admin = person("admin", roles.TEMPLATE_ADMIN)
+    form.primary = True
+    form.save()
+    # An archived form keeps gaps like a draft.
+    data = {**COMPLETE, "slug": form.slug, "value_kst": "", "primary": "on"}
+    archived = saved(form.template, data, admin, form=form, action="archive")
+    assert archived.status == Form.Status.ARCHIVED and archived.field_values["kst"] == ""
+    assert not archived.primary and not archived.is_open()
+    assert publication.status_after(archived, "") == Form.Status.ARCHIVED
+    assert publication.status_after(archived, "unarchive") == Form.Status.DRAFT
+
+
+def test_archived_forms_are_set_back_to_drafts(form):
+    assert publication.set_archived(form, True)
+    assert not publication.set_archived(form, True)
+    form.refresh_from_db()
+    assert form.status == Form.Status.ARCHIVED
+    assert publication.set_archived(form, False)
+    assert not publication.set_archived(form, False)
+    form.refresh_from_db()
+    assert form.status == Form.Status.DRAFT
 
 
 def test_a_retried_first_save_finds_the_form_it_created(template):
@@ -108,3 +132,5 @@ def test_only_template_admins_delete_and_only_forms_without_claims_or_drafts(acc
     form.draft_set.all().delete()
     assert publication.may_delete(admin, form)
     assert not publication.may_delete(editor, form)
+    form.status = Form.Status.ARCHIVED
+    assert publication.may_delete(admin, form)

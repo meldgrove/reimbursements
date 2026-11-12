@@ -166,6 +166,22 @@ being rendered or sent cannot be deleted until that finishes. A copy already sen
 Finance or downstream systems is not affected. The logged action is kept without a link
 to the claim. Each deletion also logs `claim_deleted reference=<uuid>`.
 
+Template admins can archive claims instead: **Archive** on a claim, or the list action
+**Archive selected claims**. An archived claim leaves the claims list; the Status filter
+lists all archived claims under **Archived**, whatever their status, and the global
+search still finds them, marked as archived. Processing and sending go on, and
+participants see no difference. Archiving is logged with the admin's address and undone
+with **Unarchive**. An archived claim no longer waits for a resolution: content purge
+deletes it on its usual date, or, if Finance never received it, 90 days after
+submission. Archiving an overdue claim therefore deletes it within minutes; the admin
+area asks for confirmation first.
+
+Form owners and template admins can archive forms, on the form or with **Archive
+selected forms**. An archived form is closed to participants, gives up the start page
+and leaves the forms list; the Status filter lists it under **Archived**. Its claims stay.
+**Unarchive** returns it as a draft, to publish again when needed. Content purge never
+deletes forms. A template admin can delete an archived form without claims.
+
 The commands below run through authorized host access and record the host actor.
 Use operational reasons without participant names, account details, or receipt text.
 
@@ -185,6 +201,7 @@ python manage.py purge_expired --execute
 
 `--status` filters by the status the admin list shows: the claim state until a Finance
 delivery exists, then the delivery state, and `purging` while a claim is being deleted.
+It lists archived claims too; each row says whether the claim is `archived`.
 `claim_status` and `retry_claim` also accept the full readable bookkeeping reference.
 It includes the participant's surname; the internal UUID remains available for
 operational correlation until content purge deletes the claim.
@@ -269,7 +286,8 @@ Drafts expire after 24 hours. After recipient-server delivery, the PDF and local
 email copies are deleted after seven days; all other content of the claim 90 days
 after submission. Failed/ambiguous claims have a 90-day resolution target and
 remain retained if unresolved; the admin area marks overdue claims and logs report
-approaching ones. The owner must resolve them or record an approved extension.
+approaching ones. The owner must resolve them, archive them or record an approved
+extension. An archived claim needs no resolution and is deleted on its resolution date.
 Content purge deletes the claim record itself; no reference or status record remains.
 Email provider and recipient copies follow their separately approved retention policies.
 

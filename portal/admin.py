@@ -7,9 +7,10 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
+from django.contrib.admin.utils import display_for_value
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError
-from django.http import Http404, HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponseNotAllowed, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.response import TemplateResponse
 from django.templatetags.static import static
@@ -31,7 +32,7 @@ from portal.models import (
     timezone_names,
 )
 from portal.roles import is_form_editor, is_template_admin
-from portal.services import claim_status, delivery, operations, publication
+from portal.services import claim_status, delivery, operations, publication, retention
 from portal.templatetags.ui import render_component
 
 
@@ -325,6 +326,62 @@ class FormTemplateAdmin(RoleAdmin):
         return super().has_delete_permission(request, obj) and not (obj and obj.forms.exists())
 
 
+def actor(request):
+    """Who an audited action is logged for."""
+    return request.user.email or request.user.get_username()
+
+
+class ArchiveFilter(admin.SimpleListFilter):
+    """A Status filter of a list that leaves archived records out unless asked for them."""
+
+    title = "Status"
+    parameter_name = "status"
+    # The filter value that lists the archived records.
+    archived = None
+
+    def choices(self, changelist):
+        choices = list(super().choices(changelist))
+        choices[0]["display"] = "All except archived"
+        return choices
+
+    @classmethod
+    def lists_archived(cls, request):
+        """The list shows archived records, so its actions unarchive instead of archive."""
+        return request.GET.get(cls.parameter_name) == cls.archived
+
+
+class FormStatusFilter(ArchiveFilter):
+    archived = Form.Status.ARCHIVED
+
+    def lookups(self, request, model_admin):
+        return Form.Status.choices
+
+    def queryset(self, request, queryset):
+        if self.value() in Form.Status.values:
+            return queryset.filter(status=self.value())
+        return queryset.exclude(status=Form.Status.ARCHIVED)
+
+
+def report_archiving(request, changed, noun, *, archived):
+    """Tell the person how many records a bulk (un)archive action changed."""
+    verb = "archived" if archived else "unarchived"
+    if changed == 1:
+        messages.success(request, f"1 {noun} was {verb}.")
+    elif changed:
+        messages.success(request, f"{changed} {noun}s were {verb}.")
+    elif archived:
+        messages.info(request, f"The selected {noun}s were already archived.")
+    else:
+        messages.info(request, f"None of the selected {noun}s were archived.")
+
+
+FORM_STATUS_TONES = {
+    Form.Status.DRAFT: "secondary",
+    Form.Status.PUBLISHED: "success",
+    Form.Status.ARCHIVED: "outline",
+}
+
+
 @admin.register(Form, site=site)
 class FormAdmin(admin.ModelAdmin):
     change_form_template = "admin/portal/form/change_form.html"
@@ -343,10 +400,11 @@ class FormAdmin(admin.ModelAdmin):
         "closes_at",
         "link",
     ]
-    list_filter = ["status", "primary", "template"]
+    list_filter = [FormStatusFilter, "primary", "template"]
     search_fields = ["name", "slug"]
     exclude = ["status", "creation_key"]
     prepopulated_fields = {"slug": ["name"]}
+    actions = ["archive_forms", "unarchive_forms"]
 
     def has_module_permission(self, request):
         return is_form_editor(request.user)
@@ -368,7 +426,32 @@ class FormAdmin(admin.ModelAdmin):
     def delete_view(self, request, object_id, extra_context=None):
         if request.method == "POST" and request.POST.get("post") != "yes":
             return JsonResponse({"error": "Please confirm deleting the draft."}, status=400)
+        form = self.get_object(request, object_id)
+        archived = form is not None and form.status == Form.Status.ARCHIVED
+        extra_context = {**(extra_context or {}), "kind": "archived form" if archived else "draft"}
         return super().delete_view(request, object_id, extra_context)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        archived = FormStatusFilter.lists_archived(request)
+        actions.pop("archive_forms" if archived else "unarchive_forms", None)
+        return actions
+
+    @admin.action(description="Archive selected forms", permissions=["change"])
+    def archive_forms(self, request, queryset):
+        self._set_archived(request, queryset, archived=True)
+
+    @admin.action(description="Unarchive selected forms", permissions=["change"])
+    def unarchive_forms(self, request, queryset):
+        self._set_archived(request, queryset, archived=False)
+
+    def _set_archived(self, request, queryset, *, archived):
+        changed = 0
+        for form in queryset:
+            if publication.set_archived(form, archived):
+                self.log_change(request, form, "Archived." if archived else "Unarchived.")
+                changed += 1
+        report_archiving(request, changed, "form", archived=archived)
 
     def get_queryset(self, request):
         return roles.managed_forms(
@@ -448,9 +531,7 @@ class FormAdmin(admin.ModelAdmin):
     @admin.display(description="Status", ordering="status")
     def publication_status(self, obj):
         return render_component(
-            "badge",
-            obj.get_status_display(),
-            variant="success" if obj.status == Form.Status.PUBLISHED else "secondary",
+            "badge", obj.get_status_display(), variant=FORM_STATUS_TONES[obj.status]
         )
 
     @admin.display(description="Template")
@@ -493,6 +574,7 @@ class FormAdmin(admin.ModelAdmin):
         extra_context = {
             **(extra_context or {}),
             "form_delete_hidden": not (form and self.has_delete_permission(request, form)),
+            "form_archived": bool(form and form.status == Form.Status.ARCHIVED),
         }
         if (
             request.method == "GET"
@@ -553,6 +635,7 @@ class FormAdmin(admin.ModelAdmin):
                 "slug": obj.slug,
                 "status": obj.status,
                 "status_label": obj.get_status_display(),
+                "primary": obj.primary,
                 "link": reverse("form_page", kwargs={"form_slug": obj.slug}),
                 "can_delete": self.has_delete_permission(request, obj),
                 "delete_url": reverse("admin:portal_form_delete", args=[obj.pk]),
@@ -576,22 +659,23 @@ class FormAdmin(admin.ModelAdmin):
 
 def claim_status_badge(claim):
     status = claim_status.of(claim)
-    return render_component("badge", status.label, variant=status.tone)
+    badge = render_component("badge", status.label, variant=status.tone)
+    if not status.archived:
+        return badge
+    archived = render_component("badge", "Archived", variant="outline")
+    return format_html('<span class="inline-flex flex-wrap gap-1">{}{}</span>', badge, archived)
 
 
-class StatusFilter(admin.SimpleListFilter):
-    """Filters claims by the value of their Status column."""
+class StatusFilter(ArchiveFilter):
+    """Filters claims by the value of their Status column; archived claims by Archived."""
 
-    title = "Status"
-    parameter_name = "status"
+    archived = claim_status.ARCHIVED
 
     def lookups(self, request, model_admin):
-        return claim_status.CHOICES
+        return claim_status.FILTER_CHOICES
 
     def queryset(self, request, queryset):
-        if self.value() in claim_status.LABELS:
-            return queryset.filter(status=self.value())
-        return queryset
+        return claim_status.listed(queryset, self.value())
 
 
 class RetryForm(forms.Form):
@@ -613,7 +697,12 @@ class DeleteForm(forms.Form):
 # A bulk deletion purges in the request; larger cleanups run in several steps.
 MAX_BULK_DELETE = 100
 
-OPERATION_LABELS = {"retry": "Processed again", "delete": "Deleted"}
+OPERATION_LABELS = {
+    "retry": "Processed again",
+    "delete": "Deleted",
+    "archive": "Archived",
+    "unarchive": "Unarchived",
+}
 
 
 class OperationInline(admin.TabularInline):
@@ -636,7 +725,7 @@ class OperationInline(admin.TabularInline):
 
     @admin.display(description="When")
     def when(self, obj):
-        return obj.created_at
+        return display_for_value(obj.created_at, "—")
 
     @admin.display(description="Action")
     def what(self, obj):
@@ -648,7 +737,7 @@ class OperationInline(admin.TabularInline):
 
     @admin.display(description="Reason")
     def why(self, obj):
-        return obj.reason
+        return obj.reason or "—"
 
 
 @admin.register(Claim, site=site)
@@ -670,7 +759,7 @@ class ClaimAdmin(admin.ModelAdmin):
     search_fields = ["full_name", "email", "=bookkeeping_reference"]
     date_hierarchy = "submitted_at"
     inlines = [OperationInline]
-    actions = ["delete_claims"]
+    actions = ["archive_claims", "unarchive_claims", "delete_claims"]
     fieldsets = [
         (
             None,
@@ -687,7 +776,16 @@ class ClaimAdmin(admin.ModelAdmin):
         ),
         (
             "Processing",
-            {"fields": ["status", "error", "pdf_removed_at", "retention_due", "overdue"]},
+            {
+                "fields": [
+                    "status",
+                    "error",
+                    "archived_at",
+                    "pdf_removed_at",
+                    "content_due",
+                    "overdue",
+                ]
+            },
         ),
     ]
     readonly_fields = [
@@ -699,8 +797,9 @@ class ClaimAdmin(admin.ModelAdmin):
         "total",
         "status",
         "error",
+        "archived_at",
         "pdf_removed_at",
-        "retention_due",
+        "content_due",
         "overdue",
     ]
 
@@ -755,8 +854,16 @@ class ClaimAdmin(admin.ModelAdmin):
             return render_component("badge", "Overdue", variant="warning")
         return "—"
 
+    @admin.display(description="Content deleted from")
+    def content_due(self, obj):
+        return display_for_value(retention.content_due(obj), "-")
+
     def has_purge_permission(self, request):
         """Deleting a claim's content is an operator action, like a retry."""
+        return is_template_admin(request.user)
+
+    def has_archive_permission(self, request):
+        """Archiving ends the wait for a resolution, so it is an operator action too."""
         return is_template_admin(request.user)
 
     def get_urls(self):
@@ -771,24 +878,110 @@ class ClaimAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.purge_view),
                 name="portal_claim_purge",
             ),
+            path(
+                "<uuid:claim_id>/archive/",
+                self.admin_site.admin_view(self.archive_view),
+                {"archived": True},
+                name="portal_claim_archive",
+            ),
+            path(
+                "<uuid:claim_id>/unarchive/",
+                self.admin_site.admin_view(self.archive_view),
+                {"archived": False},
+                name="portal_claim_unarchive",
+            ),
             *super().get_urls(),
         ]
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        archived = StatusFilter.lists_archived(request)
+        actions.pop("archive_claims" if archived else "unarchive_claims", None)
+        return actions
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         claim = self.get_object(request, object_id)
         if claim is None:
             # Django redirects with a message, e.g. for an outdated link.
             return super().change_view(request, object_id, form_url, extra_context)
-        # A deleted claim has nothing left to process or delete.
+        # A deleted claim has nothing left to process, archive or delete.
         operable = is_template_admin(request.user) and not claim_status.of(claim).deleted
+        archive_url_name = "unarchive" if claim.archived_at else "archive"
         extra_context = {
             **(extra_context or {}),
             "can_retry": operable,
             "retry_url": reverse("admin:portal_claim_retry", args=[object_id]),
+            "can_archive": operable,
+            "claim_archived": bool(claim.archived_at),
+            "archive_url": reverse(f"admin:portal_claim_{archive_url_name}", args=[object_id]),
             "can_purge": operable,
             "purge_url": reverse("admin:portal_claim_purge", args=[object_id]),
         }
         return super().change_view(request, object_id, form_url, extra_context)
+
+    def archive_view(self, request, claim_id, archived):
+        if not self.has_archive_permission(request):
+            raise PermissionDenied
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        claim = get_object_or_404(self.get_queryset(request), pk=claim_id)
+        if claim_status.of(claim).deleted:
+            messages.info(request, "This claim has already been deleted.")
+        elif archived:
+            confirmation = self._archive(request, [claim])
+            if confirmation:
+                return confirmation
+        elif operations.unarchive([claim.pk], actor=actor(request)):
+            messages.success(request, "The claim was unarchived.")
+        return redirect("admin:portal_claim_change", claim.pk)
+
+    @admin.action(description="Archive selected claims", permissions=["archive"])
+    def archive_claims(self, request, queryset):
+        return self._archive(request, list(queryset), bulk=True)
+
+    def _archive(self, request, claims, *, bulk=False):
+        """Archive claims, or ask first when that deletes some of them at once.
+
+        An overdue claim is past its retention period and kept only for its resolution.
+        Archiving ends that wait, so retention deletes it within minutes.
+        """
+        overdue = [claim for claim in claims if claim_status.of(claim).overdue]
+        if overdue and request.POST.get("post") != "yes":
+            return TemplateResponse(
+                request,
+                "admin/portal/claim/archive.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "opts": self.model._meta,
+                    "title": "Archive claim?"
+                    if len(claims) == 1
+                    else f"Archive {len(claims)} claims?",
+                    "claims": claims,
+                    "rows": [
+                        {"claim": claim, "status_badge": claim_status_badge(claim)}
+                        for claim in overdue
+                    ],
+                    "retention_days": settings.CONTENT_RETENTION_DAYS,
+                    "bulk": bulk,
+                    "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+                },
+            )
+        changed = operations.archive([claim.pk for claim in claims], actor=actor(request))
+        if bulk:
+            report_archiving(request, changed, "claim", archived=True)
+        elif changed:
+            messages.success(
+                request,
+                "The claim was archived. The claims list shows it under Status: Archived.",
+            )
+        return None
+
+    @admin.action(description="Unarchive selected claims", permissions=["archive"])
+    def unarchive_claims(self, request, queryset):
+        changed = operations.unarchive(
+            list(queryset.values_list("pk", flat=True)), actor=actor(request)
+        )
+        report_archiving(request, changed, "claim", archived=False)
 
     def purge_view(self, request, claim_id):
         if not self.has_purge_permission(request):
@@ -827,9 +1020,7 @@ class ClaimAdmin(admin.ModelAdmin):
         deleted, resuming, refused = 0, 0, []
         for claim in claims:
             try:
-                finished = operations.delete(
-                    claim.pk, actor=request.user.email or request.user.get_username(), reason=reason
-                )
+                finished = operations.delete(claim.pk, actor=actor(request), reason=reason)
             except operations.ActionRefused as exc:
                 refused.append((claim, str(exc)))
             else:
@@ -885,7 +1076,7 @@ class ClaimAdmin(admin.ModelAdmin):
             try:
                 operations.retry(
                     claim.pk,
-                    actor=request.user.email or request.user.get_username(),
+                    actor=actor(request),
                     reason=form.cleaned_data["reason"],
                     acknowledge_duplicate_risk=form.cleaned_data["acknowledge_duplicate_risk"],
                 )

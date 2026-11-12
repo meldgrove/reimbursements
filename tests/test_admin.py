@@ -1,18 +1,21 @@
 import json
 import time
 import uuid
+from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import SuspiciousOperation
-from django.test import RequestFactory
+from django.test import Client, RequestFactory
+from django.utils import timezone
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from portal import roles
 from portal.auth import KeycloakBackend, keycloak_logout_url
 from portal.models import Claim, Delivery, DeliveryAttempt, Form, Job, Operation, PrivacyNotice
 from portal.services import claim_status
+from portal.services.retention import cleanup
 from portal.services.storage import path_for
 
 pytestmark = pytest.mark.django_db
@@ -477,6 +480,72 @@ def test_bulk_deletion_cannot_include_a_published_form(admin_client, form):
     assert Form.objects.filter(pk__in=[form.pk, draft.pk]).count() == 2
 
 
+def test_archiving_a_form_closes_it_and_leaves_it_out_of_the_list(admin_client, form):
+    form.primary = True
+    form.save()
+    url = f"/admin/portal/form/{form.pk}/change/"
+    response = admin_client.post(url, form_settings(form, _publication="archive", primary="on"))
+    assert response.status_code == 200, response.content
+    assert response.json()["status"] == "archived" and not response.json()["primary"]
+    form.refresh_from_db()
+    assert form.status == Form.Status.ARCHIVED and not form.primary and not form.is_open()
+    assert Client().get(f"/f/{form.slug}/").status_code == 403
+    assert "Test Workshop" not in admin_client.get("/admin/portal/form/").content.decode()
+    page = admin_client.get("/admin/portal/form/", {"status": "archived"}).content.decode()
+    assert "Test Workshop" in page and "unarchive_forms" in page and '"archive_forms"' not in page
+    page = admin_client.get(url).content.decode()
+    assert "Unarchive" in page and "data-archived-badge>" in page
+    # Unarchiving returns the form as a draft; publishing reopens it.
+    response = admin_client.post(url, form_settings(form, _publication="unarchive"))
+    assert response.status_code == 200 and response.json()["status"] == "draft"
+    assert "Test Workshop" in admin_client.get("/admin/portal/form/").content.decode()
+
+
+def test_forms_are_archived_and_unarchived_in_bulk(client, editor, form):
+    other = Form.objects.create(
+        template=form.template,
+        slug="other",
+        name="Andere Werkstatt",
+        recipient=form.recipient,
+        support_email=form.support_email,
+    )
+    other.owners.add(editor)
+    client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
+    page = client.get("/admin/portal/form/").content.decode()
+    assert '"archive_forms"' in page and "unarchive_forms" not in page
+    selected = [str(form.pk), str(other.pk)]
+    response = client.post(
+        "/admin/portal/form/",
+        {"action": "archive_forms", "_selected_action": selected, "index": "0"},
+        follow=True,
+    )
+    assert "1 form was archived." in response.content.decode()
+    # Editors archive only the forms they manage.
+    assert dict(Form.objects.values_list("slug", "status")) == {
+        "test": "published",
+        "other": "archived",
+    }
+    response = client.post(
+        "/admin/portal/form/?status=archived",
+        {"action": "unarchive_forms", "_selected_action": [str(other.pk)], "index": "0"},
+        follow=True,
+    )
+    assert "1 form was unarchived." in response.content.decode()
+    other.refresh_from_db()
+    assert other.status == Form.Status.DRAFT
+
+
+def test_archived_forms_without_claims_can_be_deleted(admin_client, form):
+    form.status = Form.Status.ARCHIVED
+    form.save()
+    response = admin_client.get(f"/admin/portal/form/{form.pk}/change/")
+    assert not response.context["form_delete_hidden"]
+    url = f"/admin/portal/form/{form.pk}/delete/"
+    assert "Delete archived form for good" in admin_client.get(url).content.decode()
+    assert admin_client.post(url, {"post": "yes"}).status_code == 302
+    assert not Form.objects.filter(pk=form.pk).exists()
+
+
 def test_admin_adds_a_new_privacy_notice_version(admin_client, privacy_notice):
     page = admin_client.get("/admin/portal/privacynotice/add/").content.decode()
     assert privacy_notice.text.splitlines()[0][:20] in page
@@ -542,6 +611,7 @@ def second_claim(form):
         iban="DE89370400440532013000",
         purpose="Synthetischer Test",
         snapshot={},
+        resolution_due=timezone.now() + timedelta(days=90),
     )
 
 
@@ -646,6 +716,133 @@ def test_editors_cannot_delete_claims(client, editor, accepted):
     assert not Operation.objects.exists()
 
 
+def test_an_archived_claim_leaves_the_list_until_it_is_unarchived(admin_client, accepted):
+    change_url = f"/admin/portal/claim/{accepted.pk}/change/"
+    archive_url = f"/admin/portal/claim/{accepted.pk}/archive/"
+    assert archive_url in admin_client.get(change_url).content.decode()
+    assert admin_client.get(archive_url).status_code == 405
+    response = admin_client.post(archive_url, follow=True)
+    page = response.content.decode()
+    assert response.redirect_chain[-1][0] == change_url
+    assert "The claim was archived." in page and "Unarchive" in page
+    accepted.refresh_from_db()
+    assert accepted.archived_at and accepted.state == Claim.State.RECEIVED
+    operation = Operation.objects.get()
+    assert (operation.claim_id, operation.action, operation.actor) == (
+        accepted.pk,
+        "archive",
+        "admin@example.invalid",
+    )
+
+    listed = admin_client.get("/admin/portal/claim/")
+    assert accepted not in listed.context["cl"].result_list
+    assert "All except archived" in listed.content.decode()
+    listed = admin_client.get("/admin/portal/claim/", {"status": "received"})
+    assert accepted not in listed.context["cl"].result_list
+    listed = admin_client.get("/admin/portal/claim/", {"status": "archived"})
+    assert list(listed.context["cl"].result_list) == [accepted]
+    page = listed.content.decode()
+    assert "Received" in page and "unarchive_claims" in page and '"archive_claims"' not in page
+    detail = admin_client.get(change_url).content.decode()
+    assert accepted.resolution_due.strftime("%d.%m.%Y") in detail
+    assert "+00:00" not in detail
+
+    response = admin_client.post(f"/admin/portal/claim/{accepted.pk}/unarchive/", follow=True)
+    assert "The claim was unarchived." in response.content.decode()
+    accepted.refresh_from_db()
+    assert accepted.archived_at is None
+    assert Operation.objects.filter(action="unarchive").exists()
+    listed = admin_client.get("/admin/portal/claim/")
+    assert list(listed.context["cl"].result_list) == [accepted]
+
+
+def test_claims_are_archived_and_unarchived_in_bulk(admin_client, accepted):
+    other = second_claim(accepted.form)
+    selected = [str(accepted.pk), str(other.pk)]
+    page = admin_client.get("/admin/portal/claim/").content.decode()
+    assert '"archive_claims"' in page and "unarchive_claims" not in page
+    response = admin_client.post(
+        "/admin/portal/claim/",
+        {"action": "archive_claims", "_selected_action": selected, "index": "0"},
+        follow=True,
+    )
+    assert "2 claims were archived." in response.content.decode()
+    assert Claim.objects.filter(archived_at__isnull=False).count() == 2
+    assert not admin_client.get("/admin/portal/claim/").context["cl"].result_count
+    response = admin_client.post(
+        "/admin/portal/claim/?status=archived",
+        {"action": "unarchive_claims", "_selected_action": [str(other.pk)], "index": "0"},
+        follow=True,
+    )
+    assert "1 claim was unarchived." in response.content.decode()
+    assert list(Claim.objects.filter(archived_at__isnull=True)) == [other]
+    # An archived claim can still be deleted for good.
+    response = admin_client.post(
+        f"/admin/portal/claim/{accepted.pk}/purge/", {"reason": "Testeinreichung"}
+    )
+    assert response.status_code == 302
+    assert not Claim.objects.filter(pk=accepted.pk).exists()
+
+
+def test_archiving_an_overdue_claim_asks_first_as_it_is_then_deleted(admin_client, accepted):
+    overdue = second_claim(accepted.form)
+    Claim.objects.filter(pk=overdue.pk).update(
+        resolution_due=overdue.submitted_at - timedelta(seconds=1)
+    )
+    archive_url = f"/admin/portal/claim/{overdue.pk}/archive/"
+    response = admin_client.post(archive_url)
+    page = response.content.decode()
+    assert response.status_code == 200 and "Archive claim?" in page
+    assert "The claim is deleted for good within minutes" in page and "Sam Zweitens" in page
+    overdue.refresh_from_db()
+    assert overdue.archived_at is None and not Operation.objects.exists()
+    response = admin_client.post(archive_url, {"post": "yes"})
+    assert response.status_code == 302
+    overdue.refresh_from_db()
+    assert overdue.archived_at
+    cleanup(execute=True)
+    assert not Claim.objects.filter(pk=overdue.pk).exists()
+
+    # In bulk, only the overdue claims are listed for confirmation.
+    other = second_claim(accepted.form)
+    Claim.objects.filter(pk=other.pk).update(resolution_due=other.submitted_at)
+    selected = [str(accepted.pk), str(other.pk)]
+    response = admin_client.post(
+        "/admin/portal/claim/",
+        {"action": "archive_claims", "_selected_action": selected, "index": "0"},
+    )
+    page = response.content.decode()
+    assert "Archive 2 claims?" in page and "1 claim is deleted for good" in page
+    assert page.count("Sam Zweitens") == 1 and "Alex Beispiel" not in page
+    assert not Claim.objects.filter(archived_at__isnull=False).exists()
+    response = admin_client.post(
+        "/admin/portal/claim/",
+        {"action": "archive_claims", "_selected_action": selected, "post": "yes"},
+        follow=True,
+    )
+    assert "2 claims were archived." in response.content.decode()
+    assert Claim.objects.filter(archived_at__isnull=False).count() == 2
+
+
+def test_editors_see_archived_claims_but_cannot_archive(client, editor, accepted):
+    accepted.form.owners.add(editor)
+    client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
+    archive_url = f"/admin/portal/claim/{accepted.pk}/archive/"
+    page = client.get(f"/admin/portal/claim/{accepted.pk}/change/").content.decode()
+    assert archive_url not in page
+    assert "archive_claims" not in client.get("/admin/portal/claim/").content.decode()
+    assert client.post(archive_url).status_code == 403
+    client.post(
+        "/admin/portal/claim/",
+        {"action": "archive_claims", "_selected_action": [str(accepted.pk)], "index": "0"},
+    )
+    accepted.refresh_from_db()
+    assert accepted.archived_at is None
+    Claim.objects.filter(pk=accepted.pk).update(archived_at=accepted.submitted_at)
+    listed = client.get("/admin/portal/claim/", {"status": "archived"})
+    assert [claim.pk for claim in listed.context["cl"].result_list] == [accepted.pk]
+
+
 def test_status_filter_lists_the_claims_its_status_column_shows(admin_client, accepted):
     claim_states = [
         (Claim.State.RENDERING, None),
@@ -734,6 +931,14 @@ def test_template_admins_find_templates_and_settings(admin_client, template):
     assert (
         suggestions(admin_client, "general")["Navigation"][0]["url"] == "/admin/portal/appsettings/"
     )
+
+
+def test_search_finds_archived_claims_and_forms_and_marks_them(admin_client, accepted):
+    Claim.objects.filter(pk=accepted.pk).update(archived_at=accepted.submitted_at)
+    Form.objects.filter(pk=accepted.form_id).update(status=Form.Status.ARCHIVED)
+    claim = suggestions(admin_client, "Alex")["Claims"][0]
+    assert claim["detail"] == f"Test Workshop · {accepted.reference} · Archived"
+    assert suggestions(admin_client, "Workshop")["Forms"][0]["detail"] == "/f/test/ · Archived"
 
 
 def test_search_page_lists_all_results(admin_client, accepted):

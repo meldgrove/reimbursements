@@ -45,6 +45,7 @@ class Command(BaseCommand):
                         "delivery_state": current.state if current else None,
                         "error_code": status.error_code,
                         "resolution_overdue": status.overdue,
+                        "archived": status.archived,
                     }
                 )
             )

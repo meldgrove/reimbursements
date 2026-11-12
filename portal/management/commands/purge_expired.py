@@ -6,7 +6,10 @@ from portal.services.retention import cleanup
 
 
 class Command(BaseCommand):
-    help = "Preview due deletions, or execute them with --execute. Unresolved claims require human resolution."
+    help = (
+        "Preview due deletions, or execute them with --execute. Unresolved claims "
+        "require human resolution unless archived."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("--execute", action="store_true")
