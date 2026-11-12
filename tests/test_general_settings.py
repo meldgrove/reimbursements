@@ -1,6 +1,5 @@
-"""The General settings: app language, timezone, date format and favicon."""
+"""The General settings: app language, timezone and date format."""
 
-import io
 import json
 import re
 from datetime import UTC, datetime
@@ -8,11 +7,8 @@ from importlib import import_module
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import Client
-from PIL import Image
 
 from portal import roles
 from portal.models import AppSettings, DeliveryAttempt, Form, FormTemplate
@@ -39,12 +35,6 @@ def general(**changes):
     return {"language": "de", "timezone": "Europe/Berlin", "date_format": "d.m.Y", **changes}
 
 
-def image_bytes(size=32, image_format="PNG"):
-    output = io.BytesIO()
-    Image.new("RGB", (size, size), "teal").save(output, image_format)
-    return output.getvalue()
-
-
 def configuration(page):
     match = re.search(
         r'<script id="portal-configuration" type="application/json">(.*?)</script>', page
@@ -57,6 +47,7 @@ def test_template_admins_change_the_general_settings(admin_client):
     assert response.status_code == 302 and response.url == URL
     page = admin_client.get(URL).content.decode()
     assert "App language" in page and '<option value="Europe/Berlin" selected>' in page
+    assert 'name="favicon_file"' not in page and 'name="accent_color"' not in page
     assert 'name="_save"' in page and 'name="_continue"' not in page
     changes = general(language="en", timezone="America/New_York", date_format="Y-m-d")
     response = admin_client.post(URL, changes)
@@ -194,63 +185,6 @@ def test_new_templates_get_the_declaration_in_the_app_language():
     assert FormTemplate.objects.create(name="English").declaration.startswith("I confirm")
 
 
-@pytest.mark.parametrize(
-    ("image_format", "media_type"), [("PNG", "image/png"), ("WEBP", "image/webp")]
-)
-def test_a_custom_favicon_replaces_the_standard_one(admin_client, form, image_format, media_type):
-    visitor = Client()
-    assert "portal/brand/logo" in visitor.get("/f/test/").content.decode()
-    content = image_bytes(image_format=image_format)
-    upload = SimpleUploadedFile(f"icon.{image_format.lower()}", content, content_type=media_type)
-    response = admin_client.post(URL, {**general(), "favicon_file": upload})
-    assert response.status_code == 302
-    settings = AppSettings.load()
-    # Every request loads the settings; the image loads only for the favicon itself.
-    assert "favicon" in settings.get_deferred_fields()
-    assert settings.favicon_type == media_type and bytes(settings.favicon) == content
-    url = f"/favicon/{settings.favicon_digest}/"
-    assert (
-        f'<link rel="icon" type="{media_type}" href="{url}">'
-        in visitor.get("/f/test/").content.decode()
-    )
-    assert f'href="{url}"' in admin_client.get("/admin/portal/claim/").content.decode()
-    response = visitor.get(url)
-    assert response.status_code == 200 and response.content == content
-    assert response["Content-Type"] == media_type
-    assert response["Cache-Control"] == "public, max-age=31536000, immutable"
-    assert "sandbox" in response["Content-Security-Policy"]
-    assert admin_client.post(URL, {**general(), "remove_favicon": "on"}).status_code == 302
-    assert not AppSettings.load().favicon
-    assert visitor.get(url).status_code == 404
-
-
-@pytest.mark.parametrize(
-    ("content", "error"),
-    [
-        (b"GIF89a not accepted", "Upload a PNG, ICO, SVG or WebP file."),
-        (b"<html><script>alert(1)</script></html>", "Upload a PNG, ICO, SVG or WebP file."),
-        (b"RIFF\x24\x00\x00\x00WAVEfmt ", "Upload a PNG, ICO, SVG or WebP file."),
-        (b"WEBP", "Upload a PNG, ICO, SVG or WebP file."),
-        (image_bytes(400) + b"\0" * 100_000, "The favicon may be at most 100 KB."),
-    ],
-)
-def test_favicons_must_be_small_png_ico_svg_or_webp(admin_client, content, error):
-    upload = SimpleUploadedFile("icon", content)
-    response = admin_client.post(URL, {**general(), "favicon_file": upload})
-    assert response.status_code == 200 and error in response.content.decode()
-    assert not AppSettings.load().favicon
-
-
-def test_svg_and_ico_favicons_are_accepted(admin_client):
-    for content, media_type in [
-        (b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>', "image/svg+xml"),
-        (b"\0\0\1\0\1\0" + b"\0" * 40, "image/x-icon"),
-    ]:
-        upload = SimpleUploadedFile("icon", content)
-        assert admin_client.post(URL, {**general(), "favicon_file": upload}).status_code == 302
-        assert AppSettings.load().favicon_type == media_type
-
-
 def test_health_checks_do_not_read_the_general_settings(client, django_assert_num_queries):
     with django_assert_num_queries(0):
         assert client.get("/-/healthz").status_code == 200
@@ -265,7 +199,10 @@ def test_stored_standard_form_texts_follow_the_app_language_after_migrating():
     executor.migrate(before)
     try:
         apps = executor.loader.project_state(before).apps
-        template = apps.get_model("portal", "FormTemplate").objects.create(name="Migration")
+        # The standard declaration reads today's settings, which this database predates.
+        template = apps.get_model("portal", "FormTemplate").objects.create(
+            name="Migration", declaration="Declaration"
+        )
         for slug, title in [("standard", migration.STORED_TITLE), ("own", "Our workshop")]:
             apps.get_model("portal", "Form").objects.create(
                 template=template,

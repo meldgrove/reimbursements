@@ -931,6 +931,9 @@ def test_template_admins_find_templates_and_settings(admin_client, template):
     assert (
         suggestions(admin_client, "general")["Navigation"][0]["url"] == "/admin/portal/appsettings/"
     )
+    assert (
+        suggestions(admin_client, "appear")["Navigation"][0]["url"] == "/admin/portal/appearance/"
+    )
 
 
 def test_search_finds_archived_claims_and_forms_and_marks_them(admin_client, accepted):

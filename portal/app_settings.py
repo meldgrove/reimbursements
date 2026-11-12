@@ -1,5 +1,8 @@
 """The General settings, applied to every request and to what the worker sends.
 
+The Appearance settings, the accent color and favicon, apply to pages only: see
+portal.theme and portal.context_processors.
+
 The admin area is always English. Public pages, emails to participants and Finance and
 the claim PDF use the app language; a claim keeps the language its participant saw.
 Every page, email and PDF shows times in the app timezone and dates in the app date
@@ -19,7 +22,7 @@ ADMIN_PATHS = ("/admin/", "/oidc/")
 MAX_FAVICON_BYTES = 100_000
 # The admin page that uploads a favicon; its requests may carry a larger file than
 # other admin pages, so the form can explain the limit.
-GENERAL_SETTINGS_PATH = "/admin/portal/appsettings/"
+APPEARANCE_SETTINGS_PATH = "/admin/portal/appearance/"
 
 
 def current(request):

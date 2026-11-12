@@ -15,8 +15,8 @@ CONTENT_SECURITY_POLICY = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; "
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )
-# Responses anyone may cache: static files and the favicon.
-PUBLIC_PATHS = ("/static/", "/favicon/")
+# Responses anyone may cache: static files, the favicon and the accent stylesheet.
+PUBLIC_PATHS = ("/static/", "/favicon/", "/theme/")
 
 
 class AdminSessionMiddleware:
@@ -56,7 +56,7 @@ class RequestLimitsMiddleware:
             return JsonResponse({"error": t("Invalid request.")}, status=400)
         if request.path.endswith("/uploads/"):
             cap = settings.MAX_RECEIPT_BYTES + 128_000
-        elif request.path.startswith(app_settings.GENERAL_SETTINGS_PATH):
+        elif request.path.startswith(app_settings.APPEARANCE_SETTINGS_PATH):
             cap = 1_000_000
         else:
             cap = 128_000

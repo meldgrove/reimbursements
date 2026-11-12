@@ -1,5 +1,5 @@
 """The admin area, always in English: claims, forms, templates, the privacy notice and the
-General settings, behind Keycloak."""
+General and Appearance settings, behind Keycloak."""
 
 import uuid
 
@@ -15,13 +15,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.response import TemplateResponse
 from django.templatetags.static import static
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from mozilla_django_oidc.views import OIDCLogoutView
 
-from portal import admin_navigation, app_settings, roles
+from portal import admin_navigation, app_settings, roles, theme
 from portal.constants import APP_NAME
 from portal.models import (
+    Appearance,
     AppSettings,
     Claim,
     Form,
@@ -120,13 +121,6 @@ site = PortalAdminSite(name="admin")
 
 class GeneralSettingsForm(forms.ModelForm):
     timezone = forms.ChoiceField(label="Timezone")
-    favicon_file = forms.FileField(
-        label="New favicon",
-        required=False,
-        help_text="PNG, ICO, SVG or WebP, at most 100 KB. Square images of at least 32 × 32 pixels "
-        "look best.",
-    )
-    remove_favicon = forms.BooleanField(label="Use the standard favicon", required=False)
 
     class Meta:
         model = AppSettings
@@ -138,6 +132,62 @@ class GeneralSettingsForm(forms.ModelForm):
             (name, name.replace("_", " ")) for name in timezone_names()
         ]
         self.fields["timezone"].help_text = AppSettings._meta.get_field("timezone").help_text
+
+
+class AccentColorInput(forms.TextInput):
+    """A hex code field with a color picker that fills it in."""
+
+    class Media:
+        js = [forms.Script("portal/admin-color.js", defer=True)]
+
+    def __init__(self, attrs=None):
+        super().__init__(
+            {"class": "max-w-40 font-mono", "placeholder": theme.STANDARD_ACCENT, **(attrs or {})}
+        )
+
+    def render(self, name, value, attrs=None, renderer=None):
+        field = super().render(name, value, attrs, renderer)
+        picked = theme.normalize(value or "") or theme.STANDARD_ACCENT
+        return format_html(
+            '<div class="flex items-center gap-2">{}<input type="color" value="{}" '
+            'data-color-picker="{}" aria-label="Pick the accent color" title="Pick a color" '
+            'class="h-9 w-12 shrink-0 cursor-pointer rounded-md border border-input bg-background '
+            'p-1 shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">'
+            "</div>",
+            field,
+            picked,
+            (attrs or {}).get("id", ""),
+        )
+
+
+class AppearanceForm(forms.ModelForm):
+    # No length limit: a pasted code with spaces or a short code is normalized first.
+    accent_color = forms.CharField(
+        label="Hex code",
+        required=False,
+        widget=AccentColorInput,
+        help_text=Appearance._meta.get_field("accent_color").help_text,
+    )
+    favicon_file = forms.FileField(
+        label="New favicon",
+        required=False,
+        help_text="PNG, ICO, SVG or WebP, at most 100 KB. Square images of at least 32 × 32 pixels "
+        "look best.",
+    )
+    remove_favicon = forms.BooleanField(label="Use the standard favicon", required=False)
+
+    class Meta:
+        model = Appearance
+        fields = ["accent_color"]
+
+    def clean_accent_color(self):
+        value = self.cleaned_data.get("accent_color", "")
+        if not value:
+            return ""
+        color = theme.normalize(value)
+        if color is None:
+            raise forms.ValidationError("Enter a hex code such as #0f766e.")
+        return color
 
     def clean_favicon_file(self):
         upload = self.cleaned_data.get("favicon_file")
@@ -152,34 +202,23 @@ class GeneralSettingsForm(forms.ModelForm):
         return content, media_type
 
     def save(self, commit=True):
-        general = super().save(commit=False)
+        appearance = super().save(commit=False)
         if self.cleaned_data.get("favicon_file"):
-            general.set_favicon(*self.cleaned_data["favicon_file"])
+            appearance.set_favicon(*self.cleaned_data["favicon_file"])
         elif self.cleaned_data.get("remove_favicon"):
-            general.set_favicon(b"")
+            appearance.set_favicon(b"")
         if commit:
-            general.save()
-        return general
+            appearance.save()
+        return appearance
 
 
-@admin.register(AppSettings, site=site)
-class AppSettingsAdmin(admin.ModelAdmin):
-    """The General tab: one settings row, edited in place."""
+class SettingsTabAdmin(admin.ModelAdmin):
+    """A tab of the one settings row, edited in place."""
 
-    form = GeneralSettingsForm
-    change_form_template = "admin/portal/appsettings/change_form.html"
-    fieldsets = [
-        ("Language and dates", {"fields": ["language", "timezone", "date_format"]}),
-        ("Version", {"fields": ["running_version"]}),
-        (
-            "Favicon",
-            {
-                "fields": ["current_favicon", "favicon_file", "remove_favicon"],
-                "description": "The icon in browser tabs, on public pages and in the admin area.",
-            },
-        ),
-    ]
-    readonly_fields = ["running_version", "current_favicon"]
+    change_form_template = "admin/portal/settings_tab.html"
+    title = ""
+    description = ""
+    saved_message = ""
 
     def has_module_permission(self, request):
         return is_template_admin(request.user)
@@ -197,27 +236,102 @@ class AppSettingsAdmin(admin.ModelAdmin):
         return False
 
     def get_object(self, request, object_id, from_field=None):
-        return AppSettings.load() if str(object_id) == "1" else None
+        return self.model.load() if str(object_id) == "1" else None
 
     def changelist_view(self, request, extra_context=None):
-        return redirect("admin:portal_appsettings_change", 1)
+        return redirect(f"admin:portal_{self.opts.model_name}_change", 1)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         extra_context = {
             **(extra_context or {}),
-            "title": "General",
+            "title": self.title,
+            "description": self.description,
             "show_save_and_continue": False,
             "show_save_and_add_another": False,
         }
         return super().change_view(request, object_id, form_url, extra_context)
 
     def response_change(self, request, obj):
-        messages.success(request, "The general settings were saved.")
-        return redirect("admin:portal_appsettings_change", 1)
+        messages.success(request, self.saved_message)
+        return redirect(f"admin:portal_{self.opts.model_name}_change", 1)
+
+
+@admin.register(AppSettings, site=site)
+class AppSettingsAdmin(SettingsTabAdmin):
+    """The General tab: language, dates and the running version."""
+
+    form = GeneralSettingsForm
+    title = "General"
+    description = "Settings for the whole app. The admin area is always in English."
+    saved_message = "The general settings were saved."
+    fieldsets = [
+        ("Language and dates", {"fields": ["language", "timezone", "date_format"]}),
+        ("Version", {"fields": ["running_version"]}),
+    ]
+    readonly_fields = ["running_version"]
 
     @admin.display(description="Running version")
     def running_version(self, obj):
         return settings.APP_VERSION or "Built from source"
+
+
+@admin.register(Appearance, site=site)
+class AppearanceAdmin(SettingsTabAdmin):
+    """The Appearance tab: the accent color and the favicon."""
+
+    form = AppearanceForm
+    title = "Appearance"
+    description = "How public pages and the admin area look."
+    saved_message = "The appearance settings were saved."
+    fieldsets = [
+        (
+            "Accent color",
+            {
+                "fields": ["accent_color", "accent_in_use"],
+                "description": "Buttons, links, focus rings and selected items, on public "
+                "pages and in the admin area.",
+            },
+        ),
+        (
+            "Favicon",
+            {
+                "fields": ["current_favicon", "favicon_file", "remove_favicon"],
+                "description": "The icon in browser tabs, on public pages and in the admin area.",
+            },
+        ),
+    ]
+    readonly_fields = ["accent_in_use", "current_favicon"]
+
+    def response_change(self, request, obj):
+        color = obj.accent_color
+        if color and theme.contrast(color, theme.WHITE) < theme.READABLE_CONTRAST:
+            messages.warning(
+                request,
+                f"Links in {color} are hard to read on white. A darker color reads better.",
+            )
+        return super().response_change(request, obj)
+
+    @admin.display(description="In use")
+    def accent_in_use(self, obj):
+        if obj.accent_color:
+            light, dark = obj.accent_color, theme.dark_accent(obj.accent_color)
+        else:
+            light, dark = theme.STANDARD_ACCENT, theme.STANDARD_DARK_ACCENT
+        swatches = format_html_join(
+            "",
+            '<span class="inline-flex items-center gap-2"><svg width="20" height="20" '
+            'viewBox="0 0 20 20" aria-hidden="true" class="size-5 shrink-0"><rect x=".5" '
+            'y=".5" width="19" height="19" rx="4.5" fill="{}" stroke="currentColor" '
+            'stroke-opacity=".2"/></svg>{} <code class="font-mono">{}</code></span>',
+            [(light, "Light mode", light), (dark, "Dark mode", dark)],
+        )
+        label = "Custom color" if obj.accent_color else "Standard teal"
+        return format_html(
+            '<span class="flex flex-col gap-2">{}<span class="flex flex-wrap gap-x-6 gap-y-2">'
+            "{}</span></span>",
+            label,
+            swatches,
+        )
 
     @admin.display(description="Current favicon")
     def current_favicon(self, obj):

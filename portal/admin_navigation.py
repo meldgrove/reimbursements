@@ -32,7 +32,7 @@ SECTIONS = (
         "Admin",
         "settings",
         "admin:portal_appsettings_changelist",
-        ("appsettings", "formtemplate", "privacynotice"),
+        ("appsettings", "appearance", "formtemplate", "privacynotice"),
         template_admins_only=True,
         separated=True,
     ),
@@ -43,6 +43,13 @@ SETTINGS_TABS = (
         "globe",
         "admin:portal_appsettings_changelist",
         ("appsettings",),
+        template_admins_only=True,
+    ),
+    Page(
+        "Appearance",
+        "palette",
+        "admin:portal_appearance_changelist",
+        ("appearance",),
         template_admins_only=True,
     ),
     Page(
