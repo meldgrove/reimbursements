@@ -52,7 +52,11 @@ def worker(monkeypatch, privacy_notice):
 @pytest.fixture
 def sent(monkeypatch):
     messages, send = [], outbound.send
-    monkeypatch.setattr(outbound, "send", lambda message: messages.append(message) or send(message))
+
+    def recorded(compose, email):
+        return send(lambda record: messages.append(compose(record)) or messages[-1], email)
+
+    monkeypatch.setattr(outbound, "send", recorded)
     return messages
 
 

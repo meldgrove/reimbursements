@@ -1,59 +1,38 @@
 """Delivery of a claim's authoritative PDF to its approved Finance inbox.
 
 A Delivery's state is derived from its attempts. Attempts change only through send
-results and provider evidence (webhooks and reconciliation lookups, which the
-MailerSend adapter translates) recorded here. A send whose
-outcome is unknown is never repeated automatically: an operator retry has to
+results recorded here and provider evidence, which the Evidence module applies through
+`settle`. A send whose outcome is unknown is never repeated automatically. Finance may
+hold a copy unless every send definitely failed; an operator resend then has to
 acknowledge the duplicate risk. Failures before transmission are definite, because
 nothing reached the provider.
 """
 
 import hashlib
-import logging
-import uuid
 
 from django.conf import settings
-from django.db import transaction
-from django.db.models import F
 from django.utils import timezone
 
 from portal import app_settings
 from portal.i18n import t
-from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent
-from portal.services import mailersend, outbound, queue, retention
+from portal.models import Claim, Delivery, DeliveryAttempt
+from portal.services import outbound, queue, retention
+from portal.services.outbound import Undeliverable
 from portal.services.storage import path_for
 from portal.services.transport import (
     ACCEPTED,
     DELIVERED,
     FAILED,
+    FINAL,
     PAUSED,
     PENDING,
     SENDING,
     UNKNOWN,
     Message,
-    SendResult,
 )
-
-logger = logging.getLogger(__name__)
 
 # The provider holds or delivered the message: never send again automatically.
 NO_AUTOMATIC_SEND = frozenset({DELIVERED, ACCEPTED, PAUSED, UNKNOWN})
-# Attempt outcomes that later provider evidence cannot regress.
-FINAL_ATTEMPT = frozenset({DELIVERED, FAILED})
-# Attempts the provider can tell us more about.
-RECONCILABLE = frozenset({ACCEPTED, PAUSED, UNKNOWN})
-
-
-class DuplicateRisk(Exception):
-    """The previous send may have reached the provider."""
-
-
-class Undeliverable(Exception):
-    """The message cannot be sent; nothing was transmitted."""
-
-
-def _recipient_hash(address):
-    return hashlib.sha256(address.lower().encode()).hexdigest()
 
 
 def schedule(claim):
@@ -134,28 +113,12 @@ def compose(attempt):
     )
 
 
-def send(attempt):
-    """Compose and transmit one attempt. No database writes; call outside a transaction.
-
-    Anything that fails while composing is a definite failure. An exception from
-    `outbound.send` propagates: the provider may have accepted the message.
-    """
-    try:
-        message = compose(attempt)
-    except Undeliverable as exc:
-        return SendResult(FAILED, error_code=str(exc))
-    except Exception:
-        logger.exception("delivery_compose_failed attempt=%s", attempt.pk)
-        return SendResult(FAILED, error_code="message_unavailable")
-    return outbound.send(message)
-
-
 def record_result(attempt_id, result):
     """In a transaction: store a send result unless provider evidence already settled it."""
     attempt = DeliveryAttempt.objects.get(pk=attempt_id)
     delivery = _lock_delivery(pk=attempt.delivery_id)
     attempt = DeliveryAttempt.objects.select_for_update().get(pk=attempt_id)
-    if attempt.state not in FINAL_ATTEMPT:
+    if attempt.state not in FINAL:
         attempt.state, attempt.error_code = result.state, result.error_code
     if result.message_id:
         attempt.message_id = result.message_id
@@ -170,15 +133,17 @@ def mark_unknown(delivery_id, error_code):
     refresh(delivery)
 
 
-def has_duplicate_risk(delivery):
-    """Sending again could reach Finance twice: only a definite failure is safe to repeat."""
-    return delivery.state != FAILED
+def settle(attempt_id, apply):
+    """In a transaction: let provider evidence change an attempt, then refresh its delivery.
 
-
-def duplicate_risk(claim):
-    """A retry of the claim's delivery has to acknowledge that Finance may get it twice."""
-    delivery = getattr(claim, "delivery", None)
-    return bool(delivery and has_duplicate_risk(delivery))
+    `apply(attempt, recipient)` runs on the locked attempt unless its claim is being deleted,
+    and returns whether it changed the attempt.
+    """
+    delivery_id = DeliveryAttempt.objects.values_list("delivery_id", flat=True).get(pk=attempt_id)
+    delivery = _lock_delivery(pk=delivery_id)
+    attempt = DeliveryAttempt.objects.select_for_update().get(pk=attempt_id)
+    if delivery.claim.state != Claim.State.PURGING and apply(attempt, delivery.recipient):
+        refresh(delivery)
 
 
 def may_have_reached_finance(claim):
@@ -187,106 +152,9 @@ def may_have_reached_finance(claim):
     return bool(delivery and delivery.attempts.exclude(state=FAILED).exists())
 
 
-def retry(claim, *, acknowledge_duplicate_risk=False):
-    """Operator retry. Only a definite failure is retried without acknowledgment."""
+def resend(claim):
+    """Operator retry: queue the claim's PDF for Finance again, whatever earlier sends did."""
     delivery = _lock_delivery(claim=claim)
-    if has_duplicate_risk(delivery) and not acknowledge_duplicate_risk:
-        raise DuplicateRisk
     delivery.state, delivery.error_code = PENDING, ""
     delivery.save()
     queue.enqueue("send", delivery, again=True)
-
-
-@transaction.atomic
-def record_evidence(evidence):
-    """Record what the provider says about an attempt; it applies once the attempt is known."""
-    event, _ = DeliveryEvent.objects.get_or_create(
-        provider_id=evidence.provider_id,
-        defaults={
-            "kind": evidence.kind,
-            "provider_timestamp": evidence.timestamp,
-            "message_id": evidence.message_id,
-            "recipient_hash": _recipient_hash(evidence.recipient),
-            "attempt_tag": evidence.attempt_id,
-        },
-    )
-    _apply(event)
-
-
-def _apply(event):
-    if event.applied:
-        return
-    query = (
-        DeliveryAttempt.objects.filter(message_id=event.message_id)
-        if event.message_id
-        else DeliveryAttempt.objects.none()
-    )
-    attempt = query.first()
-    if not attempt and event.attempt_tag:
-        try:
-            attempt = DeliveryAttempt.objects.filter(pk=uuid.UUID(event.attempt_tag)).first()
-        except (ValueError, TypeError):
-            return
-    if not attempt:
-        return
-    delivery = _lock_delivery(pk=attempt.delivery_id)
-    attempt = DeliveryAttempt.objects.select_for_update().get(pk=attempt.pk)
-    if (
-        _recipient_hash(delivery.recipient) != event.recipient_hash
-        or delivery.claim.state == Claim.State.PURGING
-    ):
-        return
-    if attempt.message_id and event.message_id and attempt.message_id != event.message_id:
-        return
-    if not attempt.message_id and event.message_id:
-        attempt.message_id = event.message_id
-    state, error_code, resolves_unknown_only = mailersend.outcome(event.kind)
-    if resolves_unknown_only and attempt.state != UNKNOWN:
-        state = None
-    # Terminal success/failure cannot regress on a late sent/deferred callback.
-    if state and (state in FINAL_ATTEMPT or attempt.state not in FINAL_ATTEMPT):
-        if not (attempt.state == FAILED and state == DELIVERED):
-            attempt.state, attempt.error_code = state, error_code
-    attempt.save()
-    event.attempt, event.applied = attempt, True
-    event.save(update_fields=["attempt", "applied"])
-    refresh(delivery)
-
-
-@transaction.atomic
-def reconcile_unmatched():
-    """Retry correlating evidence that arrived before its attempt was recorded."""
-    events = DeliveryEvent.objects.filter(applied=False).order_by(
-        F("last_checked_at").asc(nulls_first=True), "received_at", "pk"
-    )[:100]
-    for event in list(events):
-        event.last_checked_at = timezone.now()
-        event.save(update_fields=["last_checked_at"])
-        _apply(event)
-
-
-def reconcile(batch_size):
-    """Ask the provider about unsettled attempts. Never resends.
-
-    Returns counts of checked attempts, deferred answers and failed lookups.
-    """
-    reconcile_unmatched()
-    attempts = (
-        DeliveryAttempt.objects.exclude(message_id__isnull=True)
-        .filter(state__in=RECONCILABLE)
-        .order_by(F("last_checked_at").asc(nulls_first=True), "created_at", "pk")[:batch_size]
-    )
-    counts = {"checked": 0, "deferred": 0, "failed": 0}
-    for attempt in list(attempts):
-        DeliveryAttempt.objects.filter(pk=attempt.pk).update(last_checked_at=timezone.now())
-        counts["checked"] += 1
-        try:
-            evidence = mailersend.lookup(attempt.id, attempt.message_id)
-        except mailersend.LookupFailed:
-            counts["failed"] += 1
-            continue
-        if evidence is None:
-            counts["deferred"] += 1
-            continue
-        record_evidence(evidence)
-    return counts

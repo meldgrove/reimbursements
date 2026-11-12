@@ -133,7 +133,7 @@ def test_purge_deletes_the_claim_with_all_its_records_and_files(accepted):
     assert accepted.delivery.attempts.exists()
     DeliveryEvent.objects.create(
         provider_id="synthetic",
-        attempt=accepted.delivery.attempts.get(),
+        attempt_tag=str(accepted.delivery.attempts.get().pk),
         kind="delivered",
         recipient_hash="0" * 64,
         provider_timestamp=timezone.now(),

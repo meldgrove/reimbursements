@@ -13,6 +13,7 @@ from portal import roles
 from portal.auth import KeycloakBackend, keycloak_logout_url
 from portal.models import Claim, Delivery, DeliveryAttempt, Form, Job, Operation, PrivacyNotice
 from portal.services import claim_status
+from portal.services.storage import path_for
 
 pytestmark = pytest.mark.django_db
 
@@ -504,9 +505,10 @@ def test_admin_retries_a_failed_render_with_an_audited_reason(admin_client, acce
 
 
 def test_admin_resend_requires_duplicate_risk_acknowledgment(admin_client, delivery):
-    delivery.state = "delivered"
-    delivery.save()
+    DeliveryAttempt.objects.create(delivery=delivery, state="delivered")
     url = f"/admin/portal/claim/{delivery.claim_id}/retry/"
+    page = admin_client.get(url).content.decode()
+    assert "Duplicate delivery possible" in page and "acknowledge_duplicate_risk" in page
     response = admin_client.post(url, {"reason": "Das Postfach hat nichts erhalten"})
     assert response.status_code == 200 and "duplicate delivery" in response.content.decode()
     response = admin_client.post(
@@ -515,6 +517,16 @@ def test_admin_resend_requires_duplicate_risk_acknowledgment(admin_client, deliv
     assert response.status_code == 302
     delivery.refresh_from_db()
     assert delivery.state == "pending"
+
+
+def test_the_retry_page_says_what_a_retry_would_do_before_it_runs(admin_client, delivery):
+    url = f"/admin/portal/claim/{delivery.claim_id}/retry/"
+    page = admin_client.get(url).content.decode()
+    assert "sent to the receiving inbox again" in page and 'name="reason"' in page
+    assert "Duplicate delivery possible" not in page and "acknowledge_duplicate_risk" not in page
+    Job.objects.create(key="send-running", kind="send", delivery=delivery, state="running")
+    page = admin_client.get(url).content.decode()
+    assert "already being processed" in page and 'name="reason"' not in page
 
 
 def second_claim(form):
@@ -578,16 +590,15 @@ def test_deletion_is_refused_while_the_claim_is_processed(admin_client, accepted
     assert not Operation.objects.exists()
 
 
-def test_an_interrupted_deletion_reports_that_cleanup_finishes_it(
-    admin_client, accepted, monkeypatch
-):
-    def interrupted(claim_id):
-        raise OSError("storage unavailable")
-
-    monkeypatch.setattr("portal.services.retention.purge_claim", interrupted)
-    response = admin_client.post(
-        f"/admin/portal/claim/{accepted.pk}/purge/", {"reason": "Testeinreichung"}, follow=True
-    )
+def test_an_interrupted_deletion_reports_that_cleanup_finishes_it(admin_client, accepted):
+    directory = path_for(accepted.uploads.first().source_key).parent
+    directory.chmod(0o500)
+    try:
+        response = admin_client.post(
+            f"/admin/portal/claim/{accepted.pk}/purge/", {"reason": "Testeinreichung"}, follow=True
+        )
+    finally:
+        directory.chmod(0o700)
     assert "finishes automatically within a few minutes" in response.content.decode()
     accepted.refresh_from_db()
     assert accepted.state == Claim.State.PURGING

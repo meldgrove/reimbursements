@@ -461,8 +461,7 @@ class SetupCheck:
             DeliveryAttempt.objects.filter(delivery__claim=claim).values_list("pk", "message_id")
         )
         return DeliveryEvent.objects.filter(
-            Q(attempt_id__in=[pk for pk, _ in attempts])
-            | Q(message_id__in=[message_id for _, message_id in attempts if message_id])
+            Q(message_id__in=[message_id for _, message_id in attempts if message_id])
             | Q(attempt_tag__in=[str(pk) for pk, _ in attempts]),
             kind__startswith="activity.",
         ).exists()

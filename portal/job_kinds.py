@@ -13,7 +13,7 @@ from django.conf import settings
 from django.db import transaction
 
 from portal.models import Claim, Upload
-from portal.services import confirmations, delivery, queue, uploads
+from portal.services import confirmations, delivery, evidence, outbound, queue, uploads
 from portal.services.capacity import temporary_workspace
 from portal.services.documents import ProcessingError, build_claim_pdf, validate_upload
 from portal.services.scanner import ScanError, scan_file
@@ -122,13 +122,10 @@ class Render:
         return INTERRUPTED
 
     def requeue(self, claim):
-        """Operator retry of a claim whose PDF was never produced. False otherwise."""
-        if claim.state != Claim.State.FAILED or claim.pdf_key:
-            return False
+        """Operator retry of a locked claim whose PDF was never produced."""
         claim.state, claim.error_code = Claim.State.RECEIVED, ""
         claim.save()
         queue.enqueue("render", claim, again=True)
-        return True
 
 
 class _Email:
@@ -136,9 +133,10 @@ class _Email:
     record the result. Only a send the provider refused before acceptance (PENDING) is
     retried. Once the provider may hold the message, nothing is sent again automatically.
 
-    A sender names its record: `reserve(job)` returns what to send, or None when nothing may
-    be sent now; `send(reserved)`; `record(job, reserved, result)`; and `unknown(job, code)`
-    for a send that ended without a result.
+    A sender names its record: `reserve(job)` returns the record of the email to send, or
+    None when nothing may be sent now; `compose(reserved)` its message;
+    `record(job, reserved, result)`; and `unknown(job, code)` for a send that ended without
+    a result.
     """
 
     resumable = False
@@ -151,7 +149,7 @@ class _Email:
             if not reserved:
                 lease.cancel()
                 return
-        result = self.send(reserved)
+        result = outbound.send(self.compose, reserved)
         with transaction.atomic():
             self.record(job, reserved, result)
             if result.state == PENDING:
@@ -188,8 +186,8 @@ class Send(_Email):
     def reserve(self, job):
         return delivery.start_attempt(job.delivery_id)
 
-    def send(self, attempt):
-        return delivery.send(attempt)
+    def compose(self, attempt):
+        return delivery.compose(attempt)
 
     def record(self, job, attempt, result):
         delivery.record_result(attempt.pk, result)
@@ -199,7 +197,7 @@ class Send(_Email):
 
     def sent(self):
         # Provider evidence can arrive before its attempt's send result.
-        delivery.reconcile_unmatched()
+        evidence.reconcile_unmatched()
 
 
 class Confirm(_Email):
@@ -208,8 +206,8 @@ class Confirm(_Email):
     def reserve(self, job):
         return confirmations.start(job.claim_id)
 
-    def send(self, confirmation):
-        return confirmations.send(confirmation)
+    def compose(self, confirmation):
+        return confirmations.compose(confirmation)
 
     def record(self, job, confirmation, result):
         confirmations.record(job.claim_id, result)
