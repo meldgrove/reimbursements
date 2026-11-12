@@ -13,8 +13,12 @@ from portal.services.references import allocate_reference
 
 
 @transaction.atomic
-def submit_claim(participant, form_slug, data):
-    """Accept the participant's draft as a claim; a repeated identical request returns it."""
+def submit_claim(participant, form_slug, data, *, numbered=True):
+    """Accept the participant's draft as a claim; a repeated identical request returns it.
+
+    `numbered=False` is for the setup check: its claim takes no bookkeeping reference,
+    so the sequence Finance books has no gap, and goes by its ID instead.
+    """
     if not isinstance(data, dict) or data.get("website"):
         raise IntakeError(t("Invalid request."))
     # Compare an exact canonical request on replay, even if the form changed or closed later.
@@ -46,7 +50,9 @@ def submit_claim(participant, form_slug, data):
         submitted_at=submitted_at,
         bookkeeping_reference=allocate_reference(
             form.slug, entries.claim["full_name"], submitted_at
-        ),
+        )
+        if numbered
+        else None,
         snapshot=snapshot,
         total=entries.total,
         resolution_due=retention.resolution_due(submitted_at),
