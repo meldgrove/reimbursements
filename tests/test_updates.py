@@ -74,7 +74,7 @@ def test_versions_and_series():
     assert updates.parse("v1.2.3") == updates.parse("1.2.3") == (1, 2, 3)
     assert updates.parse("0.1.4-rc.1") is None
     assert updates.parse(None) is None and updates.parse("") is None
-    assert updates.series((0, 1, 2)) == (0, 1) and updates.series((1, 4, 0)) == (1,)
+    assert updates.series((0, 1, 2)) == (0, 1) and updates.series((1, 4, 0)) == (1, 4)
 
 
 def test_updates_are_off_without_a_deploy_link(network, settings):
@@ -189,15 +189,16 @@ def test_releases_outside_the_series_are_only_shown(network):
     assert (notice.level, notice.link) == ("info", NOTES + "v1.0.0")
 
 
-def test_from_1_0_the_series_is_the_major_version(network, settings):
+def test_from_1_0_a_minor_release_is_outside_the_series_too(network, settings):
+    # A minor release may need operator action, also after 1.0 (docs/releases.md).
     settings.APP_VERSION = "1.2.0"
-    network.releases = [release("v2.0.0"), release("v1.3.1"), release("v1.3.0")]
+    network.releases = [release("v1.3.0"), release("v1.2.2"), release("v1.2.1")]
     now = timezone.now()
     updates.check(now)
-    assert len(network.deploys) == 1 and UpdateCheck.load().target_version == "1.3.1"
+    assert len(network.deploys) == 1 and UpdateCheck.load().target_version == "1.2.2"
     updating, available = texts(now)
-    assert updating.startswith("Updating to version 1.3.1:")
-    assert available.startswith("Version 2.0.0 is available.")
+    assert updating.startswith("Updating to version 1.2.2:")
+    assert available.startswith("Version 1.3.0 is available.")
 
 
 def test_release_notes_links_only_point_to_the_project(network):
