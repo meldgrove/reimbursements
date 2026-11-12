@@ -83,5 +83,5 @@ preserve database, private files and scanner volumes. Back up the database and
 private files together before a manual upgrade; automatic updates rely on scheduled
 backups instead.
 Before a manual upgrade, read the GitHub release notes of every version since the
-deployed one; a major version lists the operator actions it needs. See
+deployed one; they list the upgrade steps a release needs. See
 [releases](releases.md) and [automatic updates](updates.md).

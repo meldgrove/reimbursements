@@ -3,13 +3,15 @@
 # workflow; only this line, the pull request paths, and env differ.
 #
 #   prepare  refuses unless started from main, CI passed for the commit, and
-#            something changed since the last release. Raises the version in
-#            package.json or pyproject.toml, commits "chore(release): vX.Y.Z",
-#            tags it, and pushes both at once. A release candidate
-#            (vX.Y.Z-rc.N) only tags.
+#            something changed since the last release. Raises the latest
+#            vX.Y.Z tag by the chosen part, tags the commit, and pushes only
+#            the tag. No file holds the version and nothing is pushed to main,
+#            so no ruleset needs a bypass. A release candidate is vX.Y.Z-rc.N.
 #   image    builds and starts the image on amd64 and arm64, pushes it by digest
 #   publish  tags both platforms as one image (X.Y.Z, X.Y, X from 1.0.0,
 #            latest), attests its provenance, and creates the GitHub Release
+#   deploy   calls the deploy link in the DEPLOY_HOOK_URL secret, if the
+#            repository has one, so the maintainers' own server runs the release
 #
 # A dry run does everything except push and publish. Pull requests that change
 # the image build and start both platforms without publishing anything.
@@ -22,18 +24,22 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version part to raise (the first release keeps the version in the file)
+        description: Version part to raise (the first release starts from 0.0.0)
         type: choice
         options: [patch, minor, major]
         default: patch
       candidate:
-        description: "Release candidate: publish vX.Y.Z-rc.N for testing (no version commit, no latest)"
+        description: "Release candidate: publish vX.Y.Z-rc.N for testing (no latest, no deploy)"
         type: boolean
         default: false
       dry_run:
         description: "Dry run: build, show the version and notes, publish nothing"
         type: boolean
         default: false
+      deploy:
+        description: "Deploy: afterwards, call the deploy link in the DEPLOY_HOOK_URL secret, if set"
+        type: boolean
+        default: true
   pull_request:
     paths:
       - Dockerfile
@@ -72,7 +78,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read # find the CI run of the commit
-      contents: write # push the version commit and tag, preview the notes
+      contents: write # push the tag, preview the notes
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -89,22 +95,10 @@ jobs:
           echo "::error::Start releases from main, not ${GITHUB_REF_NAME}."
           exit 1
 
-      # Once a ruleset protects main, only a bypass actor may push the version
-      # commit: a GitHub App, set up as the release steps describe.
-      - name: Create release app token
-        id: app-token
-        if: github.event_name == 'workflow_dispatch' && vars.RELEASE_APP_CLIENT_ID != ''
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # every tag
-          token: ${{ steps.app-token.outputs.token || github.token }}
-          # A release pushes with these credentials; pull requests need none.
+          # A release pushes its tag with these credentials; pull requests need none.
           persist-credentials: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Version
@@ -121,38 +115,9 @@ jobs:
             exit 1
           }
 
-          # The version lives in pyproject.toml (uv) or package.json (npm). It
-          # changes with the uv or Node.js image that the Dockerfile pins.
-          if [ -f pyproject.toml ]; then
-            files=(pyproject.toml uv.lock)
-            current=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-            set_version() {
-              local image container
-              image=$(sed -nE 's|^FROM (ghcr\.io/astral-sh/uv:[^ ]+).*|\1|p' Dockerfile | head -n 1)
-              [ -n "$image" ] || fail "Found no pinned uv image in the Dockerfile."
-              # The image has no Python, which uv needs to lock: run its binary here.
-              container=$(docker create "$image")
-              docker cp --quiet "$container:/uv" "$RUNNER_TEMP/uv"
-              docker rm "$container" > /dev/null
-              "$RUNNER_TEMP/uv" version "$1" --no-sync
-            }
-          else
-            files=(package.json package-lock.json)
-            current=$(jq -r .version package.json)
-            set_version() {
-              local image
-              image=$(sed -nE 's|^FROM (node:[^ ]+).*|\1|p' Dockerfile | head -n 1)
-              [ -n "$image" ] || fail "Found no Node.js image in the Dockerfile."
-              docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp --env npm_config_update_notifier=false \
-                --volume "$PWD:/src" --workdir /src "$image" \
-                npm version "$1" --no-git-tag-version --ignore-scripts > /dev/null
-            }
-          fi
-          [[ $current =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "${files[0]} has the version '$current'; expected X.Y.Z."
-
           if [ "$EVENT" = pull_request ]; then
             {
-              echo "version=$current"
+              echo "version=0.0.0-pr"
               echo "ref=$GITHUB_SHA"
               echo "publish=false"
             } >> "$GITHUB_OUTPUT"
@@ -162,28 +127,22 @@ jobs:
           passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$CI_WORKFLOW/runs?head_sha=$GITHUB_SHA&status=success" --jq .total_count)
           [ "$passed" != 0 ] || fail "CI has not passed for $GITHUB_SHA. Wait for CI on main to finish, then start the release again."
 
-          # The newest release without a suffix, e.g. v1.2.3.
+          # The tags hold the version: the newest release without a suffix,
+          # e.g. v1.2.3, raised by the chosen part. The first release starts
+          # from 0.0.0, so minor makes it 0.1.0.
           previous=$(git tag --list 'v[0-9]*' --sort=-version:refname | awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ && !found { print; found = 1 }')
           if [ -n "$previous" ]; then
-            [ "$previous" = "v$current" ] || fail "${files[0]} says $current, but the latest release is $previous. Make them match first."
             [ "$(git rev-parse "$previous^{commit}")" != "$(git rev-parse HEAD)" ] || fail "Nothing to release: main has no changes since $previous."
-            IFS=. read -r major minor patch <<< "$current"
-            case "$BUMP" in
-              major) next="$((major + 1)).0.0" ;;
-              minor) next="$major.$((minor + 1)).0" ;;
-              *) next="$major.$minor.$((patch + 1))" ;;
-            esac
-          else
-            next="$current"
-            echo "::notice::First release: it keeps the version $current from ${files[0]}."
           fi
+          current=${previous#v}
+          IFS=. read -r major minor patch <<< "${current:-0.0.0}"
+          case "$BUMP" in
+            major) next="$((major + 1)).0.0" ;;
+            minor) next="$major.$((minor + 1)).0" ;;
+            *) next="$major.$minor.$((patch + 1))" ;;
+          esac
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          commit=false
           if [ "$CANDIDATE" = true ]; then
-            # A candidate tags the commit as it is: the file keeps the version
-            # of the last release until the real one.
             [ -z "$(git tag --points-at HEAD --list "v$next-rc.*")" ] || fail "This commit is already a candidate for $next."
             last=$(git tag --list "v$next-rc.*" | sed -nE 's/^v.*-rc\.([0-9]+)$/\1/p' | sort -n | tail -n 1)
             version="$next-rc.$((${last:-0} + 1))"
@@ -191,23 +150,16 @@ jobs:
           else
             version="$next"
             prerelease=false
-            if [ "$version" != "$current" ]; then
-              set_version "$version"
-              git add -- "${files[@]}"
-              if ! git diff --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-                fail "Changing the version touched more than ${files[*]}: $(git status --porcelain | tr '\n' ' ')"
-              fi
-              git commit --quiet --message "chore(release): v$version"
-              commit=true
-            fi
           fi
           tag="v$version"
           ! git rev-parse --quiet --verify "refs/tags/$tag" > /dev/null || fail "The tag $tag exists already."
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag --annotate "$tag" --message "$tag"
-          git show --stat --format='%H %s' HEAD
+          git show --no-patch --format='%H %s' HEAD
 
-          # X.Y.Z always. Releases add X.Y, X from 1.0.0 (before that a minor
-          # release may need operator action), and latest.
+          # X.Y.Z always. Releases add X.Y, X from 1.0.0 (a tag 0 would follow
+          # every early release), and latest.
           tags="$IMAGE:$version"
           if [ "$prerelease" = false ]; then
             tags="$tags $IMAGE:${version%.*}"
@@ -227,10 +179,6 @@ jobs:
             publish=false
             ref="$GITHUB_SHA"
             notes=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${notes_from[@]}" --jq .body)
-          elif [ "$commit" = true ]; then
-            # Atomic: if main moved since this run started, neither lands.
-            git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag" \
-              || fail "Pushed nothing: main changed during the release. Start it again."
           else
             git push origin "refs/tags/$tag"
           fi
@@ -428,3 +376,43 @@ jobs:
             -F prerelease="$PRERELEASE" \
             -f make_latest="$latest" \
             --jq .html_url
+
+  # The maintainers' own server, when the repository has the secret
+  # DEPLOY_HOOK_URL: a deploy link that redeploys on POST (in Coolify the
+  # resource's Deploy Webhook) and DEPLOY_HOOK_TOKEN, its bearer token. That
+  # server runs the image tag latest, so the call installs this release.
+  # GitHub's runners must reach the link over the internet.
+  deploy:
+    name: Deploy
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.prerelease == 'false' && inputs.deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Call the deploy link
+        env:
+          URL: ${{ secrets.DEPLOY_HOOK_URL }}
+          TOKEN: ${{ secrets.DEPLOY_HOOK_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::notice::Nothing deployed: the repository has no DEPLOY_HOOK_URL secret."
+            exit 0
+          fi
+          auth=()
+          if [ -n "$TOKEN" ]; then auth=(--header "Authorization: Bearer $TOKEN"); fi
+          # Only the status is printed on success: the answer names the
+          # server's resources, and the logs of public repositories are public.
+          if ! status=$(curl --silent --show-error --max-time 60 --request POST "${auth[@]}" \
+            --output "$RUNNER_TEMP/answer" --write-out '%{http_code}' "$URL"); then
+            echo "::error::GitHub's runner could not reach the deploy link."
+            exit 1
+          fi
+          case "$status" in
+            2??) echo "Deployment of $TAG started (HTTP $status)." | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "::error::The deploy link answered HTTP $status: $(head -c 300 "$RUNNER_TEMP/answer")"
+              exit 1
+              ;;
+          esac
