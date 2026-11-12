@@ -1,0 +1,3 @@
+# Workflows and repository settings: a pull request that changes them asks
+# the maintainers team for review.
+/.github/ @meldgrove/maintainers
