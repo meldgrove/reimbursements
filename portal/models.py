@@ -629,6 +629,7 @@ class Confirmation(models.Model):
     message_id = models.CharField(max_length=100, blank=True)
     error_code = models.CharField(max_length=80, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
 
 class DeliveryAttempt(models.Model):
@@ -643,9 +644,14 @@ class DeliveryAttempt(models.Model):
 
 
 class DeliveryEvent(models.Model):
+    """Evidence about one sent email: a Finance delivery attempt or a confirmation.
+
+    It names its email by provider message ID or by `attempt_tag`, the ID of the email's
+    record, never by claim.
+    """
+
     provider_id = models.CharField(max_length=100, unique=True)
     message_id = models.CharField(max_length=100, blank=True, db_index=True)
-    attempt = models.ForeignKey(DeliveryAttempt, null=True, blank=True, on_delete=models.SET_NULL)
     kind = models.CharField(max_length=80)
     recipient_hash = models.CharField(max_length=64)
     attempt_tag = models.CharField(max_length=80, blank=True)

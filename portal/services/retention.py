@@ -16,8 +16,8 @@ from django.utils import timezone
 
 from portal.models import (
     Claim,
+    Confirmation,
     DeliveryAttempt,
-    DeliveryEvent,
     Draft,
     DraftAdmission,
     Upload,
@@ -65,9 +65,13 @@ def _in_use(claim):
     )
 
 
-def _finance_messages(claim):
+def _finance_emails(claim):
     """The claim's emails to Finance: they carry its PDF."""
-    return DeliveryAttempt.objects.filter(delivery__claim=claim).values_list("pk", flat=True)
+    return DeliveryAttempt.objects.filter(delivery__claim=claim)
+
+
+def _emails(claim):
+    return [*_finance_emails(claim), *Confirmation.objects.filter(claim=claim)]
 
 
 def begin_purge(claim):
@@ -98,16 +102,14 @@ def purge_claim(claim_id):
     for upload in claim.uploads.all():
         uploads.remove_files(upload)
     remove_keys(claim.pdf_key)
-    confirmation = getattr(claim, "confirmation", None)
-    outbound.remove_copies(*_finance_messages(claim), *([confirmation.pk] if confirmation else []))
     with transaction.atomic():
         claim = Claim.objects.select_for_update().filter(pk=claim_id).first()
         if claim is None:
             return
         if _in_use(claim):
             raise ClaimBusy
-        # Events would outlive their attempt; the claim's other records cascade.
-        DeliveryEvent.objects.filter(attempt__delivery__claim=claim).delete()
+        # Evidence names emails, not the claim; the claim's other records cascade.
+        outbound.forget(*_emails(claim))
         # Released and expired, the accepted draft goes with the next cleanup, together
         # with any uploads it kept; it no longer counts as an active draft.
         Draft.objects.filter(claim=claim).update(
@@ -126,7 +128,7 @@ def remove_pdf(claim_id):
         if queue.claim_has_active_job(claim):
             raise ClaimBusy
         remove_keys(claim.pdf_key)
-        outbound.remove_copies(*_finance_messages(claim))
+        outbound.remove_copies(*_finance_emails(claim).values_list("pk", flat=True))
         claim.pdf_key, claim.pdf_removed_at = "", timezone.now()
         claim.save(update_fields=["pdf_key", "pdf_removed_at"])
 
@@ -184,9 +186,6 @@ def cleanup(*, execute=False):
         except OSError:
             result["failures"] += 1
     result["failures"] += uploads.expire_unattached(now)
-    DeliveryEvent.objects.filter(
-        attempt__isnull=True, received_at__lt=now - timedelta(days=30)
-    ).delete()
     orphan_cleanup()
     return result
 

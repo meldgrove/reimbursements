@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 
 from portal.jobs import reclaim_stale_jobs, run_one
-from portal.services.delivery import reconcile_unmatched
+from portal.services.evidence import reconcile_unmatched
 from portal.services.retention import cleanup
 from portal.services.storage import write_heartbeat
 

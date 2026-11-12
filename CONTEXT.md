@@ -34,10 +34,13 @@ are in [the form contract](docs/form-contract.md); operations in
 ## Email
 
 - **Outbound email**: every email the app sends, through `portal/services/outbound.py`:
-  recipient rules, the transport, and local copies. Each email is sent at most once.
+  recipient rules, composing and transmitting each message once (a failure while
+  composing is definite), and forgetting local copies and Evidence. Each email has one
+  record: a Delivery attempt or a Confirmation.
 - **Finance delivery**: sending a claim's PDF to its approved Finance inbox, in one or
   more **Delivery attempts**.
 - **Confirmation**: the participant's confirmation of receipt, without attachments or
   banking details.
-- **Evidence**: what MailerSend says about a sent message, from a webhook or a lookup.
-  The MailerSend adapter translates it; the Delivery module applies it to an attempt.
+- **Evidence**: what MailerSend says about a sent email, from a webhook or a lookup.
+  The MailerSend adapter translates it; the Evidence module (`portal/services/evidence.py`)
+  applies it to the email's record and reconciles the unsettled emails of every sender.

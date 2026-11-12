@@ -13,7 +13,7 @@ from django.utils import timezone
 from portal.jobs import reclaim_stale_jobs, run_one
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent, Job, Operation
 from portal.services import delivery as deliveries
-from portal.services import mailersend
+from portal.services import evidence, mailersend, outbound
 from portal.services.storage import path_for
 
 pytestmark = pytest.mark.django_db
@@ -21,8 +21,8 @@ pytestmark = pytest.mark.django_db
 
 def ingest_event(data):
     """A verified webhook, as the view hands it on."""
-    if evidence := mailersend.webhook_evidence(data):
-        deliveries.record_evidence(evidence)
+    if provided := mailersend.webhook_evidence(data):
+        evidence.record(provided)
 
 
 def mock_provider(monkeypatch, handler):
@@ -62,7 +62,7 @@ def test_provider_outcomes(delivery, settings, monkeypatch, response, state, cod
     settings.MAIL_DELIVERY_MODE = "mailersend"
     mock_provider(monkeypatch, lambda request: response)
     attempt = DeliveryAttempt.objects.create(delivery=delivery)
-    result = deliveries.send(attempt)
+    result = outbound.send(deliveries.compose, attempt)
     assert (result.state, result.error_code) == (state, code)
 
 
@@ -199,7 +199,7 @@ def test_stale_send_lease_becomes_unknown(delivery):
 
 def test_staging_recipient_guard_blocks_even_configured_address(delivery, settings):
     settings.TEST_RECIPIENT_ALLOWLIST = ["test-only@example.invalid"]
-    result = deliveries.send(DeliveryAttempt.objects.create(delivery=delivery))
+    result = outbound.send(deliveries.compose, DeliveryAttempt.objects.create(delivery=delivery))
     assert result.error_code == "test_recipient_blocked"
 
 
@@ -386,14 +386,14 @@ def test_mailersend_reads_back_the_attempt_tag_it_sends(delivery, settings, monk
 
     mock_provider(monkeypatch, provider)
     attempt = DeliveryAttempt.objects.create(delivery=delivery)
-    deliveries.send(attempt)
+    outbound.send(deliveries.compose, attempt)
     webhook = {
         "type": "activity.delivered",
         "created_at": "2026-11-11T10:00:00Z",
         "data": {"id": "event-9", "recipient": delivery.recipient, "tags": sent[0]["tags"]},
     }
-    evidence = mailersend.webhook_evidence(webhook)
-    assert (evidence.attempt_id, evidence.message_id) == (str(attempt.pk), "")
-    deliveries.record_evidence(evidence)
+    provided = mailersend.webhook_evidence(webhook)
+    assert (provided.attempt_id, provided.message_id) == (str(attempt.pk), "")
+    evidence.record(provided)
     attempt.refresh_from_db()
     assert attempt.state == "delivered"

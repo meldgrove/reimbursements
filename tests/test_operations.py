@@ -11,8 +11,8 @@ from django.test import override_settings
 from django.utils import timezone
 
 from portal.models import Claim, Delivery, DeliveryAttempt, DeliveryEvent, Job
-from portal.services.delivery import reconcile_unmatched
 from portal.services.drafts import digest
+from portal.services.evidence import reconcile_unmatched
 
 pytestmark = pytest.mark.django_db
 

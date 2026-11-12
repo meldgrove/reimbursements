@@ -202,9 +202,10 @@ provider activity first. Signed events with an attempt tag may resolve the case.
 A failure before transmission, such as a missing or corrupt PDF or a blocked
 recipient, is a definite `failed` delivery and can be retried without
 acknowledgment once its cause is fixed.
-The reconciliation command queries known message IDs without resending; an
-unknown send without a message ID requires manual provider lookup. A `queued`
-provider status resolves `send_unknown` to accepted.
+The reconciliation command queries the known message IDs of Finance deliveries and
+participant confirmations without resending; an unknown send without a message ID
+requires manual provider lookup. A `queued` provider status resolves `send_unknown` to
+accepted.
 Reconciliation treats MailerSend's `rejected` email status as a terminal failure,
 using suppression or hard-bounce details when present. It retains the PDF for
 resolution and never resends automatically.
@@ -254,7 +255,8 @@ are retried by the next readiness request; successful probes remain cached.
 Schedule `reconcile_deliveries` every 15 minutes in the host's scheduler and
 monitor its exit status. It rotates through bounded batches, including failed
 provider lookups, and exits nonzero on provider failures; unmatched webhook events
-also rotate. `claim_status` streams all matches and supports state filters.
+also rotate, and the worker drops them after 30 days. `claim_status` streams all matches
+and supports state filters.
 Monitor queued job age, worker heartbeat, failed jobs,
 `send_unknown`/paused/failed deliveries, scanner availability, free disk, and purge
 failures. Use the independent monitoring channel, so a MailerSend outage cannot

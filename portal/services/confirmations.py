@@ -1,14 +1,17 @@
-"""Participant receipt emails. Never attach receipts or banking details."""
+"""Participant receipt emails. Never attach receipts or banking details.
+
+A confirmation changes through its send result and provider evidence, which the Evidence
+module applies through `settle`. It is never sent twice.
+"""
 
 from django.conf import settings
-from django.utils import timezone
 
 from portal import app_settings
 from portal.constants import APP_NAME, PAYMENT_TIMING
 from portal.i18n import t
 from portal.models import Claim, Confirmation
-from portal.services import outbound, queue
-from portal.services.transport import PENDING, SENDING, Message
+from portal.services import queue
+from portal.services.transport import FINAL, PENDING, SENDING, Message
 
 
 def schedule(claim):
@@ -61,15 +64,24 @@ def compose(confirmation):
     )
 
 
-def send(confirmation):
-    """Transmit the confirmation. No database writes; call outside a transaction."""
-    return outbound.send(compose(confirmation))
-
-
 def record(claim_id, result):
-    Confirmation.objects.filter(claim_id=claim_id).update(
-        state=result.state,
-        error_code=result.error_code,
-        message_id=result.message_id,
-        updated_at=timezone.now(),
-    )
+    """In a transaction: store a send result unless provider evidence already settled it."""
+    confirmation = Confirmation.objects.select_for_update().get(claim_id=claim_id)
+    if confirmation.state not in FINAL:
+        confirmation.state, confirmation.error_code = result.state, result.error_code
+    if result.message_id:
+        confirmation.message_id = result.message_id
+    confirmation.save()
+
+
+def settle(confirmation_id, apply):
+    """In a transaction: let provider evidence change a confirmation.
+
+    `apply(confirmation, recipient)` runs on the locked confirmation unless its claim is
+    being deleted.
+    """
+    claim_id = Confirmation.objects.values_list("claim_id", flat=True).get(pk=confirmation_id)
+    claim = Claim.objects.select_for_update().get(pk=claim_id)
+    confirmation = Confirmation.objects.select_for_update().get(pk=confirmation_id)
+    if claim.state != Claim.State.PURGING:
+        apply(confirmation, claim.email)

@@ -1,4 +1,4 @@
-"""The transport seam for delivery attempts.
+"""The transport seam for outbound email.
 
 Adapters: `LocalOutbox` (development, captures .eml files) and
 `portal.services.mailersend.MailerSendTransport`. An adapter returns a
@@ -10,10 +10,13 @@ from email.message import EmailMessage
 
 from portal.services.storage import outbox_key, write_bytes
 
-# Attempt states. `PENDING` from a transport means "retry later, nothing was accepted".
+# States of a sent email's record. `PENDING` from a transport means "retry later, nothing
+# was accepted".
 PENDING, SENDING = "pending", "sending"
 ACCEPTED, PAUSED = "provider_accepted", "paused"
 DELIVERED, FAILED, UNKNOWN = "delivered", "failed", "send_unknown"
+# Outcomes that neither a late send result nor later provider evidence can regress.
+FINAL = frozenset({DELIVERED, FAILED})
 
 
 @dataclass(frozen=True)
