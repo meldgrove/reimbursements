@@ -5,9 +5,9 @@
 Follow [Coolify deployment](coolify.md). The application is one Coolify resource
 (web, worker, ClamAV, migrations) on one domain; PostgreSQL is a separate Coolify
 database resource reached through Connect To Predefined Network. Forms, templates,
-the privacy notice and the General settings (app language, timezone, date format,
-favicon) are managed in the admin area at `/admin/`, which signs in through Keycloak
-and grants roles from the `groups` claim.
+the privacy notice, the General settings (app language, timezone, date format) and
+the Appearance settings (accent color, favicon) are managed in the admin area at
+`/admin/`, which signs in through Keycloak and grants roles from the `groups` claim.
 
 Use a TLS reverse proxy for the public hostname. Expose only the web
 HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports.

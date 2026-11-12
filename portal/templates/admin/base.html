@@ -9,6 +9,7 @@
 <link rel="icon" type="{{ favicon_type }}" href="{{ favicon_url }}">
 <link rel="stylesheet" href="{% static 'admin/css/widgets.css' %}">
 <link rel="stylesheet" href="{% static 'portal/ui.css' %}">
+{% if theme_url %}<link rel="stylesheet" href="{{ theme_url }}">{% endif %}
 <script src="{% static 'portal/admin-sidebar-state.js' %}"></script>
 <script src="{% static 'portal/admin.js' %}" defer></script>
 <script src="{% static 'portal/admin-search.js' %}" defer></script>

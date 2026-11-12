@@ -11,7 +11,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from portal import app_settings, dates, intake
+from portal import app_settings, dates, intake, theme
 from portal.constants import PAYMENT_TIMING
 from portal.forms import ClaimForm
 from portal.i18n import t
@@ -232,20 +232,39 @@ def received(request, claim_id):
     )
 
 
+def _named_by_digest(response, digest, current):
+    """Cache `response` for good when its link names the current `digest`."""
+    if digest == current:
+        response["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        response["Cache-Control"] = "public, no-cache"
+    return response
+
+
 @require_GET
 def favicon(request, digest):
-    """The favicon from the General settings. Its link names the digest of its content."""
+    """The favicon from the Appearance settings. Its link names the digest of its content."""
     general = app_settings.current(request)
     if not general.favicon_digest:
         raise Http404
     response = HttpResponse(bytes(general.favicon), content_type=general.favicon_type)
     # An SVG favicon opened on its own must not run anything.
     response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
-    if digest == general.favicon_digest:
-        response["Cache-Control"] = "public, max-age=31536000, immutable"
-    else:
-        response["Cache-Control"] = "public, no-cache"
-    return response
+    return _named_by_digest(response, digest, general.favicon_digest)
+
+
+@require_GET
+def theme_stylesheet(request, digest):
+    """The accent color from the Appearance settings, as a stylesheet over ui.css.
+
+    The content security policy allows no inline styles, so the color comes as a file.
+    Its link names the digest of its content.
+    """
+    color = app_settings.current(request).accent_color
+    if not color:
+        raise Http404
+    response = HttpResponse(theme.stylesheet(color), content_type="text/css; charset=utf-8")
+    return _named_by_digest(response, digest, theme.digest(color))
 
 
 @csrf_exempt

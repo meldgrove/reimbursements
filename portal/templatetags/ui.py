@@ -103,6 +103,7 @@ ICONS = {
     "log-out": '<path d="M13 4H5V28H13M13 16H29L23 10M29 16L23 22"/>',
     "mail": '<path d="M4 7H28V25H4ZM4 7L16 18L28 7"/>',
     "menu": '<path d="M5 8H27M5 16H27M5 24H27"/>',
+    "palette": '<path d="M16 3A13 13 0 0 0 16 29Q19 29 18 25Q17 21 21 21H24Q29 21 29 15Q29 3 16 3Z"/><circle cx="10" cy="15" r="1"/><circle cx="12" cy="9" r="1"/><circle cx="19" cy="8" r="1"/><circle cx="24" cy="13" r="1"/>',
     "panel-left": '<rect x="4" y="5" width="24" height="22" rx="2"/><path d="M12 5V27"/>',
     "paperclip": '<path d="M13 11V24A4 4 0 0 0 21 24V8A6 6 0 0 0 9 8V23A8 8 0 0 0 25 23V12"/>',
     "pen-line": '<path d="M5 27L7 20L23 4L28 9L12 25ZM7 20L12 25M18 27H29"/>',

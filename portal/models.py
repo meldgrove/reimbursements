@@ -9,11 +9,11 @@ from functools import cache
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.utils import timezone, translation
 
-from portal import dates
+from portal import dates, theme
 from portal.constants import DECLARATION, DECLARATION_VERSION, FORM_DESCRIPTION, FORM_TITLE
 from portal.countries import country_name
 from portal.i18n import LANGUAGES, language, t
@@ -45,7 +45,7 @@ def validate_timezone(value):
 
 
 class AppSettings(models.Model):
-    """The General settings: one row for the whole app, see portal.app_settings."""
+    """The General and Appearance settings: one row for the whole app, see portal.app_settings."""
 
     language = models.CharField(
         "App language",
@@ -70,6 +70,16 @@ class AppSettings(models.Model):
         choices=dates.CHOICES,
         default=dates.DEFAULT_DATE_FORMAT,
         help_text="For dates everywhere, including the admin area and the claim PDF.",
+    )
+    accent_color = models.CharField(
+        "Accent color",
+        max_length=7,
+        blank=True,
+        validators=[RegexValidator(rf"\A{theme.HEX_COLOR}\Z", "Enter a hex code such as #0f766e.")],
+        help_text=(
+            "Such as #0f766e. Leave empty for the standard teal. Dark mode "
+            "lightens it as needed so it stays readable."
+        ),
     )
     favicon = models.BinaryField("Favicon", blank=True, default=b"")
     favicon_type = models.CharField(max_length=40, blank=True)
@@ -100,6 +110,18 @@ class AppSettings(models.Model):
         """Use `content` as the favicon; empty content restores the standard one."""
         self.favicon, self.favicon_type = content, media_type if content else ""
         self.favicon_digest = hashlib.sha256(content).hexdigest()[:16] if content else ""
+
+
+class Appearance(AppSettings):
+    """The Appearance tab: the accent color and favicon of the one settings row."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Appearance"
+        verbose_name_plural = "Appearance"
+
+    def __str__(self):
+        return "Appearance"
 
 
 def default_declaration():
