@@ -17,6 +17,13 @@ def test_component_passes_variables_classes_and_attributes():
     assert ' disabled="disabled"' in html and "hidden" not in html
 
 
+def test_the_default_size_does_not_take_the_default_variant_class():
+    # The default variant's class sets white text; an outline button must not get it.
+    html = render('{% component "button" variant="outline" href="/" %}Cancel{% endcomponent %}')
+    assert "ui-button-outline" in html and "ui-button-default" not in html
+    assert "ui-button-sm" in render('{% component "button" size="sm" %}OK{% endcomponent %}')
+
+
 def test_component_renders_a_link_and_escapes_attributes():
     html = render(
         '{% component "button" href=url title=title %}{{ title }}{% endcomponent %}',
