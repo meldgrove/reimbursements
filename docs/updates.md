@@ -9,14 +9,19 @@ therefore installs the newest release of the series.
 
 | `REIMBURSEMENTS_VERSION` | Runs | Updates automatically to |
 | --- | --- | --- |
-| `0.1` | the newest 0.1.x release | 0.1.x, never 0.2.0 |
-| `1` (from 1.0.0) | the newest 1.x.y release | 1.x.y, never 2.0.0 |
-| `0.1.2` | exactly this release | nothing |
+| `0.2` | the newest 0.2.x release | 0.2.x, never 0.3.0 |
+| `1.2` (from 1.2.0) | the newest 1.2.x release | 1.2.x, never 1.3.0 |
+| `0.2.1` | exactly this release | nothing |
 
-A series only receives releases that need no operator action. Before 1.0 a new minor
-version may need operator action, so `0.1` never moves to 0.2.0. From 1.0 only a new
-major version does. Moving to another series is a manual upgrade: read the release
-notes of every version since the deployed one, then change `REIMBURSEMENTS_VERSION`.
+A series only receives patch releases, which need no operator action. A new minor
+version may need operator action, so `0.2` never moves to 0.3.0, and `1.2` never to
+1.3.0. Moving to another series is a manual upgrade: read the release notes of every
+version since the deployed one, then change `REIMBURSEMENTS_VERSION`.
+
+Do not combine automatic updates with `latest` or, from 1.0.0, a major version tag
+such as `1`. The worker still calls the deploy link only for patch releases, but the
+redeploy pulls whatever the tag points to, including a minor release whose upgrade
+steps nobody took.
 
 ## How the worker updates the app
 

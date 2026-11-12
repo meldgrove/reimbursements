@@ -3,8 +3,8 @@
 Off until `UPDATE_DEPLOY_HOOK_URL` names a deploy link: a URL of the hosting platform
 that redeploys the app when called. The worker then reads the project's releases from
 GitHub once an hour. A release belongs to the running version's series when it has the
-same major version, and before 1.0 also the same minor version. The image tags `X` and
-`0.Y` follow a series, and its releases need no operator action (docs/releases.md).
+same major and minor version. The image tag `X.Y` follows a series; its releases are
+patches, which need no operator action (docs/releases.md). A minor release may.
 
 For the newest release of the series the worker calls the deploy link once, and the
 platform pulls the series tag again. A newer release outside the series only shows in
@@ -45,7 +45,7 @@ def parse(text):
 
 def series(version):
     major, minor, _ = version
-    return (major,) if major else (major, minor)
+    return (major, minor)
 
 
 def label(version):
