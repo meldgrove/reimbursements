@@ -60,5 +60,5 @@ are in [the form contract](docs/form-contract.md); operations in
   patch releases of the same major and minor version. Its image tag (`0.2`, `1.2`) always
   names its newest release; `REIMBURSEMENTS_VERSION` chooses it.
 - **Deploy link**: the hosting platform's URL that redeploys the app. With automatic
-  updates on, the worker calls it once for each newer release of the series
-  (`portal/services/updates.py`, [automatic updates](docs/updates.md)).
+  updates on, the `updater` service calls it when the tag in `REIMBURSEMENTS_VERSION`
+  points to a new image ([automatic updates](docs/updates.md)).

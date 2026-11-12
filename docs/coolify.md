@@ -3,7 +3,7 @@
 Use `compose.yaml` for the web process, worker, scanner and migration job: create a
 Docker Compose resource from this repository and set its Docker Compose location to
 `/compose.yaml`. It runs the published release image; `REIMBURSEMENTS_VERSION` names
-the release series, such as `0.1` (see [automatic updates](updates.md)). Run
+the release series, such as `0.2` (see [automatic updates](updates.md)). Run
 PostgreSQL as a separate resource on the same private network. Route only the web
 service to a public HTTPS hostname. Keep all persistent volumes across upgrades. Use
 `compose.dev.yaml` locally.
@@ -62,9 +62,10 @@ for ambiguous delivery outcomes and retry controls.
 Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. See
 [operations](operations.md#monitoring-and-maintenance) for what a report contains.
 
-Optionally set `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN` to install new
-releases of the series automatically. [Automatic updates](updates.md) explains where
-Coolify shows both values, and the backups to set up first.
+Optionally set `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN`: the `updater`
+service then installs new releases of the series automatically.
+[Automatic updates](updates.md) explains where Coolify shows both values, and the
+backups to set up first.
 
 ## First launch and upgrades
 
