@@ -7,7 +7,7 @@
 # 0.3.x release, latest for every release, or an exact version (docs/updates.md). Every
 # deploy pulls the tag again, so a redeploy installs the newest release of the tag.
 # Coolify reads this file from the branch `stable`, which is at the newest release.
-x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.2}
+x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.3}
 
 x-application: &application
   image: *image
