@@ -5,9 +5,10 @@ its version, its series and `latest` (see [releases](releases.md)). `compose.yam
 the tag named in `REIMBURSEMENTS_VERSION` and pulls it again on every deploy.
 
 The `updater` service in `compose.yaml` installs new releases. Once an hour it asks the
-registry whether that tag points to a new image. If so, it calls the hosting
-platform's deploy link, and the platform pulls the image, runs the migrations, and
-replaces web and worker. It is [Meldgrove Updater](https://github.com/meldgrove/updater),
+registry whether that tag points to a new image. If so, it waits for the
+[cooldown](#when-a-release-installs) and then calls the hosting platform's deploy link,
+and the platform pulls the image, runs the migrations, and replaces web and worker. It
+is [Meldgrove Updater](https://github.com/meldgrove/updater),
 the same for every Meldgrove app. Until `UPDATE_DEPLOY_HOOK_URL` is set, it does
 nothing.
 
@@ -15,19 +16,35 @@ nothing.
 
 | `REIMBURSEMENTS_VERSION` | Runs | Updates automatically to |
 | --- | --- | --- |
-| `0.2` | the newest 0.2.x release | 0.2.x, never 0.3.0 |
+| `0.3` | the newest 0.3.x release | every 0.3.x release, never 0.4.0 |
 | `latest` | the newest release | every release |
-| `0.2.1` | exactly this release | nothing |
+| `0.3.1` | exactly this release | nothing |
 
-A series such as `0.2` or `1.2` only receives patch releases, which need no operator
-action. A new minor version may need operator action, so `0.2` never moves to 0.3.0.
-Moving to another series is a manual upgrade: read the release notes of every version
-since the deployed one, then change `REIMBURSEMENTS_VERSION`.
+A series such as `0.3` receives every release that needs no operator action: fixes,
+features, and migrations that run on their own. A release that operators must act on
+starts the next series, so `0.3` never moves to 0.4.0, and a deployment on a series
+stays current until then. From 1.0.0 the series is the major version: `1` receives
+every 1.x release, and 2.0.0 is the next release that needs action.
 
-With `latest`, every release installs within the hour, including one whose notes list
-upgrade steps, before anyone has taken them. Watch the repository's releases on GitHub
-(Watch > Custom > Releases) and take the steps right away. From 1.0.0 a major version
-tag such as `1` exists too; it gets minor releases and carries the same risk.
+When a release is out that the tag does not reach, the `updater` log names it. Moving
+to another series is a manual upgrade: read the release notes of every version since
+the deployed one, take their upgrade steps, then change `REIMBURSEMENTS_VERSION`. Do
+it soon: an earlier series gets no more fixes, and `stable` already holds the
+`compose.yaml` of the new one.
+
+With `latest`, every release installs, including one whose notes list upgrade steps,
+before anyone has taken them. Watch the repository's releases on GitHub (Watch >
+Custom > Releases) and take the steps right away.
+
+## When a release installs
+
+A release installs three days after it came out, so that a faulty release can be
+replaced before it reaches the deployment. `UPDATE_COOLDOWN` changes the time: `0`
+installs within the hour, `7d` waits a week. Security fixes wait as well; redeploy by
+hand to install a release at once.
+
+Coolify stops web and worker while it deploys. `UPDATE_WINDOW`, such as `02:00-05:00`
+in the time zone `TZ` (default UTC), keeps installs out of working hours.
 
 ## Switch it on
 

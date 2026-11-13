@@ -1,9 +1,11 @@
 # Deploy with Coolify
 
 Use `compose.yaml` for the web process, worker, scanner and migration job: create a
-Docker Compose resource from this repository and set its Docker Compose location to
-`/compose.yaml`. It runs the published release image; `REIMBURSEMENTS_VERSION` names
-the release series, such as `0.2` (see [automatic updates](updates.md)). Run
+Docker Compose resource from this repository, choose the branch `stable`, and set its
+Docker Compose location to `/compose.yaml`. `stable` is at the newest release; `main`
+has changes that are not released yet. The file runs the published release image;
+`REIMBURSEMENTS_VERSION` names the release series, such as `0.3` (see
+[automatic updates](updates.md)). Run
 PostgreSQL as a separate resource on the same private network. Route only the web
 service to a public HTTPS hostname. Keep all persistent volumes across upgrades. Use
 `compose.dev.yaml` locally.

@@ -8,22 +8,25 @@ the same way.
 
 ## Version numbers
 
-Versions follow Semantic Versioning. Choose the smallest part that fits the largest
-change:
+The version says whether a release installs without anyone acting. While the version
+is below 1.0.0:
 
-- **Patch** (the default): fixes, dependency and base image updates, security fixes,
-  and small changes to the interface or texts.
-- **Minor:** anything new for users or operators (features, settings, integrations),
-  database migrations, and changes operators must act on. For example a new or
-  renamed required variable in `compose.yaml`, changed Keycloak, MailerSend or
-  PostgreSQL requirements, a migration with manual steps, or a changed public URL.
-  The release notes say what to do.
-- **Major:** rare, only for a really big update: a rewrite, a new architecture or
-  deployment model, or the removal of a major feature. 1.0.0 is the maintainers'
-  deliberate decision.
+- **Patch** (the default): everything that operators need not act on. Fixes,
+  dependency and base image updates, and also new features, settings, and database
+  migrations that run on their own.
+- **Minor:** only when operators must act on upgrade. For example a new or renamed
+  required variable in `compose.yaml`, changed Keycloak, MailerSend or PostgreSQL
+  requirements, a migration with manual steps, or a changed public URL. Label the pull
+  request `breaking`; the release notes say what to do.
+- **Major:** 1.0.0 is the maintainers' deliberate decision.
 
-A series tag such as `0.2` or `1.2` therefore only receives patch releases, which
-never need operator action.
+From 1.0.0, a release that operators must act on is a major version, new features are
+minor versions, and fixes are patches.
+
+A release that needs action therefore starts a new series, and a series tag such as
+`0.3` (from 1.0.0 the major version, `1`) receives every release that needs none:
+deployments that follow it stay current. The workflow refuses a smaller version when a
+pull request merged since the last release is labelled `breaking`.
 
 ## Release notes
 
@@ -39,22 +42,28 @@ steps needed". Dependabot's pull requests (`dependencies`) come last
 2. In GitHub, open Actions > Release > Run workflow. Choose patch, minor or major
    and tick "Dry run". It builds and starts the image on amd64 and arm64 and
    shows the version, image tags and notes, without publishing anything.
-3. Run it again without "Dry run". Deployments that follow `latest` install it within
-   the hour, so have the upgrade steps of a release that needs them ready.
+3. Run it again without "Dry run". Deployments that follow a series or `latest`
+   install it once their cooldown is over, three days unless they set another, so have
+   the upgrade steps of a release that needs them ready.
 4. When the release needs operator action, edit its notes on GitHub and add the
    upgrade steps at the top.
 
-The workflow stops without changes when it is not started from `main`, when CI
-has not passed for that commit, or when nothing changed since the last release.
-Otherwise it:
+The workflow (`.github/workflows/release.yaml`) calls the workflow that every
+Meldgrove project shares
+([meldgrove/.github](https://github.com/meldgrove/.github#release-workflow)). It stops
+without changes when it is not started from `main`, when CI has not passed for that
+commit, when nothing changed since the last release, or when the chosen version is too
+small for a pull request labelled `breaking`. Otherwise it:
 
 - raises the latest `vX.Y.Z` tag by the chosen part, tags the commit, and pushes
   only the tag;
 - builds the production image with the version for amd64 and arm64 and publishes
   it as `ghcr.io/meldgrove/reimbursements:X.Y.Z`, `:X.Y`, from 1.0.0 also `:X`,
   and `:latest`. Deployments that run a series tag or `latest` install the release
-  within the hour when [automatic updates](updates.md) are on;
-- attests the image's build provenance and creates the GitHub Release.
+  after their cooldown when [automatic updates](updates.md) are on;
+- attests the image's build provenance and creates the GitHub Release;
+- moves the branch `stable` to the released commit. Coolify reads `compose.yaml` from
+  `stable`, so that file belongs to the newest release.
 
 If a job fails after the tag was pushed, fix the cause and use "Re-run failed
 jobs". It publishes from the tag. Do not start a new release for the same
@@ -79,8 +88,12 @@ Coolify passes its environment variables as build arguments.
 Verify an image's origin with:
 
 ```bash
-gh attestation verify oci://ghcr.io/meldgrove/reimbursements:X.Y.Z --owner meldgrove
+gh attestation verify oci://ghcr.io/meldgrove/reimbursements:X.Y.Z \
+  --repo meldgrove/reimbursements --signer-repo meldgrove/.github
 ```
+
+The shared workflow signs the image of every release after 0.3.0. For 0.3.0 and
+earlier, leave out `--signer-repo`.
 
 ## Repository settings
 
