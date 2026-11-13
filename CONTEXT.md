@@ -56,9 +56,10 @@ are in [the form contract](docs/form-contract.md); operations in
 
 ## Updates
 
-- **Release series**: the releases a deployment may install without operator action: the
-  patch releases of the same major and minor version. Its image tag (`0.2`, `1.2`) always
-  names its newest release; `REIMBURSEMENTS_VERSION` chooses it.
+- **Release series**: the releases a deployment may install without operator action:
+  below 1.0.0 those of the same minor version, from 1.0.0 those of the same major
+  version. A release that needs operator action starts the next series. Its image tag
+  (`0.3`, `1`) always names its newest release; `REIMBURSEMENTS_VERSION` chooses it.
 - **Deploy link**: the hosting platform's URL that redeploys the app. With automatic
   updates on, the `updater` service calls it when the tag in `REIMBURSEMENTS_VERSION`
   points to a new image ([automatic updates](docs/updates.md)).

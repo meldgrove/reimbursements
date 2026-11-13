@@ -3,10 +3,11 @@
 # PostgreSQL is a separate Coolify resource; start it before deploying this stack.
 # Enable Connect To Predefined Network to reach its internal DATABASE_URL.
 # Local development uses compose.dev.yaml.
-# The release image. REIMBURSEMENTS_VERSION names a series such as 0.2, which gets every
-# 0.2.x release, latest for every release, or an exact version (docs/updates.md). Every
+# The release image. REIMBURSEMENTS_VERSION names a series such as 0.3, which gets every
+# 0.3.x release, latest for every release, or an exact version (docs/updates.md). Every
 # deploy pulls the tag again, so a redeploy installs the newest release of the tag.
-x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.2}
+# Coolify reads this file from the branch `stable`, which is at the newest release.
+x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.3}
 
 x-application: &application
   image: *image
@@ -134,6 +135,11 @@ services:
       IMAGE: *image
       DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
       DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
+      # A release installs once it has been out this long, and only inside the window,
+      # if one is set (e.g. 02:00-05:00, in the time zone TZ).
+      COOLDOWN: ${UPDATE_COOLDOWN:-3d}
+      WINDOW: ${UPDATE_WINDOW:-}
+      TZ: ${TZ:-UTC}
 
 volumes:
   private_data:
