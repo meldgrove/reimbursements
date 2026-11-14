@@ -119,3 +119,9 @@ as `ghcr.io/meldgrove/reimbursements:<version>` and lists its changes on the Git
 Releases page. Maintainers cut releases from GitHub Actions; see
 [releases](docs/releases.md). Deployments can install new releases automatically with
 the `updater` service; see [automatic updates](docs/updates.md).
+
+## License
+
+Copyright 2026 Meldgrove
+
+Licensed under the [Apache License 2.0](LICENSE).
