@@ -56,3 +56,4 @@ jobs:
       upgrade_doc: docs/coolify.md
       title: Meldgrove Reimbursement
       description: Self-hosted reimbursement forms, receipt processing, and email delivery.
+      license: Apache-2.0
