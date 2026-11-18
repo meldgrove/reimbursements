@@ -2,9 +2,10 @@
 
 ## Configure and launch
 
-Follow [Coolify deployment](coolify.md). The application is one Coolify resource
-(web, worker, ClamAV, migrations) on one domain; PostgreSQL is a separate Coolify
-database resource reached through Connect To Predefined Network. Forms, templates,
+Follow [Coolify deployment](coolify.md) or [Debian deployment](debian.md). On Coolify,
+the application is one resource (web, worker, ClamAV, migrations) on one domain;
+PostgreSQL is a separate Coolify database resource reached through Connect To
+Predefined Network. Forms, templates,
 the privacy notice, the General settings (app language, timezone, date format) and
 the Appearance settings (accent color, favicon) are managed in the admin area at
 `/admin/`, which signs in through Keycloak and grants roles from the `groups` claim.
@@ -12,7 +13,8 @@ the Appearance settings (accent color, favicon) are managed in the admin area at
 Use a TLS reverse proxy for the public hostname. Expose only the web
 HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports.
 `compose.yaml` publishes no host port; Coolify routes directly to the web
-container. Do not add a second reverse proxy.
+container, so do not add a second reverse proxy there. On Debian, Caddy reaches
+the web service on a port published only on `127.0.0.1`.
 
 For production set `DJANGO_DEBUG=0`, a random `DJANGO_SECRET_KEY`, production
 PostgreSQL credentials/URL, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_HOSTS = {
     "api.github.com",
     "api.mailersend.com",
+    "docs.docker.com",
     "docs.kernel.org",
     "files.pythonhosted.org",
     "github.com",
