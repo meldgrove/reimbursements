@@ -8,7 +8,8 @@ has changes that are not released yet. The file runs the published release image
 [automatic updates](updates.md)). Run
 PostgreSQL as a separate resource on the same private network. Route only the web
 service to a public HTTPS hostname. Keep all persistent volumes across upgrades. Use
-`compose.dev.yaml` locally.
+`compose.dev.yaml` locally. To run it on a Debian server instead, see
+[Deploy on Debian](debian.md).
 
 ## Database and storage
 
@@ -67,8 +68,8 @@ Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. S
 
 Optionally set `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN`: the `updater`
 service then installs new releases of the series automatically.
-[Automatic updates](updates.md) explains where Coolify shows both values, and the
-backups to set up first.
+[Automatic updates](updates.md#on-coolify) explains where Coolify shows both values,
+and the backups to set up first.
 
 ## First launch and upgrades
 

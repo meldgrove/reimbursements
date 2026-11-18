@@ -123,9 +123,11 @@ services:
       timeout: 10s
       retries: 5
 
-  # Automatic updates (docs/updates.md): off until UPDATE_DEPLOY_HOOK_URL is set. When
-  # the tag in REIMBURSEMENTS_VERSION points to a new image, it calls that deploy link,
-  # and Coolify deploys the new release.
+  # Automatic updates (docs/updates.md): off until UPDATE_DEPLOY_HOOK_URL is set
+  # (Coolify) or the server watches the volume `updater` (Debian: `updater host-setup`).
+  # When the tag in REIMBURSEMENTS_VERSION points to a new image, it calls that deploy
+  # link or leaves a request in the volume, and Coolify or the server deploys the new
+  # release.
   updater:
     image: ghcr.io/meldgrove/updater:0.1
     pull_policy: always
@@ -140,7 +142,10 @@ services:
       COOLDOWN: ${UPDATE_COOLDOWN:-3d}
       WINDOW: ${UPDATE_WINDOW:-}
       TZ: ${TZ:-UTC}
+    volumes:
+      - updater:/trigger
 
 volumes:
   private_data:
   scanner_data:
+  updater:
