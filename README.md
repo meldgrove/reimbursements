@@ -29,11 +29,12 @@ Open <http://localhost:8000/f/demo/>. The admin area is at
 <http://localhost:8000/admin/>. The scanner's initial startup may take several minutes.
 Use synthetic data only. Database passwords in the examples are local placeholders.
 
-For development outside Docker, install Python 3.13, uv, the system libraries listed
-in `Dockerfile`, and run:
+For development outside Docker, install Python 3.13, uv, Node.js 26, the system
+libraries listed in `Dockerfile`, and run:
 
 ```bash
 uv sync --locked
+npm ci
 uv run python scripts/tailwind.py build
 export DJANGO_DEBUG=1 DEPLOYMENT_ENV=development
 uv run python manage.py migrate
@@ -107,6 +108,16 @@ Interface templates use local components and inline geometric icons. Tailwind
 builds the stylesheet from `portal/assets/ui.css`. No remote fonts or client-side
 CDN resources are required. Rebuild styles with `python scripts/tailwind.py build`,
 or use `watch` while editing templates.
+
+The colors and the update button come from `@meldgrove/ui`, the npm package the
+Meldgrove apps share. `npm ci` copies two of its files to `portal/static/portal/vendor/`
+(ignored by git): `tokens.css`, the colors light and dark, which `ui.css` imports, and
+`meldgrove-updates.js`, the custom elements `<meldgrove-update-button>` and
+`<meldgrove-updates-settings>`. Run `npm ci` again after an update of the package, then
+rebuild the styles; the Docker image does both. `ui.css` sets the app's teal as the
+accent (`--mg-accent`) and keeps the status colors the package does not have. Dark mode
+is the class `dark` on `<html>`, which `portal/static/portal/theme.js` sets from the
+device's setting.
 
 See the [form contract](docs/form-contract.md) for validation and document behavior,
 and [release checks](docs/production-readiness.md) for deployment verification.

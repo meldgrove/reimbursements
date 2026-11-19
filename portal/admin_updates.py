@@ -110,21 +110,23 @@ def urls(site):
     ]
 
 
+# The locale whose dates read like each date format (Admin > General); en-GB for YYYY-MM-DD.
+DATE_LOCALES = {"d.m.Y": "de-DE", "d/m/Y": "en-GB", "m/d/Y": "en-US"}
+
+
 def context(request):
     """What the admin pages need for the button and the tab, for template admins only."""
     if not is_template_admin(request.user):
         return None
+    general = app_settings.current(request)
     return {
         # The button needs the updater; the tab explains its absence.
         "button": bool(settings.UPDATER_URL),
-        "config": {
-            "app": APP_NAME,
-            "timezone": app_settings.current(request).timezone,
-            "guide": GUIDE_URL,
-            "settings": reverse("admin:portal_updates_settings"),
-            "status": reverse("admin:updates"),
-            "check": reverse("admin:updates_check"),
-            "install": reverse("admin:updates_install"),
-            "channel": reverse("admin:updates_channel"),
-        },
+        # The attributes of the @meldgrove/ui elements (updates_attributes.html).
+        "app_name": APP_NAME,
+        "url": reverse("admin:updates"),
+        "guide": f"{GUIDE_URL}#switch-it-on",
+        # Dates as in the rest of the admin area: the format and timezone of Admin > General.
+        "date_locale": DATE_LOCALES.get(general.date_format, "en-GB"),
+        "time_zone": general.timezone,
     }

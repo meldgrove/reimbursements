@@ -7,6 +7,8 @@ var
 __pycache__
 staticfiles
 portal/static/portal/ui.css
+portal/static/portal/vendor
+node_modules
 
 .env.*
 *.db

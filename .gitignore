@@ -11,6 +11,8 @@ htmlcov/
 *.egg-info/
 # Built by scripts/tailwind.py.
 portal/static/portal/ui.css
+# Copied from @meldgrove/ui by npm ci (package.json).
+portal/static/portal/vendor/
 
 # Local credentials, data and generated evidence.
 .env.*

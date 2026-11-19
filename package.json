@@ -1,0 +1,17 @@
+{
+  "name": "reimbursements",
+  "private": true,
+  "description": "The update button and the shared colors from @meldgrove/ui, copied into the static files (README.md).",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=26.0.0 <27"
+  },
+  "packageManager": "npm@11.20.0",
+  "scripts": {
+    "postinstall": "npm run static",
+    "static": "mkdir -p portal/static/portal/vendor && cp node_modules/@meldgrove/ui/dist/standalone/meldgrove-updates.js node_modules/@meldgrove/ui/dist/tokens.css portal/static/portal/vendor/"
+  },
+  "dependencies": {
+    "@meldgrove/ui": "^0.1.0"
+  }
+}

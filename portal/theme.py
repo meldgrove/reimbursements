@@ -1,9 +1,10 @@
 """The accent color from the Appearance settings, as a stylesheet over the standard one.
 
-ui.css holds the standard palette. A chosen accent color replaces its primary color:
-light pages use it as chosen, and dark pages lighten it until it reads on their dark
+ui.css holds the standard palette: the shared Meldgrove tokens with the app's teal as
+their accent (`--mg-accent`). A chosen accent color replaces it: light pages use it as
+chosen, and dark pages (class "dark" on <html>) lighten it until it reads on their dark
 background, as the standard palette does. Text on the accent is white or near-black,
-whichever contrasts more.
+whichever contrasts more. The update button's elements take the accent too.
 """
 
 import hashlib
@@ -16,15 +17,15 @@ HEX_COLOR = r"#[0-9a-f]{6}"
 STANDARD_ACCENT = "#0f766e"
 STANDARD_DARK_ACCENT = "#5eead4"
 WHITE = "#ffffff"
-# The foreground and dark background of ui.css.
+# About the foreground and dark background of the shared tokens.
 NEAR_BLACK = "#09090b"
 # Contrast to the dark background the accent needs on dark pages (WCAG AAA for text).
 DARK_CONTRAST = 7.0
 # Contrast to white below which links in the accent are hard to read (WCAG AA for text).
 READABLE_CONTRAST = 4.5
-# The custom properties ui.css derives from the primary color.
-ACCENT_PROPERTIES = ("--brand", "--primary", "--ring", "--sidebar-primary", "--sidebar-ring")
-FOREGROUND_PROPERTIES = ("--primary-foreground", "--sidebar-primary-foreground")
+# The shared tokens derive --primary and --sidebar-primary (and their foregrounds) from these.
+ACCENT_PROPERTY = "--mg-accent"
+FOREGROUND_PROPERTY = "--mg-accent-foreground"
 
 
 def normalize(value):
@@ -130,12 +131,13 @@ def dark_accent(color):
     return WHITE
 
 
-def _root(accent, indent):
-    text = foreground(accent)
-    declarations = [f"{name}: {accent};" for name in ACCENT_PROPERTIES]
-    declarations += [f"{name}: {text};" for name in FOREGROUND_PROPERTIES]
-    lines = [":root {", *(f"  {line}" for line in declarations), "}"]
-    return "".join(f"{indent}{line}\n" for line in lines)
+def _rule(selector, accent):
+    return (
+        f"{selector} {{\n"
+        f"  {ACCENT_PROPERTY}: {accent};\n"
+        f"  {FOREGROUND_PROPERTY}: {foreground(accent)};\n"
+        "}\n"
+    )
 
 
 @cache
@@ -143,10 +145,8 @@ def stylesheet(color):
     """The stylesheet that makes `color` the accent of light and dark pages."""
     return (
         "/* The accent color from the Appearance settings, over ui.css. */\n"
-        + _root(color, "")
-        + "@media (prefers-color-scheme: dark) {\n"
-        + _root(dark_accent(color), "  ")
-        + "}\n"
+        + _rule(":root", color)
+        + _rule(".dark", dark_accent(color))
     )
 
 

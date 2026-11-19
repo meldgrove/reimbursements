@@ -18,6 +18,8 @@ PUBLIC_HOSTS = {
     "docs.kernel.org",
     "files.pythonhosted.org",
     "github.com",
+    # A funding link in package-lock.json (class-variance-authority).
+    "polar.sh",
     "pypi.org",
     "registry.npmjs.org",
     "www.apache.org",
