@@ -4,8 +4,8 @@ Use `compose.yaml` for the web process, worker, scanner and migration job: creat
 Docker Compose resource from this repository, choose the branch `stable`, and set its
 Docker Compose location to `/compose.yaml`. `stable` is at the newest release; `main`
 has changes that are not released yet. The file runs the published release image;
-`REIMBURSEMENTS_VERSION` names the release series, such as `0.3` (see
-[automatic updates](updates.md)). Run
+`REIMBURSEMENTS_VERSION` names the release series, such as `0.3`, or `preview` for
+unreleased changes (see [automatic updates](updates.md)). Run
 PostgreSQL as a separate resource on the same private network. Route only the web
 service to a public HTTPS hostname. Keep all persistent volumes across upgrades. Use
 `compose.dev.yaml` locally. To run it on a Debian server instead, see
@@ -67,9 +67,10 @@ Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. S
 [operations](operations.md#monitoring-and-maintenance) for what a report contains.
 
 Optionally set `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN`: the `updater`
-service then installs new releases of the series automatically.
-[Automatic updates](updates.md#on-coolify) explains where Coolify shows both values,
-and the backups to set up first.
+service then installs new versions of the tag automatically, and template admins can
+install them from the update button in the admin header. On Coolify the tag decides
+the channel, not Admin > Updates. [Automatic updates](updates.md#on-coolify) explains
+where Coolify shows both values, and the backups to set up first.
 
 ## First launch and upgrades
 
