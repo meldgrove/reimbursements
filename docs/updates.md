@@ -140,5 +140,6 @@ backup from before the update.
 
 On Coolify, clear `UPDATE_DEPLOY_HOOK_URL` and redeploy. On Debian, run
 `sh updater-setup.sh remove` as root in `/srv/reimbursements`. The update button then
-says that automatic updates are off on this server. On Coolify, setting
+still shows new versions, but says that automatic updates are off on this server and
+installs nothing. On Coolify, setting
 `REIMBURSEMENTS_VERSION` to an exact version also stops updates once it is deployed.

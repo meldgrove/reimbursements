@@ -54,7 +54,7 @@ test("the button state follows the status", () => {
   assert.equal(kind(answer(status({ available: update("0.2.1"), attention: update("0.3.0") }))), "available");
   const installing = { version: "0.2.1", startedAt: hoursAgo(0), manual: true, stage: "pulling" };
   assert.deepEqual(Updates.button(answer(status({ installing }))), { kind: "installing", version: "0.2.1", tooltip: "Installing 0.2.1…" });
-  assert.deepEqual(Updates.button(answer(status({ mode: "off", automatic: false, available: update("0.2.1") }))), {
+  assert.deepEqual(Updates.button(answer(status({ mode: "off", automatic: false }))), {
     kind: "off",
     tooltip: "Automatic updates are off on this server",
   });
@@ -108,6 +108,18 @@ test("a release that needs upgrade steps asks before it installs", () => {
   assert.equal(view.action.label, "Install anyway…");
   assert.equal(view.action.anyway, true);
   assert.match(view.action.url, /v0\.3\.0$/);
+});
+
+test("with automatic updates off, new versions show but offer no installation", () => {
+  const off = { mode: "off", automatic: false };
+  const available = answer(status({ ...off, available: update("0.2.1") }));
+  assert.equal(kind(available), "available");
+  const view = Updates.popover(available, {}, { now: NOW });
+  assert.equal(view.action, null);
+  assert.match(view.schedule, /^Automatic updates are off on this server/);
+  const attention = answer(status({ ...off, attention: update("0.3.0") }));
+  assert.equal(kind(attention), "attention");
+  assert.equal(Updates.popover(attention, {}, { now: NOW }).action, null);
 });
 
 test("installing shows the stage and that the app restarts", () => {

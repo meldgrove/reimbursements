@@ -16,6 +16,9 @@
     deploying: "Deploying",
   };
   const FAILED = ["failed", "rolled-back"];
+  // The updater refuses installations while automatic updates are off.
+  const OFF_NOTE =
+    "Automatic updates are off on this server, so nothing can install. Set them up as the deployment guide describes.";
   const SERVICE = "meldgrove-updater-reimbursements";
 
   const plural = (count, unit) => `${count} ${unit}${count === 1 ? "" : "s"}`;
@@ -65,6 +68,7 @@
   const safeUrl = (url) => (typeof url === "string" && /^https?:\/\//i.test(url) ? url : null);
   const offered = (status, version) =>
     [status?.available?.version, status?.attention?.version].includes(version);
+  const installable = (status) => Boolean(status) && status.mode !== "off";
 
   // local: { checking, waiting: an installation this page waits for, restarting,
   // failedVersion: an installation this page saw fail }
@@ -82,7 +86,6 @@
     }
     if (local.checking || status?.checking) return { kind: "checking", tooltip: "Checking for updates…" };
     if (!status) return { kind: "unknown", tooltip: response.error || "Check for updates" };
-    if (status.mode === "off") return { kind: "off", tooltip: "Automatic updates are off on this server" };
     const last = status.last;
     if (last && FAILED.includes(last.result) && (status.available?.failed || local.failedVersion === last.version)) {
       return { kind: "failed", version: last.version, tooltip: `Update to ${last.version} failed` };
@@ -95,6 +98,8 @@
       const version = status.attention.version;
       return { kind: "attention", version, tooltip: `${version} needs upgrade steps` };
     }
+    // Off shows new versions above, but installs nothing.
+    if (status.mode === "off") return { kind: "off", tooltip: "Automatic updates are off on this server" };
     const version = installed(response);
     return { kind: "current", tooltip: version ? `Up to date · ${version}` : "Up to date" };
   }
@@ -126,8 +131,8 @@
         notes,
         more: more ? `and ${plural(more, "more change")}` : "",
         url: safeUrl(update.url),
-        schedule: installs(update, now, timeZone),
-        action: { label: "Install now", version: update.version, anyway: false },
+        schedule: installable(status) ? installs(update, now, timeZone) : OFF_NOTE,
+        action: installable(status) ? { label: "Install now", version: update.version, anyway: false } : null,
       };
     }
     if (state.kind === "attention") {
@@ -137,7 +142,10 @@
         title: `${update.version} needs upgrade steps`,
         text: ["This release changes the setup. Take the upgrade steps from its release notes on the server first."],
         url: safeUrl(update.url),
-        action: { label: "Install anyway…", version: update.version, anyway: true, url: safeUrl(update.url) },
+        schedule: installable(status) ? "" : OFF_NOTE,
+        action: installable(status)
+          ? { label: "Install anyway…", version: update.version, anyway: true, url: safeUrl(update.url) }
+          : null,
       };
     }
     if (state.kind === "failed") {
@@ -146,7 +154,10 @@
         kind: state.kind,
         title: `Update to ${state.version} failed`,
         text: [message, running ? `${running} is still running.` : ""].filter(Boolean),
-        action: offered(status, state.version) ? { label: "Try again", version: state.version, anyway: false } : null,
+        action:
+          installable(status) && offered(status, state.version)
+            ? { label: "Try again", version: state.version, anyway: false }
+            : null,
       };
     }
     return null;
