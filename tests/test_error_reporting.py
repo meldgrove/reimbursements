@@ -59,6 +59,7 @@ def test_request_failure_reports_route_and_stack_without_request_data(client, re
             cookies={"sessionid": "SYNTHETIC_PRIVATE_COOKIE"},
         )
     assert response.status_code == 500
+    assert sentry_sdk.get_client().options["data_collection"]["frame_context_lines"] == 0
     [event] = reports
     [exception] = event["exception"]["values"]
     assert exception["type"] == "ValueError"
@@ -81,10 +82,53 @@ def test_application_log_errors_keep_their_message_and_drop_exception_values(rep
     assert PRIVATE not in repr(event)
 
 
-def test_library_log_errors_keep_only_the_message_template(reports):
-    logging.getLogger("weasyprint").error("Failed to load %s", PRIVATE)
+def test_library_log_errors_drop_messages_formatted_before_logging(reports):
+    logging.getLogger("weasyprint").error(f"Failed to load {PRIVATE}")
     [event] = reports
-    assert event["logentry"] == {"message": "Failed to load %s"}
+    assert event["logger"] == "weasyprint"
+    assert event["logentry"] == {"message": "Third-party log error"}
+    assert PRIVATE not in repr(event)
+
+
+def test_event_keeps_code_locations_without_raw_paths_or_sdk_metadata():
+    event = error_reporting.redact(
+        {
+            "transaction": f"/claims/{PRIVATE}/",
+            "transaction_info": {"source": "url"},
+            "tags": {"process": "web", "document": PRIVATE},
+            "contexts": {"trace": {"data": {"url": PRIVATE}}},
+            "exception": {
+                "values": [
+                    {
+                        "type": "ValueError",
+                        "mechanism": {
+                            "type": "django",
+                            "handled": False,
+                            "exception_id": 0,
+                            "is_exception_group": True,
+                            "data": {"url": PRIVATE},
+                        },
+                        "stacktrace": {
+                            "frames": [
+                                {"filename": "views.py", "lineno": 10, "vars": {"x": PRIVATE}}
+                            ]
+                        },
+                    }
+                ]
+            },
+        }
+    )
+    assert "transaction" not in event
+    assert event["tags"] == {"process": "web"}
+    [exception] = event["exception"]["values"]
+    assert exception["mechanism"] == {
+        "type": "django",
+        "handled": False,
+        "exception_id": 0,
+        "is_exception_group": True,
+    }
+    assert exception["stacktrace"]["frames"] == [{"filename": "views.py", "lineno": 10}]
+    assert PRIVATE not in repr(event)
 
 
 def test_client_mistakes_logged_by_django_are_not_reported(reports):

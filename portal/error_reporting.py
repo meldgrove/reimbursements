@@ -16,55 +16,72 @@ from sentry_sdk.integrations.stdlib import StdlibIntegration
 
 # Everything else in an event is removed, including request, user, extra and modules.
 KEPT_FIELDS = {
-    "contexts",
     "environment",
     "event_id",
     "exception",
-    "fingerprint",
     "level",
     "logentry",
     "logger",
     "platform",
     "release",
     "sdk",
-    "server_name",
     "tags",
     "timestamp",
     "transaction",
     "transaction_info",
 }
-KEPT_CONTEXTS = {"os", "runtime", "trace"}
+KEPT_EXCEPTION_FIELDS = {"module", "type"}
+KEPT_MECHANISM_FIELDS = {"type", "handled", "exception_id", "parent_id", "is_exception_group"}
 KEPT_FRAME_FIELDS = {
-    "abs_path",
-    "context_line",
     "filename",
     "function",
     "in_app",
     "lineno",
     "module",
-    "post_context",
-    "pre_context",
 }
 # The application's log messages carry only references such as job or claim IDs.
 OWN_LOGGERS = ("portal", "config")
 
 
 def redact(event, hint=None):
-    """`before_send`: keep an allowlist of fields; drop exception values and frame locals."""
+    """Keep diagnostic metadata and code locations without free-form SDK fields."""
     event = {key: value for key, value in event.items() if key in KEPT_FIELDS}
-    if "contexts" in event:
-        event["contexts"] = {
-            key: value for key, value in event["contexts"].items() if key in KEPT_CONTEXTS
-        }
-    for exception in (event.get("exception") or {}).get("values") or []:
-        exception.pop("value", None)
-        for frame in (exception.get("stacktrace") or {}).get("frames") or []:
-            for key in set(frame) - KEPT_FRAME_FIELDS:
-                del frame[key]
-    logentry = event.get("logentry")
-    if logentry and not str(event.get("logger", "")).startswith(OWN_LOGGERS):
-        # Library messages can include document text or file names: keep the template only.
-        event["logentry"] = {"message": logentry.get("message")}
+    if (event.get("transaction_info") or {}).get("source") != "route":
+        # The SDK can use the raw request path when no Django route is available.
+        event.pop("transaction", None)
+        event.pop("transaction_info", None)
+    else:
+        event["transaction_info"] = {"source": "route"}
+
+    if "tags" in event:
+        event["tags"] = {key: value for key, value in event["tags"].items() if key == "process"}
+    if exceptions := (event.get("exception") or {}).get("values"):
+        safe_exceptions = []
+        for exception in exceptions:
+            safe_exception = {
+                key: value for key, value in exception.items() if key in KEPT_EXCEPTION_FIELDS
+            }
+            if mechanism := exception.get("mechanism"):
+                safe_exception["mechanism"] = {
+                    key: value for key, value in mechanism.items() if key in KEPT_MECHANISM_FIELDS
+                }
+            frames = (exception.get("stacktrace") or {}).get("frames") or []
+            if frames:
+                safe_exception["stacktrace"] = {
+                    "frames": [
+                        {key: value for key, value in frame.items() if key in KEPT_FRAME_FIELDS}
+                        for frame in frames
+                    ]
+                }
+            safe_exceptions.append(safe_exception)
+        event["exception"] = {"values": safe_exceptions}
+    else:
+        event.pop("exception", None)
+
+    logger = str(event.get("logger", ""))
+    if event.get("logentry") and logger.split(".", 1)[0] not in OWN_LOGGERS:
+        # A library may interpolate data before it calls the logger.
+        event["logentry"] = {"message": "Third-party log error"}
     return event
 
 
@@ -95,6 +112,7 @@ def options(dsn, environment, release=None):
             "database_query_data": False,
             "queues": False,
             "stack_frame_variables": False,
+            "frame_context_lines": 0,
             "graphql": {"document": False, "variables": False},
             "gen_ai": {"inputs": False, "outputs": False},
         },
