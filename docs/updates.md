@@ -52,15 +52,19 @@ Template admins see an update icon in the admin header; form editors do not. It 
 for updates on click, shows an available update with its changes and when it installs,
 installs it at once with **Install now**, shows the progress, and says why an
 installation failed. Web and worker restart during an installation; the page reloads
-when the new version runs. For a release that needs upgrade steps, it links to its
-release notes: take the steps on the server first (on Debian, `git pull` when the
-release changes `compose.yaml`), then install it with **Install anyway…**.
+when the new version runs, on Debian once the server reports every service healthy.
+Without a result after 15 minutes, it asks to check the server and offers **Stop
+waiting**. For a release that needs upgrade steps, it links to its release notes: take
+the steps on the server first (on Debian, `git pull` when the release changes
+`compose.yaml`), then install it with **Install anyway…**. On Coolify, take the steps
+and change the tag in `REIMBURSEMENTS_VERSION` instead.
 
 Admin > Updates shows the installed version, the channel and when updates install
 automatically. Without a reachable updater, the icon is grey and Admin > Updates says
-so. `UPDATER_URL` (default `http://updater:8080`) is where the app reaches the
-updater; empty hides the icon. The updater's port has no authentication: never publish
-it.
+so. `UPDATER_URL` is where the app reaches the updater, `http://updater:8080` by
+default. Under `compose.yaml` an empty value falls back to that default; empty hides
+the icon only where the app reads its environment directly, as in the local setup.
+The updater's port has no authentication: never publish it.
 
 ## When a release installs
 
@@ -112,15 +116,19 @@ migration job has finished. When the new version does not become healthy, it res
 server installs images, not files: a release that changes `compose.yaml` needs a
 `git pull`.
 
-A server set up with updater 0.1 keeps updating along its tag; Admin > Updates then
-says that the channel needs the new host setup. To get it, as root in
-`/srv/reimbursements`:
+A server set up with updater 0.1, by a release before the update button, keeps
+updating along its tag. To get the update button and the new host setup, as root in
+`/srv/reimbursements`: run `git pull`, set `REIMBURSEMENTS_VERSION` in `.env` to the
+release that brings the update button or a newer one, then
 
 ```sh
-git pull
-docker compose up -d
-docker compose run --rm -T --pull always updater host-setup > updater-setup.sh && sudo sh updater-setup.sh
+docker compose up -d --pull always
+docker compose run --rm -T --pull always updater host-setup > updater-setup.sh
+sh updater-setup.sh
 ```
+
+The first command installs that release of the app, not only the new updater; the
+others replace the host setup, as above.
 
 ## Backups
 

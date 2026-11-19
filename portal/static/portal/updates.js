@@ -27,6 +27,8 @@
     outage: false,
     slow: false,
     failedVersion: null,
+    // An installation the admin stopped waiting for: not adopted again from the status.
+    dismissed: null,
     error: "",
   };
   let lastFetch = 0;
@@ -36,8 +38,9 @@
 
   // Network --------------------------------------------------------------------------
 
-  // An UpdatesResponse, or null when something else answered (a proxy while the app
-  // restarts, a sign-in page).
+  // { status, body, signedOut }: body is an UpdatesResponse, or null when something else
+  // answered (a proxy while the app restarts, a sign-in page); signedOut when the session
+  // no longer reaches the routes.
   async function send(url, payload) {
     const options = { credentials: "same-origin", headers: { Accept: "application/json" } };
     if (payload !== undefined) {
@@ -47,14 +50,15 @@
       options.body = JSON.stringify(payload);
     }
     const response = await fetch(url, options);
+    const signedOut = response.status === 401 || response.status === 403 || response.redirected;
     let body = null;
     try {
       body = await response.json();
     } catch {
-      return { status: response.status, body: null };
+      return { status: response.status, body: null, signedOut };
     }
     const valid = body && typeof body === "object" && typeof body.reachable === "boolean";
-    return { status: response.status, body: valid ? body : null };
+    return { status: response.status, body: valid ? body : null, signedOut };
   }
 
   // A refusal without the latest status keeps the status the page shows.
@@ -70,6 +74,7 @@
     try {
       const reply = await send(config.status);
       take(reply.body);
+      if (adopt(reply.body)) return;
     } catch {
       // Offline for a moment: keep what the page shows.
     }
@@ -81,8 +86,9 @@
     state.checking = true;
     state.error = "";
     render();
+    let reply = null;
     try {
-      const reply = await send(config.check, {});
+      reply = await send(config.check, {});
       take(reply.body);
       if (reply.status !== 200) state.error = reply.body?.error || "The check did not finish. Try again.";
     } catch {
@@ -90,27 +96,42 @@
     }
     state.checking = false;
     lastFetch = Date.now();
-    if (state.error) fail(state.error, { open });
-    else {
-      render();
-      if (open) openPopover();
+    if (adopt(reply?.body)) return;
+    if (state.error) {
+      fail(state.error, { open });
+      return;
     }
+    render();
+    if (open) openPopover();
+    // The updater answers a check that could not reach the registry with 200 and the
+    // reason. The popover's footer and the Updates tab show it; otherwise a toast does.
+    const failed = reply?.body?.reachable && reply.body.updater?.error;
+    if (open && failed && panel?.hidden && !form) toast(`The last check failed: ${failed}`, "error");
   }
 
   async function install(action) {
     if (!(await confirmInstall(action))) return;
-    const waiting = Updates.waitFor(action.version, state.response);
-    state.error = "";
-    let reply;
+    // Remembered before the request: its answer can get lost while the server installs.
+    const attempt = Updates.waitFor(action.version, state.response);
+    Object.assign(state, { waiting: attempt, outage: false, restarting: false, slow: false, failedVersion: null, error: "" });
+    remember(attempt);
+    render();
+    let reply = null;
     try {
       reply = await send(config.install, { version: action.version });
     } catch {
-      fail("The app did not answer. Try again.", { open: true });
+      reply = null;
+    }
+    if (state.waiting !== attempt) return;
+    take(reply?.body);
+    const answer = Updates.installAnswer(reply, attempt);
+    if (answer.outcome === "refused") {
+      stopWaiting();
+      fail(answer.error, { open: true });
       return;
     }
-    take(reply.body);
-    if (reply.status === 202) wait(waiting);
-    else fail(reply.body?.error || "The installation did not start. Try again.", { open: true });
+    // Follow it, or poll until the status reports it (an ambiguous answer).
+    wait(answer.attempt);
   }
 
   // Installation ---------------------------------------------------------------------
@@ -127,7 +148,8 @@
   function remembered() {
     try {
       const waiting = JSON.parse(sessionStorage.getItem(storageKey) || "null");
-      return waiting && typeof waiting.version === "string" && Number.isFinite(waiting.startedAt) ? waiting : null;
+      if (!waiting || typeof waiting.version !== "string" || !Number.isFinite(waiting.startedAt)) return null;
+      return { ...waiting, confirmed: waiting.confirmed === true, since: Number.isFinite(waiting.since) ? waiting.since : null };
     } catch {
       return null;
     }
@@ -149,15 +171,43 @@
     window.clearTimeout(installTimer);
   }
 
+  // Follows an installation that a status reports (from a poll, a check or a refusal),
+  // unless the admin stopped waiting for it.
+  function adopt(body) {
+    if (state.waiting) return false;
+    const attempt = Updates.adopt(body);
+    const dismissed = state.dismissed;
+    if (!attempt || (dismissed?.version === attempt.version && dismissed.since === attempt.since)) return false;
+    wait(attempt);
+    return true;
+  }
+
+  // Stop waiting, after 15 minutes: forget the installation and poll as usual.
+  function dismiss() {
+    const waiting = state.waiting;
+    state.dismissed = waiting && { version: waiting.version, since: waiting.since };
+    stopWaiting();
+    render();
+    refresh();
+  }
+
   async function follow() {
     const waiting = state.waiting;
     if (!waiting) return;
-    state.slow = Updates.tooSlow(waiting);
+    const now = Date.now();
     let reply = null;
     try {
       reply = await send(config.status);
     } catch {
       reply = null;
+    }
+    if (state.waiting !== waiting) return;
+    if (reply?.signedOut) {
+      // Polling cannot go on; the remembered attempt resumes after the next sign-in.
+      window.clearTimeout(installTimer);
+      Object.assign(state, { waiting: null, restarting: false, slow: false });
+      fail("The session ended. Sign in again to follow the installation.");
+      return;
     }
     if (!reply?.body) {
       // Network errors, 502 and 503 while the app restarts.
@@ -167,22 +217,33 @@
       take(reply.body);
       // The updater restarts with the app when the image changes.
       state.restarting = !reply.body.reachable;
-      const result = Updates.progress(reply.body, waiting, { outage: state.outage });
+      const attempt = Updates.observe(reply.body, waiting, now);
+      if (attempt !== waiting) {
+        state.waiting = attempt;
+        remember(attempt);
+      }
+      const result = Updates.progress(reply.body, attempt, { outage: state.outage, now });
       if (result === "done") {
         stopWaiting();
         render();
-        toast(`Updated to ${waiting.version}`);
+        toast(`Updated to ${attempt.version}`);
         window.setTimeout(() => window.location.reload(), 1500);
         return;
       }
       if (result === "failed") {
         stopWaiting();
-        state.failedVersion = waiting.version;
+        state.failedVersion = attempt.version;
         render();
         openPopover();
         return;
       }
+      if (result === "lost") {
+        stopWaiting();
+        fail(["The installation did not start.", attempt.reason].filter(Boolean).join(" "), { open: true });
+        return;
+      }
     }
+    state.slow = Updates.tooSlow(state.waiting, now);
     render();
     installTimer = window.setTimeout(follow, state.slow ? SLOW_POLL : INSTALL_POLL);
   }
@@ -296,6 +357,12 @@
     if (view.schedule) nodes.push(element("p", "text-sm text-muted-foreground", view.schedule));
     if (view.slow) {
       nodes.push(element("p", "rounded-md border border-warning-border bg-warning-background px-3 py-2 text-sm text-warning", view.slow));
+    }
+    if (view.stop) {
+      const stop = element("button", "ui-button ui-button-outline ui-button-sm w-full border-input", "Stop waiting");
+      stop.type = "button";
+      stop.addEventListener("click", dismiss);
+      nodes.push(stop);
     }
     if (view.action) {
       const variant = view.action.anyway ? "ui-button-outline border-input" : "ui-button-default";
@@ -423,7 +490,8 @@
       try {
         const reply = await send(config.channel, { channel: chosen });
         take(reply.body);
-        if (reply.status === 200 && reply.body?.reachable) {
+        // Saved only when the updater reports the chosen channel.
+        if (reply.status === 200 && reply.body?.reachable && reply.body.updater?.channel === chosen) {
           chosen = null;
           saved.textContent = `Saved. The channel is ${Updates.settings(state.response).channel}.`;
         } else {

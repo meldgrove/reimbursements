@@ -62,7 +62,8 @@ x-application: &application
     SENTRY_DSN: ${SENTRY_DSN:-}
     SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     SENTRY_RELEASE: ${SENTRY_RELEASE:-}
-    # The updater's API for the admins' update button; empty hides the button.
+    # The updater's API for the admins' update button. An empty value falls back to the
+    # default here, so it cannot switch the button off.
     UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
   volumes:
     - private_data:/app/var/private
