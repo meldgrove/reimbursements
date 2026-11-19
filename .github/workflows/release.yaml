@@ -53,7 +53,7 @@ jobs:
       image: ghcr.io/meldgrove/reimbursements
       target: runtime
       ci_workflow: ci.yaml
-      upgrade_doc: docs/coolify.md
+      upgrade_doc: docs/deployment.md
       title: Meldgrove Reimbursement
       description: Self-hosted reimbursement forms, receipt processing, and email delivery.
       license: Apache-2.0

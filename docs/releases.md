@@ -62,8 +62,9 @@ small for a pull request labelled `breaking`. Otherwise it:
   and `:latest`. Deployments that run a series tag or `latest` install the release
   after their cooldown when [automatic updates](updates.md) are on;
 - attests the image's build provenance and creates the GitHub Release;
-- moves the branch `stable` to the released commit. Coolify reads `compose.yaml` from
-  `stable`, so that file belongs to the newest release.
+- moves the branch `stable` to the released commit. Servers take the Compose files
+  from `stable` (`git pull`), and Coolify reads `compose.coolify.yaml` from it, so the
+  files they run belong to the newest release.
 
 If a job fails after the tag was pushed, fix the cause and use "Re-run failed
 jobs". It publishes from the tag. Do not start a new release for the same
@@ -83,7 +84,7 @@ publishing.
 Release images set `APP_VERSION`. `/-/healthz` reports it, and error reports name
 the release `reimbursements@X.Y.Z` unless `SENTRY_RELEASE` is set. Images built
 from source report no version unless built with `--build-arg APP_VERSION=X.Y.Z`;
-Coolify passes its environment variables as build arguments.
+some platforms pass their environment variables as build arguments.
 
 Verify an image's origin with:
 

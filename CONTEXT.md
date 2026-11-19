@@ -61,10 +61,10 @@ are in [the form contract](docs/form-contract.md); operations in
   version. A release that needs operator action starts the next series. Its image tag
   (`0.3`, `1`) always names its newest release; `REIMBURSEMENTS_VERSION` chooses it.
 - **Channel**: which versions the updater installs. Stable: releases of the series.
-  Preview: every change on `main` whose checks pass, and every release. On Debian template
-  admins choose it under Admin > Updates; on Coolify the image tag decides
+  Preview: every change on `main` whose checks pass, and every release. On a server
+  template admins choose it under Admin > Updates; on Coolify the image tag decides
   (`portal/admin_updates.py`, [automatic updates](docs/updates.md)).
 - **Deploy link**: Coolify's URL that redeploys the app. With automatic updates on
-  Coolify, the `updater` service calls it when the tag in `REIMBURSEMENTS_VERSION`
-  points to a new image; on Debian, it leaves a request in its volume instead, and the
-  server deploys ([automatic updates](docs/updates.md)).
+  Coolify (`compose.coolify.yaml`), the `updater` service calls it when the tag in
+  `REIMBURSEMENTS_VERSION` points to a new image; on a server, it leaves a request in
+  its volume instead, and the server deploys ([automatic updates](docs/updates.md)).

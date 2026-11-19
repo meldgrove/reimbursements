@@ -1,0 +1,195 @@
+# Deployment
+
+Use `compose.yaml` for the web process, worker, scanner, migration job and updater on a
+Linux server with Debian 13 or later, or a similar system with systemd and apt such as
+Ubuntu 24.04. The document sandbox needs Linux 6.2 or later (Landlock ABI 3); Debian 12
+runs Linux 6.1. The file runs the published release image; `REIMBURSEMENTS_VERSION`
+names the release series, such as `0.3`, and automatic updates set it to the exact
+version they install (see [automatic updates](updates.md)). The branch `stable` is at
+the newest release; `main` has changes that are not released yet. Caddy on the same
+server terminates HTTPS and routes the public hostname to the web service only. Keep
+all persistent volumes across upgrades. To run it on Coolify instead, see
+[Coolify](coolify.md).
+
+## Database and storage
+
+Use a PostgreSQL of your own that the containers reach over the network, and set
+`DATABASE_URL` to its URL; `localhost` in it would be the container itself. Or run one
+next to the app with `compose.postgres.yaml`: add to `.env`, with the same
+`openssl rand -hex 32` value in both places,
+
+```sh
+COMPOSE_FILE=compose.yaml:compose.postgres.yaml
+POSTGRES_PASSWORD=REPLACE_WITH_RANDOM_HEX_PASSWORD
+DATABASE_URL=postgresql://reimbursements:REPLACE_WITH_RANDOM_HEX_PASSWORD@postgres:5432/reimbursements
+```
+
+With `COMPOSE_FILE` in `.env`, every `docker compose` command in `/srv/reimbursements`
+uses both files. Keep database and private-file backups together. Docker Compose names
+the volumes after the folder: `reimbursements_private_data` holds the private files,
+`reimbursements_scanner_data` the scanner's signature database, and
+`reimbursements_postgres` the database of `compose.postgres.yaml`. Web and worker also
+get a bounded 700 MB tmpfs workspace.
+
+## Admin sign-in
+
+Create a confidential OpenID Connect client in your Keycloak realm. Enable the
+authorization code flow, disable implicit and direct password grants, and enable
+PKCE S256. Configure the following against your public hostname:
+
+| Setting | Example |
+| --- | --- |
+| Redirect URI | `https://reimbursements.example.invalid/oidc/callback/` |
+| Web origin | `https://reimbursements.example.invalid` |
+| Post-logout redirect | `https://reimbursements.example.invalid/` |
+
+Add a group membership mapper that includes full paths in the verified ID token.
+Only users with a verified email and a mapped portal group may sign in.
+
+| Environment variable | Default group | Access |
+| --- | --- | --- |
+| `KEYCLOAK_ADMIN_GROUP` | `/reimbursements/admins` | Templates, notices, all forms and claims |
+| `KEYCLOAK_EDITOR_GROUP` | `/reimbursements/editors` | Own forms and their submissions |
+
+Set `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
+Membership is refreshed at every sign-in. Admin sessions expire after eight hours.
+
+## Application settings
+
+Create `.env` from `.env.production.example` and replace all placeholder values
+([set up](#set-up), step 4). Set the public hostname in `ALLOWED_HOSTS`, the HTTPS
+origin in `CSRF_TRUSTED_ORIGINS`, and the address Caddy's requests come from in
+`TRUSTED_PROXY_CIDRS` ([set up](#set-up), step 6). Include `127.0.0.1` in allowed hosts
+for container probes.
+
+Set `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app language, timezone and date
+format are set after the first sign-in under Admin > General, the accent color and
+favicon under Admin > Appearance. Set `MAIL_FROM_ADDRESS`
+to an address in a verified MailerSend domain, and `MAIL_REPLY_TO_ADDRESS` to a
+monitored inbox. `APPROVED_DELIVERY_RECIPIENTS` lists every inbox a form may send to.
+For staging, also set a nonempty `TEST_RECIPIENT_ALLOWLIST`; it restricts accounting
+and participant messages. Do not make production receipts available to staging.
+
+Supply MailerSend API credentials and a webhook signing secret. Create a version
+2 webhook at `https://reimbursements.example.invalid/webhooks/mailersend/`, using
+your actual hostname. Subscribe to supported sent, delivered, deferred, bounced
+and suppressed events. Disable provider tracking. See [operations](operations.md)
+for ambiguous delivery outcomes and retry controls.
+
+Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. See
+[operations](operations.md#monitoring-and-maintenance) for what a report contains.
+
+The `updater` service installs new versions once the server's host setup runs, and
+template admins can install them from the update button in the admin header.
+[Automatic updates](updates.md#switch-it-on) explains the setup and the backups to set
+up first.
+
+## Set up
+
+Run the commands as root (`sudo -i`).
+
+1. **Docker:** install Docker Engine and the Compose plugin from Docker's apt
+   repository ([Debian](https://docs.docker.com/engine/install/debian/),
+   [Ubuntu](https://docs.docker.com/engine/install/ubuntu/)), and Git:
+   `apt install git`.
+2. **Get the files** at the newest release:
+
+   ```sh
+   git clone --branch stable https://github.com/meldgrove/reimbursements.git /srv/reimbursements
+   cd /srv/reimbursements
+   ```
+
+3. **Admin sign-in:** create the Keycloak client and its groups as
+   [admin sign-in](#admin-sign-in) describes.
+4. **Create `.env`** from `.env.production.example`
+   (`cp .env.production.example .env`, `chmod 600 .env`; not `.env.example`, which
+   selects the local setup) and replace all placeholder values as
+   [application settings](#application-settings) describes. Set `DATABASE_URL` as
+   [database and storage](#database-and-storage) describes, and `TRUSTED_PROXY_CIDRS`
+   to `127.0.0.1/32` until step 6.
+5. **Start:** `docker compose up -d --pull always`. The scanner's first start can take
+   several minutes.
+6. **Trusted proxy:** Caddy's requests reach `web` from the gateway of the app's Docker
+   network. Show it with:
+
+   ```sh
+   docker network inspect reimbursements_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+   ```
+
+   Set `TRUSTED_PROXY_CIDRS` in `.env` to it with `/32`, such as `172.18.0.1/32`, and
+   run `docker compose up -d` again.
+7. **HTTPS:** point the domain's DNS at the server, install Caddy (`apt install caddy`),
+   and put this site into `/etc/caddy/Caddyfile`, in place of the package's example site
+   `:80` and next to the sites of other apps:
+
+   ```text
+   reimbursements.example.invalid {
+   	request_body {
+   		max_size 10MiB
+   	}
+   	reverse_proxy 127.0.0.1:8000 {
+   		buffer_requests
+   		max_buffer_size 10MiB
+   	}
+   }
+   ```
+
+   Then `systemctl reload caddy`. Caddy gets the certificate itself. It refuses a
+   request larger than 10 MiB and receives a smaller one in full before it passes it
+   on, so a slowly sent upload does not hold one of the web process's workers. Debian
+   13's package is Caddy 2.6; Caddy 2.8 and later take `request_buffers 10MiB` instead
+   of the two lines under `reverse_proxy`.
+
+   `compose.yaml` publishes `web` on `127.0.0.1:8000` only; `REIMBURSEMENTS_PORT`
+   changes the host port. With several apps on one server, give each its own port
+   and its own site in the Caddyfile.
+8. **First launch:** sign in at `/admin/` and continue as
+   [first launch](#first-launch) describes. Run the setup check
+   in the web container, with one of your approved inboxes in place of the example:
+
+   ```sh
+   docker compose exec web python manage.py verify_setup --to finance@your-org.example.invalid
+   ```
+
+9. **Automatic updates:** [switch them on](updates.md#switch-it-on).
+
+## First launch
+
+Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your
+operator's notice, review the template declaration, and create a form with an
+approved recipient, support address and required internal values. Then run
+`python manage.py verify_setup --to <an approved inbox>` in the web container.
+It sends a synthetic claim through the scanner, document sandbox, MailerSend and the
+signed delivery webhook, and deletes it again; see
+[setup check](operations.md#setup-check). Publish your form and send a synthetic claim
+through it before accepting participant data, and verify its PDF.
+
+Run the [release checks](production-readiness.md). The migration job must complete
+before web and worker start.
+Before a manual upgrade, read the GitHub release notes of every version since the
+deployed one; they list the upgrade steps a release needs. See
+[releases](releases.md) and [automatic updates](updates.md).
+## Upgrades
+
+Before a manual upgrade, read the GitHub release notes of every version since the
+deployed one; they list the upgrade steps a release needs. Back up the database and
+private files together. Then, in `/srv/reimbursements`:
+
+1. Run `git pull` for the newest release's `compose.yaml`.
+2. Take the upgrade steps and change `REIMBURSEMENTS_VERSION` in `.env`.
+3. Stop the old web and worker before the migrations: `docker compose stop web worker`.
+4. Run `docker compose up -d --pull always`. The migration job completes before web and
+   worker start. Keep the database, private files and scanner volumes.
+
+Then run the [setup check](operations.md#setup-check) again. Automatic updates install
+the releases of the series without these steps and rely on scheduled backups instead;
+see [automatic updates](updates.md). With them, take steps 1 and 2 without changing
+`REIMBURSEMENTS_VERSION`, then install the release with **Install anyway…** in the
+update button in the admin header.
+
+Servers set up before `compose.yaml` published the port have a `compose.override.yaml`
+that publishes `127.0.0.1:8000:8000`. It does no harm: Docker Compose merges the
+identical entry. To remove it after the `git pull` that brings the new `compose.yaml`,
+delete it if it holds nothing else, and run
+`docker compose up -d --force-recreate updater`: the host setup runs Docker Compose with
+the files that started the updater, so it fails while those name a deleted file.
