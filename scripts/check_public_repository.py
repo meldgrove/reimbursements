@@ -28,8 +28,9 @@ LOCAL_HOSTS = {
     "127.0.0.1",
     "web",
     "database",
+    "postgres",
     "updater",
-    "REPLACE_WITH_COOLIFY_DATABASE_HOST",
+    "REPLACE_WITH_DATABASE_HOST",
 }
 PRIVATE_SUFFIXES = {".db", ".sqlite3", ".dump", ".eml", ".pem", ".key", ".log", ".tar", ".zip"}
 TOKEN = re.compile(

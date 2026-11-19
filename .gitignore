@@ -15,7 +15,7 @@ portal/static/portal/ui.css
 # Local credentials, data and generated evidence.
 .env.*
 !.env.example
-!.env.coolify.example
+!.env.production.example
 *.sqlite3
 *.sqlite3-*
 *.db

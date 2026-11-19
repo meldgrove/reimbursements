@@ -1,0 +1,42 @@
+# Adds a PostgreSQL 17 next to the application, for servers without a database of
+# their own. In .env, with the same `openssl rand -hex 32` value in both places:
+#   COMPOSE_FILE=compose.yaml:compose.postgres.yaml
+#   POSTGRES_PASSWORD=REPLACE_WITH_RANDOM_HEX_PASSWORD
+#   DATABASE_URL=postgresql://reimbursements:REPLACE_WITH_RANDOM_HEX_PASSWORD@postgres:5432/reimbursements
+# Back up the `postgres` volume's database together with the private files
+# (docs/operations.md, Backup and restore).
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: reimbursements
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: reimbursements
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U reimbursements -d reimbursements"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres:
