@@ -1,50 +1,80 @@
 # Automatic updates
 
 Each release publishes the production image `ghcr.io/meldgrove/reimbursements` under
-its version, its series and `latest` (see [releases](releases.md)). `compose.yaml` runs
-the tag named in `REIMBURSEMENTS_VERSION` and pulls it again on every deploy.
+its version, its series and `latest` (see [releases](releases.md)); every change on
+`main` whose checks pass is published as a preview under its version, such as
+`0.3.2-preview.4`, and `preview`. `compose.yaml` runs the tag named in
+`REIMBURSEMENTS_VERSION` and pulls it again on every deploy.
 
-The `updater` service in `compose.yaml` installs new releases. Once an hour it asks the
-registry whether that tag points to a new image. If so, it waits for the
-[cooldown](#when-a-release-installs) and then calls Coolify's deploy link, or on Debian
-leaves a request for the server, and Coolify or the server pulls the image, runs the
-migrations, and replaces web and worker. It is
-[Meldgrove Updater](https://github.com/meldgrove/updater), the same for every Meldgrove
-app. Until it is [switched on](#switch-it-on), it does nothing.
+The `updater` service in `compose.yaml` checks for new versions once an hour and
+installs them. It is [Meldgrove Updater](https://github.com/meldgrove/updater), the same
+for every Meldgrove app. It installs nothing until it is [switched on](#switch-it-on),
+but template admins see available updates in the app either way.
 
-## Choose what to run
+## Channels
+
+- **Stable** (default): releases. A release of the deployed series installs
+  automatically after the [cooldown](#when-a-release-installs). A release that needs
+  upgrade steps starts the next series: the app shows it, but it never installs on its
+  own.
+- **Preview** (unstable): every change on `main` as soon as its checks pass, before it
+  is released, and every release. Previews install at the next check, without
+  cooldown. New features first, and now and then a new bug. Previews have no release
+  notes; the app links to their changes on GitHub instead.
+
+Switching from Preview to Stable installs nothing and never goes back to an older
+version: the deployment keeps the preview until a release is newer, as a database
+migrated by a newer version may not work with an older one.
+
+On Debian, template admins choose the channel under Admin > Updates. On Coolify, the
+image tag set there decides:
 
 | `REIMBURSEMENTS_VERSION` | Runs | Updates automatically to |
 | --- | --- | --- |
 | `0.3` | the newest 0.3.x release | every 0.3.x release, never 0.4.0 |
 | `latest` | the newest release | every release |
+| `preview` | the newest preview | every preview and release |
 | `0.3.1` | exactly this release | nothing |
 
 A series such as `0.3` receives every release that needs no operator action: fixes,
 features, and migrations that run on their own. A release that operators must act on
-starts the next series, so `0.3` never moves to 0.4.0, and a deployment on a series
-stays current until then. From 1.0.0 the series is the major version: `1` receives
-every 1.x release, and 2.0.0 is the next release that needs action.
+starts the next series, so `0.3` never moves to 0.4.0. From 1.0.0 the series is the
+major version: `1` receives every 1.x release, and 2.0.0 is the next release that needs
+action. With `latest`, every release installs, including one whose notes list upgrade
+steps, before anyone has taken them.
 
-When a release is out that the tag does not reach, the `updater` log names it. Moving
-to another series is a manual upgrade: read the release notes of every version since
-the deployed one, take their upgrade steps, then change `REIMBURSEMENTS_VERSION`. Do
-it soon: an earlier series gets no more fixes, and `stable` already holds the
-`compose.yaml` of the new one.
+On Debian, the server writes the exact version it installs into
+`REIMBURSEMENTS_VERSION` in `.env`, such as `0.3.2` or `0.3.3-preview.1`.
 
-With `latest`, every release installs, including one whose notes list upgrade steps,
-before anyone has taken them. Watch the repository's releases on GitHub (Watch >
-Custom > Releases) and take the steps right away.
+## Update button
+
+Template admins see an update icon in the admin header; form editors do not. It checks
+for updates on click, shows an available update with its changes and when it installs,
+installs it at once with **Install now**, shows the progress, and says why an
+installation failed. Web and worker restart during an installation; the page reloads
+when the new version runs, on Debian once the server reports every service healthy.
+Without a result after 15 minutes, it asks to check the server and offers **Stop
+waiting**. For a release that needs upgrade steps, it links to its release notes: take
+the steps on the server first (on Debian, `git pull` when the release changes
+`compose.yaml`), then install it with **Install anyway…**. On Coolify, take the steps
+and change the tag in `REIMBURSEMENTS_VERSION` instead.
+
+Admin > Updates shows the installed version, the channel and when updates install
+automatically. Without a reachable updater, the icon is grey and Admin > Updates says
+so. `UPDATER_URL` is where the app reaches the updater, `http://updater:8080` by
+default. Under `compose.yaml` an empty value falls back to that default; empty hides
+the icon only where the app reads its environment directly, as in the local setup.
+The updater's port has no authentication: never publish it.
 
 ## When a release installs
 
 A release installs three days after it came out, so that a faulty release can be
 replaced before it reaches the deployment. `UPDATE_COOLDOWN` changes the time: `0`
-installs within the hour, `7d` waits a week. Security fixes wait as well; redeploy by
-hand to install a release at once.
+installs at the next check, `7d` waits a week. Security fixes wait as well; install
+them at once with the update button.
 
-Web and worker stop while a release installs. `UPDATE_WINDOW`, such as `02:00-05:00`
-in the time zone `TZ` (default UTC), keeps installs out of working hours.
+Web and worker stop while a version installs. `UPDATE_WINDOW`, such as `02:00-05:00`
+in the time zone `TZ` (default UTC), keeps automatic installs out of working hours.
 
 ## Switch it on
 
@@ -60,9 +90,9 @@ Set up [backups](#backups) first.
 4. In the resource's environment variables, set `UPDATE_DEPLOY_HOOK_URL` to the
    webhook and `UPDATE_DEPLOY_HOOK_TOKEN` to the token. Redeploy.
 
-The `updater` container's log then says which tag it watches, and later each
-deployment it starts or that Coolify refused. Admin > General shows the running
-version.
+The updater calls the deploy link when the tag in `REIMBURSEMENTS_VERSION` points to a
+new image; set the tag `preview` for the Preview channel. The `updater` container's log
+says which tag it watches, and later each deployment it starts or that Coolify refused.
 
 ### On Debian
 
@@ -78,10 +108,27 @@ sh updater-setup.sh
 The first command starts the image the tag points to now, which the updater takes as
 installed. The second writes the setup script from the updater's image; read it before
 you run it. The script installs a systemd unit that waits for the updater's request,
-then pulls the new image and runs `docker compose up -d`: it replaces only containers
-whose image changed, after the migration job has finished. Admin > General shows the
-running version, `docker compose logs updater` the tag the updater watches, and
-`journalctl -u meldgrove-updater-reimbursements.service` each installation.
+then writes the version into `.env`, pulls the image and runs
+`docker compose up --wait`: it replaces only containers whose image changed, after the
+migration job has finished. When the new version does not become healthy, it restores
+`.env` and starts the version before, and the update button says why.
+`journalctl -u meldgrove-updater-reimbursements.service` shows each installation. The
+server installs images, not files: a release that changes `compose.yaml` needs a
+`git pull`.
+
+A server set up with updater 0.1, by a release before the update button, keeps
+updating along its tag. To get the update button and the new host setup, as root in
+`/srv/reimbursements`: run `git pull`, set `REIMBURSEMENTS_VERSION` in `.env` to the
+release that brings the update button or a newer one, then
+
+```sh
+docker compose up -d --pull always
+docker compose run --rm -T --pull always updater host-setup > updater-setup.sh
+sh updater-setup.sh
+```
+
+The first command installs that release of the app, not only the new updater; the
+others replace the host setup, as above.
 
 ## Backups
 
@@ -100,6 +147,7 @@ backup from before the update.
 ## Switch it off
 
 On Coolify, clear `UPDATE_DEPLOY_HOOK_URL` and redeploy. On Debian, run
-`sh updater-setup.sh remove` as root in `/srv/reimbursements`. On both, setting
-`REIMBURSEMENTS_VERSION` to an exact version also stops updates once it is deployed (on
-Debian with `docker compose up -d`).
+`sh updater-setup.sh remove` as root in `/srv/reimbursements`. The update button then
+still shows new versions, but says that automatic updates are off on this server and
+installs nothing. On Coolify, setting
+`REIMBURSEMENTS_VERSION` to an exact version also stops updates once it is deployed.

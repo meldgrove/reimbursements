@@ -13,6 +13,10 @@
 <script src="{% static 'portal/admin-sidebar-state.js' %}"></script>
 <script src="{% static 'portal/admin.js' %}" defer></script>
 <script src="{% static 'portal/admin-search.js' %}" defer></script>
+{% if updates %}{{ updates.config|json_script:"updates-config" }}
+<script src="{% static 'portal/updates-state.js' %}" defer></script>
+<script src="{% static 'portal/updates.js' %}" defer></script>
+{% endif %}
 {% block extrahead %}{% endblock %}
 </head>
 {% with shell=has_permission %}
@@ -82,6 +86,7 @@
         {% block breadcrumbs %}<div class="breadcrumbs">{% if title %}{{ title }}{% endif %}</div>{% endblock %}
       </nav>
       {% endblock %}
+      {% if updates.button %}{% include "admin/portal/updates_button.html" %}{% endif %}
     </header>
     <main id="content-start" tabindex="-1" class="flex-1 px-4 py-6 outline-none md:px-8 md:py-8">
       <div id="content" class="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -109,6 +114,7 @@
   </div>
 </div>
 {% include "admin/portal/search_dialog.html" %}
+{% if updates.button %}{% include "admin/portal/updates_dialogs.html" %}{% endif %}
 {% else %}
 </div>
 {% endif %}

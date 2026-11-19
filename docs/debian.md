@@ -4,7 +4,8 @@ Use `compose.yaml` for the web process, worker, scanner and migration job on a s
 with Debian 13 or later, or a similar system with systemd and apt such as Ubuntu 24.04.
 The document sandbox needs Linux 6.2 or later (Landlock ABI 3); Debian 12 runs Linux
 6.1. The file runs the published release image; `REIMBURSEMENTS_VERSION` names the
-release series, such as `0.3` (see [automatic updates](updates.md)). The branch `stable`
+release series, such as `0.3`, and automatic updates set it to the exact version they
+install (see [automatic updates](updates.md)). The branch `stable`
 is at the newest release; `main` has changes that are not released yet. Caddy on the
 same server terminates HTTPS and routes the public hostname to the web service only.
 Keep all persistent volumes across upgrades. To run it on Coolify instead, see
@@ -108,4 +109,6 @@ private files together. Then, in `/srv/reimbursements`:
 
 Then run the [setup check](operations.md#setup-check) again. Automatic updates install
 the releases of the series without these steps and rely on scheduled backups instead;
-see [automatic updates](updates.md).
+see [automatic updates](updates.md). With them, take steps 1 and 2 without changing
+`REIMBURSEMENTS_VERSION`, then install the release with **Install anyway…** in the
+update button in the admin header.

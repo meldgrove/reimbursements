@@ -1,0 +1,18 @@
+{% load ui %}<div class="relative ml-auto shrink-0" data-updates-root>
+  {% component "button" variant="ghost" size="icon-sm" type="button" class="relative rounded-full text-muted-foreground" data_updates_button=True aria_expanded="false" aria_controls="updates-popover" aria_label="Check for updates" title="Check for updates" %}
+    {% icon "refresh-cw" data_updates_icon="refresh" %}
+    {% icon "download" data_updates_icon="download" hidden=True %}
+    {% icon "triangle-alert" data_updates_icon="failed" hidden=True %}
+    {% icon "loader" data_updates_icon="installing" class="size-4 motion-safe:animate-spin" hidden=True %}
+    <span data-updates-dot hidden class="absolute top-1 right-1 size-2 rounded-full ring-2 ring-background"></span>
+  {% endcomponent %}
+  <div id="updates-popover" role="dialog" aria-label="Updates" data-updates-popover hidden class="absolute top-full right-0 z-50 mt-2 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg">
+    <div class="flex flex-col gap-3 p-4" data-updates-body></div>
+    <div class="flex flex-col gap-1 border-t bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
+      <span data-updates-installed></span>
+      <span class="flex items-center justify-between gap-2"><span data-updates-checked></span><button type="button" data-updates-check class="font-medium text-primary hover:underline">Check now</button></span>
+      <span class="text-destructive" data-updates-check-error hidden></span>
+    </div>
+  </div>
+  <template data-updates-external>{% icon "external-link" class="size-3.5" %}</template>
+</div>

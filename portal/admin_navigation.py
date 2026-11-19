@@ -32,7 +32,7 @@ SECTIONS = (
         "Admin",
         "settings",
         "admin:portal_appsettings_changelist",
-        ("appsettings", "appearance", "formtemplate", "privacynotice"),
+        ("appsettings", "appearance", "formtemplate", "privacynotice", "updates"),
         template_admins_only=True,
         separated=True,
     ),
@@ -64,6 +64,14 @@ SETTINGS_TABS = (
         "shield-check",
         "admin:portal_privacynotice_changelist",
         ("privacynotice",),
+        template_admins_only=True,
+    ),
+    # Not a model: the channel lives in the updater (portal.admin_updates).
+    Page(
+        "Updates",
+        "refresh-cw",
+        "admin:portal_updates_settings",
+        ("updates",),
         template_admins_only=True,
     ),
 )

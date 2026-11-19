@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
@@ -13,6 +14,12 @@ PORTAL_OPERATOR = os.getenv("PORTAL_OPERATOR", "")
 PORTAL_LEGAL_URL = os.getenv("PORTAL_LEGAL_URL", "")
 # Set in release images (Dockerfile); empty in images built from source.
 APP_VERSION = os.getenv("APP_VERSION", "")
+# The updater service's API (docs/updates.md) for the admins' update button; empty
+# switches the button off.
+UPDATER_URL = os.getenv("UPDATER_URL", "http://updater:8080").strip().rstrip("/")
+_updater = urlsplit(UPDATER_URL)
+if UPDATER_URL and (_updater.scheme not in {"http", "https"} or not _updater.hostname):
+    raise ImproperlyConfigured("UPDATER_URL must be empty or a URL such as http://updater:8080.")
 DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 DEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV", "development" if DEBUG else "production")
 if DEPLOYMENT_ENV not in {"development", "staging", "production"} or DEBUG != (

@@ -74,6 +74,11 @@
     });
   });
 
+  // The settings tabs scroll sideways on narrow screens; show the current one.
+  document
+    .querySelector("[data-settings-tabs] [aria-current=page]")
+    ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+
   document.querySelectorAll("[data-dismiss-after]").forEach((message) => {
     window.setTimeout(() => {
       message.classList.add("transition-opacity", "duration-300", "opacity-0");

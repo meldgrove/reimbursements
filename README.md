@@ -119,7 +119,9 @@ operators must act on (its notes say how). Each release publishes the production
 as `ghcr.io/meldgrove/reimbursements:<version>` and lists its changes on the GitHub
 Releases page. Maintainers cut releases from GitHub Actions; see
 [releases](docs/releases.md). Deployments can install new releases automatically with
-the `updater` service; see [automatic updates](docs/updates.md).
+the `updater` service, or previews of unreleased changes. Template admins see new
+versions in the admin header, install them from there, and choose the channel under
+Admin > Updates; see [automatic updates](docs/updates.md).
 
 ## License
 

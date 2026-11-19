@@ -90,6 +90,7 @@ ICONS = {
     "x": '<path d="M7 7L25 25M7 25L25 7"/>',
     "plus": '<path d="M5 16H27M16 5V27"/>',
     "calendar": '<rect x="5" y="7" width="22" height="21" rx="3"/><path d="M5 14H27M11 4V10M21 4V10M11 20H13M19 20H21"/>',
+    "download": '<path d="M4 22V28H28V22M16 4V23L8 15M16 23L24 15"/>',
     "corner-down-left": '<path d="M25 5V20H6L12 14M6 20L12 26"/>',
     "external-link": '<path d="M18 5H27V14M27 5L14 18M13 6H5V27H26V19"/>',
     "eye": '<path d="M3 16Q16-2 29 16Q16 34 3 16Z"/><circle cx="16" cy="16" r="4"/>',

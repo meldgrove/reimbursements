@@ -23,7 +23,14 @@ PUBLIC_HOSTS = {
     "www.apache.org",
     "www.w3.org",
 }
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "web", "database", "REPLACE_WITH_COOLIFY_DATABASE_HOST"}
+LOCAL_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "web",
+    "database",
+    "updater",
+    "REPLACE_WITH_COOLIFY_DATABASE_HOST",
+}
 PRIVATE_SUFFIXES = {".db", ".sqlite3", ".dump", ".eml", ".pem", ".key", ".log", ".tar", ".zip"}
 TOKEN = re.compile(
     r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|"
