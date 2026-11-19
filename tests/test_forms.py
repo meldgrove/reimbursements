@@ -80,14 +80,20 @@ def test_submitted_form_link_starts_a_new_claim(client, accepted):
     assert Draft.objects.exclude(pk=first.pk).filter(claim__isnull=True).count() == 1
 
 
-def test_draft_form_is_closed_but_owners_can_preview(client, form):
-    form.status = Form.Status.DRAFT
+@pytest.mark.parametrize("status", [Form.Status.DRAFT, Form.Status.ARCHIVED])
+def test_unpublished_form_name_is_private_but_owners_can_preview(client, form, status):
+    form.name = "Private unpublished form name"
+    form.status = status
     form.save()
-    assert client.get("/f/test/").status_code == 403
+    response = client.get("/f/test/")
+    assert response.status_code == 403
+    assert form.name.encode() not in response.content
     user = get_user_model().objects.create_user("editor-subject", email="editor@example.invalid")
     roles.assign(user, {roles.FORM_EDITOR})
     client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
-    assert client.get("/f/test/").status_code == 403
+    response = client.get("/f/test/")
+    assert response.status_code == 403
+    assert form.name.encode() not in response.content
     form.owners.add(user)
     response = client.get("/f/test/")
     assert response.status_code == 200 and b"Vorschau" in response.content

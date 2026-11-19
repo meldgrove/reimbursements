@@ -126,6 +126,14 @@ class KeycloakBackend(OIDCAuthenticationBackend):
 
 
 class AdminCallbackView(OIDCAuthenticationCallbackView):
+    def get(self, request):
+        # The provider's error callback can clear an existing login, so it also needs state.
+        if request.GET.get("error") and request.GET.get("state") not in request.session.get(
+            "oidc_states", {}
+        ):
+            raise SuspiciousOperation("OIDC error callback state did not match.")
+        return super().get(request)
+
     def login_success(self):
         response = super().login_success()
         # An inactivity timeout would let ordinary session writes prolong admin access.

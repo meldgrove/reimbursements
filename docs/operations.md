@@ -252,8 +252,9 @@ cover unhandled errors in web requests and management commands, and errors the
 application logs, such as failed jobs or purges. They follow the same limits as
 the logs: exception type, code locations, the URL pattern and the application's
 own log message, without exception values, request data, users, local variables
-or breadcrumbs. Library log messages keep only their template. Outgoing requests
-and document processes get no tracing headers or variables. The `process` tag
+or breadcrumbs. Reports omit raw request paths when there is no matched route.
+For library log errors, reports keep the logger name and omit the message text.
+Outgoing requests and document processes get no tracing headers or variables. The `process` tag
 is `web` or the management command, e.g. `run_jobs`. `SENTRY_ENVIRONMENT`
 defaults to `DEPLOYMENT_ENV`. `SENTRY_RELEASE` names the deployed version and
 defaults to `reimbursements@<version>` in [release images](releases.md).
