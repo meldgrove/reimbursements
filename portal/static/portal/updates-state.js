@@ -93,9 +93,9 @@
     if (local.checking || status?.checking) return { kind: "checking", tooltip: "Checking for updates…" };
     if (!status) return { kind: "unknown", tooltip: response.error || "Check for updates" };
     const last = status.last;
-    // A newer offer replaces the failure; its popover keeps the failure as a line.
-    const offered = status.available || status.attention;
-    const replaced = Boolean(offered) && offered.version !== last?.version;
+    // While the failed version is offered in either slot, its failure comes first. Once
+    // it is not and a newer one is, that offer replaces it and keeps it as a line.
+    const replaced = Boolean(status.available || status.attention) && !offer(status, last?.version);
     if (last && FAILED.includes(last.result) && !replaced && (offer(status, last.version)?.failed || local.failedVersion === last.version)) {
       return { kind: "failed", version: last.version, tooltip: `Update to ${last.version} failed` };
     }

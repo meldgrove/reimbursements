@@ -267,6 +267,32 @@ for (const [name, signedOut] of [
   });
 }
 
+test("a sign-out holds until the page reloads, whatever a request in flight answers", async () => {
+  const current = status({ available: null });
+  const running = status({ available: null, installing: { version: "0.2.1", startedAt: "2026-11-19T12:00:30Z", manual: false, stage: "pulling" } });
+  let answerCheck;
+  const button = load({
+    "/status": () => (Date.now() === NOW ? json(200, answer(current)) : json(404, { error: "Sign in as a template admin to manage updates.", signedOut: true })),
+    "/check": () => new Promise((resolve) => (answerCheck = resolve)),
+  });
+  await advance(30_000, 1000);
+  button.click();
+  await settle();
+  // The focus poll finds the session ended while the check still runs.
+  await advance(31_000, 1000);
+  button.focus();
+  await settle();
+  assert.deepEqual(button.requests, ["/status", "/check", "/status"]);
+  // The check answers afterwards, reporting an installation: ignored.
+  answerCheck(json(200, answer(running)));
+  await settle();
+  assert.equal(button.remembered(), null);
+  await advance(11 * 60_000, 30_000);
+  button.focus();
+  await settle();
+  assert.deepEqual(button.requests, ["/status", "/check", "/status"]);
+});
+
 test("a check from the header that cannot reach the updater says why", async () => {
   const current = status({ available: null });
   const unreachable = { app: { version: "0.2.0" }, reachable: false, updater: null, error: "The update service did not answer within 35 s." };

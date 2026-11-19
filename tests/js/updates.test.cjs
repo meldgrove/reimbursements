@@ -374,6 +374,16 @@ test("Stop waiting ignores that installation by its identity, also after the upd
   assert.equal(Updates.adopt(following({ installing: older }), NOW + 60_000, asked).version, "0.2.1");
 });
 
+test("a failed version still offered comes first, also when the other slot offers another", () => {
+  const last = { version: "0.3.0", result: "rolled-back", message: "migrate failed", finishedAt: hoursAgo(1) };
+  const response = answer(status({ last, available: update("0.2.1"), attention: update("0.3.0", { failed: "migrate failed" }) }));
+  assert.equal(kind(response), "failed");
+  const view = Updates.popover(response, {}, { now: NOW });
+  assert.equal(view.title, "Update to 0.3.0 failed");
+  // Try again keeps the upgrade-steps confirmation of the attention offer.
+  assert.deepEqual(view.action, { label: "Try again", version: "0.3.0", anyway: true, url: view.url });
+});
+
 test("a newer offer replaces an old failure and keeps its message", () => {
   const last = { version: "0.2.1", result: "rolled-back", message: "web is unhealthy", finishedAt: hoursAgo(1) };
   const newer = answer(status({ last, available: update("0.2.2") }));

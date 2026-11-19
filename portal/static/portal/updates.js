@@ -33,7 +33,8 @@
     failedVersion: null,
     // An installation the admin stopped waiting for: not adopted again from the status.
     dismissed: null,
-    // The session no longer reaches the routes: no automatic requests until a reload.
+    // The session no longer reaches the routes: no requests, and answers of requests in
+    // flight ignored, until the page reloads.
     signedOut: false,
     error: "",
   };
@@ -90,10 +91,13 @@
     }
   }
 
-  // Stops every automatic status request of the page; a remembered installation resumes
-  // on a later page load.
+  const SIGNED_OUT = "The session ended. Sign in again, then reload the page.";
+
+  // Stops every status request of the page until it reloads, also the polls of an
+  // installation it follows; the remembered installation resumes on a later page load.
   function signOut(message) {
     state.signedOut = true;
+    if (state.waiting) stopWaiting({ forget: false });
     if (message) fail(message);
     else render();
   }
@@ -101,17 +105,21 @@
   // A refusal without the latest status keeps the status the page shows.
   function take(body) {
     if (!body) return;
-    state.signedOut = false;
     const keep = body.reachable && !body.updater && state.response?.updater;
     state.response = keep ? { ...body, updater: state.response.updater } : body;
   }
 
   // `automatic`: from the interval, a regained focus or the end of a wait, not a click.
   async function refresh({ automatic = true } = {}) {
-    if (state.waiting || (automatic && state.signedOut)) return;
+    if (state.waiting) return;
+    if (state.signedOut) {
+      if (!automatic) fail(SIGNED_OUT);
+      return;
+    }
     lastFetch = Date.now();
     try {
       const reply = await send(config.status, undefined, STATUS_TIMEOUT);
+      if (state.signedOut) return;
       if (reply.signedOut) {
         signOut();
         return;
@@ -132,12 +140,22 @@
 
   async function check({ open = false } = {}) {
     if (state.checking || state.waiting) return;
+    if (state.signedOut) {
+      fail(SIGNED_OUT, { open });
+      return;
+    }
     state.checking = true;
     state.error = "";
     render();
     let reply = null;
     try {
       reply = await send(config.check, {}, CHECK_TIMEOUT);
+      if (state.signedOut) {
+        // Signed out while the check ran: its answer no longer counts.
+        state.checking = false;
+        render();
+        return;
+      }
       if (reply.signedOut) {
         state.signedOut = true;
         state.error = "The session ended. Sign in again, then check again.";
@@ -584,7 +602,7 @@
       render();
       try {
         const reply = await send(config.channel, { channel: chosen }, CHECK_TIMEOUT);
-        if (reply.signedOut) state.signedOut = true;
+        if (reply.signedOut) signOut();
         take(reply.body);
         // Saved only when the updater reports the chosen channel.
         if (reply.status === 200 && reply.body?.reachable && reply.body.updater?.channel === chosen) {
