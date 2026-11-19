@@ -88,3 +88,20 @@ def test_participant_and_development_password_sessions_remain_usable(
     local = Client()
     assert local.login(username=user.username, password="development-only")
     assert local.get("/admin/portal/claim/").status_code == 200
+
+
+@pytest.mark.parametrize("matching_state", [False, True])
+def test_oidc_error_callback_requires_state_to_end_a_session(
+    client, django_user_model, monkeypatch, matching_state
+):
+    user = django_user_model.objects.create_user("admin-subject")
+    roles.assign(user, {roles.TEMPLATE_ADMIN})
+    sign_in(client, user, monkeypatch)
+    response = client.get("/oidc/authenticate/")
+    state = parse_qs(urlsplit(response.url).query)["state"][0]
+    response = client.get(
+        "/oidc/callback/",
+        {"error": "access_denied", "state": state if matching_state else "other-state"},
+    )
+    assert response.status_code == (302 if matching_state else 400)
+    assert ("_auth_user_id" not in client.session) == matching_state
