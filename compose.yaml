@@ -1,19 +1,20 @@
-# Production: the whole application as one Coolify resource: web, worker, ClamAV
-# and migrations. Coolify uses this file as it is (docs/coolify.md).
-# PostgreSQL is a separate Coolify resource; start it before deploying this stack.
-# Enable Connect To Predefined Network to reach its internal DATABASE_URL.
-# Local development uses compose.dev.yaml.
-# The release image. REIMBURSEMENTS_VERSION names a series such as 0.3, which gets every
-# 0.3.x release, latest for every release, preview for every preview, or an exact
-# version (docs/updates.md). On Debian, the automatic updates set it to the exact version
-# they install. Every deploy pulls the tag again, so a redeploy installs the newest
-# release of the tag. Coolify reads this file from the branch `stable`, which is at the
-# newest release.
+# Production on a Linux server (Debian 13, Ubuntu 24.04) with Docker Compose: web,
+# worker, ClamAV, migrations and the updater, behind Caddy on the same server
+# (docs/deployment.md). Settings live in .env next to this file
+# (.env.production.example); start it with:
+#
+#   docker compose up -d --pull always
+#
+# PostgreSQL runs separately (a server of your own), or next to the app with
+# compose.postgres.yaml (COMPOSE_FILE=compose.yaml:compose.postgres.yaml in .env).
+# The release image. REIMBURSEMENTS_VERSION names a version such as 0.3.1 or a series
+# such as 0.3 (docs/updates.md). With automatic updates, the server writes the exact
+# version it installs there. The branch `stable` is at the newest release. On Coolify,
+# use compose.coolify.yaml (docs/coolify.md). Local development uses compose.dev.yaml.
 x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.3}
 
 x-application: &application
   image: *image
-  pull_policy: always
   restart: unless-stopped
   pids_limit: 64
   mem_limit: 512m
@@ -23,7 +24,7 @@ x-application: &application
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set a random secret of at least 50 characters}
     ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Include the public hostname and 127.0.0.1}
     CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set the public HTTPS origin}
-    DATABASE_URL: ${DATABASE_URL:?Use the separate PostgreSQL resource internal URL}
+    DATABASE_URL: ${DATABASE_URL:?Set the PostgreSQL URL}
     PRIVATE_STORAGE_ROOT: /app/var/private
     TRUST_PROXY_HEADERS: "1"
     TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?Set the networks used by the trusted reverse proxy}
@@ -77,8 +78,7 @@ x-dependencies: &dependencies
     condition: service_completed_successfully
 
 services:
-  # One-time job. Coolify leaves services with restart "no" out of the application
-  # health, so the successfully exited container does not mark the stack unhealthy.
+  # One-time job before web and worker start.
   migrate:
     <<: *application
     command: ["python", "manage.py", "migrate", "--noinput"]
@@ -86,14 +86,12 @@ services:
 
   web:
     <<: *application
-    expose:
-      - "8000"
-    # Each sync gunicorn worker serves one request at a time, so a slowly sent request
-    # would hold it. Traefik receives the whole request first and forwards it at once.
-    # Coolify attaches middlewares defined here to the routers it generates for `web`.
-    # The limit stays above the upload cap, so the app still answers oversized uploads.
-    labels:
-      - traefik.http.middlewares.reimbursement-portal-buffering.buffering.maxRequestBodyBytes=10485760
+    # Only on the server itself, for Caddy. REIMBURSEMENTS_PORT picks another host port
+    # when 8000 is taken, e.g. by another app. Each sync gunicorn worker serves one
+    # request at a time, so Caddy receives the whole request first and forwards it at
+    # once (docs/deployment.md).
+    ports:
+      - "127.0.0.1:${REIMBURSEMENTS_PORT:-8000}:8000"
     depends_on: *dependencies
     healthcheck:
       test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/-/readyz',headers={'X-Health-Token':os.environ['HEALTHCHECK_TOKEN'],'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r,timeout=3)"]
@@ -129,21 +127,17 @@ services:
       retries: 5
 
   # Automatic updates and the admins' update button (docs/updates.md). It checks for new
-  # versions always, and installs them once UPDATE_DEPLOY_HOOK_URL is set (Coolify: it
-  # calls that deploy link when the tag points to a new image) or the server watches the
-  # volume `updater` (Debian, `updater host-setup`: the server sets
-  # REIMBURSEMENTS_VERSION to the version, pulls it and rolls back if it fails). Its API
-  # on port 8080 has no authentication: never publish the port.
+  # versions always, and installs them once the server runs `updater host-setup`: the
+  # server then sets REIMBURSEMENTS_VERSION to the version, pulls it, runs
+  # `docker compose up --wait`, and rolls back if it fails. Its API on port 8080 has no
+  # authentication: never publish the port.
   updater:
     image: ghcr.io/meldgrove/updater:0.2
-    pull_policy: always
     restart: unless-stopped
     mem_limit: 64m
     environment:
       IMAGE: *image
       VERSION_VARIABLE: REIMBURSEMENTS_VERSION
-      DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
-      DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
       # A release installs once it has been out this long, and only inside the window,
       # if one is set (e.g. 02:00-05:00, in the time zone TZ).
       COOLDOWN: ${UPDATE_COOLDOWN:-3d}

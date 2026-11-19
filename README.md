@@ -73,8 +73,8 @@ operator's support process.
 
 Production requires PostgreSQL, Keycloak, MailerSend, ClamAV, a bounded private
 document workspace, and worker heartbeat checks. Password sign-in is available
-only in development. See deployment [with Coolify](docs/coolify.md) or
-[on Debian](docs/debian.md), and [operations](docs/operations.md).
+only in development. See [deployment](docs/deployment.md) on a Linux server (Debian,
+Ubuntu), or [with Coolify](docs/coolify.md), and [operations](docs/operations.md).
 
 ## Manage forms
 
