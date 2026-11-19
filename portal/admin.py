@@ -1,5 +1,5 @@
 """The admin area, always in English: claims, forms, templates, the privacy notice and the
-General and Appearance settings, behind Keycloak."""
+General and Appearance settings, behind Keycloak. Updates are in portal.admin_updates."""
 
 import uuid
 
@@ -19,7 +19,7 @@ from django.utils.html import format_html, format_html_join
 from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from mozilla_django_oidc.views import OIDCLogoutView
 
-from portal import admin_navigation, app_settings, roles, theme
+from portal import admin_navigation, admin_updates, app_settings, roles, theme
 from portal.constants import APP_NAME
 from portal.models import (
     Appearance,
@@ -78,6 +78,7 @@ class PortalAdminSite(admin.AdminSite):
             context["nav_sections"] = admin_navigation.sections(request)
             context["settings_tabs"] = admin_navigation.settings_tabs(request)
             context["account_url"] = settings.KEYCLOAK_ACCOUNT_URL if settings.OIDC_ENABLED else ""
+            context["updates"] = admin_updates.context(request)
         return context
 
     def index(self, request, extra_context=None):
@@ -95,6 +96,7 @@ class PortalAdminSite(admin.AdminSite):
                 self.admin_view(self.search_suggestions),
                 name="search_suggestions",
             ),
+            *admin_updates.urls(self),
             *super().get_urls(),
         ]
 
