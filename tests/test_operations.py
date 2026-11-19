@@ -211,6 +211,14 @@ def test_claim_status_streams_beyond_100_without_n_plus_one(form, django_assert_
     assert "oldest_job_age_seconds" in records[-1]
 
 
+@pytest.mark.parametrize("path", ["/-/healthz", "/-/readyz"])
+def test_health_probes_reject_non_ascii_tokens(client, settings, path):
+    settings.DEBUG = False
+    settings.HEALTHCHECK_TOKEN = "test-probe-token"
+    response = client.get(path, headers={"X-Health-Token": "invalid-ä"})
+    assert response.status_code == 404
+
+
 def test_readiness_detects_dead_worker_and_old_queue(client, settings):
     settings.REQUIRE_WORKER_HEARTBEAT = True
     assert client.get("/-/readyz").status_code == 503

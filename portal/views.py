@@ -1,5 +1,4 @@
 import json
-import secrets
 from functools import wraps
 
 from django.conf import settings
@@ -8,6 +7,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
@@ -291,7 +291,8 @@ def mailersend_webhook(request):
 def health_authorized(request):
     return settings.DEBUG or bool(
         settings.HEALTHCHECK_TOKEN
-        and secrets.compare_digest(
+        # Django compares bytes even if the request header contains non-ASCII text.
+        and constant_time_compare(
             request.headers.get("X-Health-Token", ""), settings.HEALTHCHECK_TOKEN
         )
     )
