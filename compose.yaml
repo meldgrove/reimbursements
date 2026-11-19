@@ -4,9 +4,11 @@
 # Enable Connect To Predefined Network to reach its internal DATABASE_URL.
 # Local development uses compose.dev.yaml.
 # The release image. REIMBURSEMENTS_VERSION names a series such as 0.3, which gets every
-# 0.3.x release, latest for every release, or an exact version (docs/updates.md). Every
-# deploy pulls the tag again, so a redeploy installs the newest release of the tag.
-# Coolify reads this file from the branch `stable`, which is at the newest release.
+# 0.3.x release, latest for every release, preview for every preview, or an exact
+# version (docs/updates.md). On Debian, the automatic updates set it to the exact version
+# they install. Every deploy pulls the tag again, so a redeploy installs the newest
+# release of the tag. Coolify reads this file from the branch `stable`, which is at the
+# newest release.
 x-image: &image ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION:?Set the release series, e.g. 0.3}
 
 x-application: &application
@@ -60,6 +62,8 @@ x-application: &application
     SENTRY_DSN: ${SENTRY_DSN:-}
     SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+    # The updater's API for the admins' update button; empty hides the button.
+    UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
   volumes:
     - private_data:/app/var/private
   tmpfs:
@@ -123,18 +127,20 @@ services:
       timeout: 10s
       retries: 5
 
-  # Automatic updates (docs/updates.md): off until UPDATE_DEPLOY_HOOK_URL is set
-  # (Coolify) or the server watches the volume `updater` (Debian: `updater host-setup`).
-  # When the tag in REIMBURSEMENTS_VERSION points to a new image, it calls that deploy
-  # link or leaves a request in the volume, and Coolify or the server deploys the new
-  # release.
+  # Automatic updates and the admins' update button (docs/updates.md). It checks for new
+  # versions always, and installs them once UPDATE_DEPLOY_HOOK_URL is set (Coolify: it
+  # calls that deploy link when the tag points to a new image) or the server watches the
+  # volume `updater` (Debian, `updater host-setup`: the server sets
+  # REIMBURSEMENTS_VERSION to the version, pulls it and rolls back if it fails). Its API
+  # on port 8080 has no authentication: never publish the port.
   updater:
-    image: ghcr.io/meldgrove/updater:0.1
+    image: ghcr.io/meldgrove/updater:0.2
     pull_policy: always
     restart: unless-stopped
     mem_limit: 64m
     environment:
       IMAGE: *image
+      VERSION_VARIABLE: REIMBURSEMENTS_VERSION
       DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
       DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
       # A release installs once it has been out this long, and only inside the window,
@@ -142,6 +148,8 @@ services:
       COOLDOWN: ${UPDATE_COOLDOWN:-3d}
       WINDOW: ${UPDATE_WINDOW:-}
       TZ: ${TZ:-UTC}
+      REGISTRY_USERNAME: ${UPDATE_REGISTRY_USERNAME:-}
+      REGISTRY_PASSWORD: ${UPDATE_REGISTRY_PASSWORD:-}
     volumes:
       - updater:/trigger
 
