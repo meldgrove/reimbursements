@@ -93,7 +93,10 @@
     if (local.checking || status?.checking) return { kind: "checking", tooltip: "Checking for updates…" };
     if (!status) return { kind: "unknown", tooltip: response.error || "Check for updates" };
     const last = status.last;
-    if (last && FAILED.includes(last.result) && (offer(status, last.version)?.failed || local.failedVersion === last.version)) {
+    // A newer offer replaces the failure; its popover keeps the failure as a line.
+    const offered = status.available || status.attention;
+    const replaced = Boolean(offered) && offered.version !== last?.version;
+    if (last && FAILED.includes(last.result) && !replaced && (offer(status, last.version)?.failed || local.failedVersion === last.version)) {
       return { kind: "failed", version: last.version, tooltip: `Update to ${last.version} failed` };
     }
     if (status.available) {
@@ -122,6 +125,14 @@
     return { label, version: update.version, anyway: true, url: safeUrl(update.url) };
   }
 
+  // An earlier failure, as a line in the offer that replaced it: "0.2.1 failed: <message>".
+  function failure(status) {
+    const last = status?.last;
+    if (!last || !FAILED.includes(last.result)) return "";
+    const message = last.message || offer(status, last.version)?.failed || "";
+    return `${last.version} failed${message ? `: ${message}` : ""}`;
+  }
+
   // The popover of a button state, or null when a click checks instead.
   function popover(response, local = {}, { now = Date.now(), timeZone, app = "The app" } = {}) {
     const state = button(response, local);
@@ -132,7 +143,8 @@
       const before = local.waiting?.before || running;
       const text = [
         local.restarting ? "Restarting…" : STAGES[stage] || (stage === "rolling-back" ? `Going back to ${before || "the version before"}` : ""),
-        `${app} restarts. This page reloads when it is back.`,
+        // Only a page that waits for the installation reloads.
+        local.waiting ? `${app} restarts. This page reloads when it is back.` : "",
       ];
       const slow = local.slow ? `This takes longer than expected. Check the server (journalctl -u ${SERVICE}).` : "";
       // Stop waiting: forget the installation and poll as usual again.
@@ -148,6 +160,7 @@
         title: "Update available",
         meta: [update.version, update.publishedAt ? ago(update.publishedAt, now) : ""].filter(Boolean).join(" · "),
         preview: Boolean(update.preview),
+        failure: failure(status),
         notes,
         more: more ? `and ${plural(more, "more change")}` : "",
         url: safeUrl(update.url),
@@ -166,6 +179,7 @@
             ? `This release changes the setup. The image tag set where ${app} is deployed does not reach ${update.version}: take the upgrade steps from its release notes, then change the tag there.`
             : "This release changes the setup. Take the upgrade steps from its release notes on the server first.",
         ],
+        failure: failure(status),
         url: safeUrl(update.url),
         schedule: installable(status) ? "" : OFF_NOTE,
         action: installAction("Install anyway…", status, update),
@@ -230,9 +244,23 @@
 
   // An installation this page follows (docs/updates.md, install flow): one requested
   // here, remembered before the request and unconfirmed until the updater reports it, or
-  // one a status reports. `since`: when the updater started it, once a status said so.
+  // one a status reports. `earlier`: the `last` of the newest status before it, which is
+  // never its result. `since`: when the updater started it, once a status said so; with
+  // the version, the installation's identity. `outage`: the app or the updater did not
+  // answer at some point since. While unconfirmed, `reason` says why the install answer
+  // did not confirm it, `error` why the latest status request failed, and `answered`
+  // whether the latest status answered without it.
   function waitFor(version, response, now = Date.now(), confirmed = false) {
-    return { version, before: response?.app?.version ?? null, startedAt: now, confirmed, since: null };
+    return {
+      version,
+      before: response?.app?.version ?? null,
+      startedAt: now,
+      confirmed,
+      since: null,
+      earlier: response?.updater?.last ?? null,
+      outage: false,
+      answered: false,
+    };
   }
 
   const statusOf = (response) => (response?.reachable && response.updater) || null;
@@ -240,25 +268,40 @@
     const time = Date.parse(installing?.startedAt ?? "");
     return Number.isNaN(time) ? null : time;
   };
+  // The updater writes whole seconds.
+  const second = (time) => Math.floor(time / 1000) * 1000;
+  const same = (a, b) => Boolean(a && b) && a.version === b.version && a.result === b.result && a.finishedAt === b.finishedAt;
 
-  // A result counts when it finished after the attempt started. The updater's own start
-  // time of the installation also counts, so a browser clock ahead of the server's does
-  // not hide the result.
+  // A result is the attempt's when it is not the earlier result and finished at or after
+  // the installation started: when the updater started it, once a status said so,
+  // otherwise when this page asked for it, in whole seconds.
   function fresh(last, attempt) {
     const finished = Date.parse(last?.finishedAt ?? "");
-    if (Number.isNaN(finished)) return false;
-    return finished >= Math.min(attempt.startedAt, attempt.since ?? Infinity);
+    if (Number.isNaN(finished) || same(last, attempt.earlier)) return false;
+    return finished >= (attempt.since ?? second(attempt.startedAt));
   }
 
-  // The installation a status reports, to follow, or null.
-  function adopt(response, now = Date.now()) {
+  // The installation the admin stopped waiting for (Stop waiting): its identity, or the
+  // version and when this page asked for it while the updater never reported it.
+  const identity = (attempt) => ({ version: attempt.version, since: attempt.since, startedAt: attempt.startedAt });
+
+  function ignored(installing, dismissed) {
+    if (!dismissed || installing?.version !== dismissed.version) return false;
+    const start = startOf(installing);
+    if (dismissed.since != null) return start === dismissed.since;
+    return start == null || start >= second(dismissed.startedAt);
+  }
+
+  // The installation a status reports, to follow, or null; never one the admin stopped
+  // waiting for.
+  function adopt(response, now = Date.now(), dismissed = null) {
     const installing = statusOf(response)?.installing;
-    if (!installing?.version) return null;
+    if (!installing?.version || ignored(installing, dismissed)) return null;
     return { ...waitFor(installing.version, response, now, true), since: startOf(installing) };
   }
 
-  // `attempt` after a status answer: confirmed once the status reports it or its result,
-  // or replaced by another installation the status reports instead.
+  // `attempt` after a reachable status: confirmed once the status reports it or its
+  // result, or replaced by another installation the status reports instead.
   function observe(response, attempt, now = Date.now()) {
     const status = statusOf(response);
     if (!status) return attempt;
@@ -270,7 +313,20 @@
     if (status.last?.version === attempt.version && fresh(status.last, attempt)) {
       return attempt.confirmed ? attempt : { ...attempt, confirmed: true };
     }
-    return installing?.version ? adopt(response, now) : attempt;
+    if (installing?.version) return adopt(response, now);
+    return attempt.confirmed || attempt.answered ? attempt : { ...attempt, answered: true };
+  }
+
+  // `attempt` after a status request without the updater's answer: no answer, an answer
+  // that is not the app's (a proxy while the app restarts), or `reachable: false`.
+  const outage = (attempt, error) => ({ ...attempt, outage: true, answered: false, error });
+
+  // Why a request did not get the updater's answer. `reply`: { status, body }, or null.
+  function problem(reply) {
+    if (!reply) return "The app did not answer.";
+    if (reply.body?.error) return reply.body.error;
+    if (reply.body && !reply.body.reachable) return "The update service did not answer.";
+    return `The app answered with HTTP ${reply.status}.`;
   }
 
   // What the answer to the install request means: "follow" the attempt (or the
@@ -279,24 +335,25 @@
   // or null when no answer arrived.
   function installAnswer(reply, attempt, now = Date.now()) {
     const body = reply?.body ?? null;
-    if (reply?.status === 202 && body?.reachable) {
-      return { outcome: "follow", attempt: observe(body, { ...attempt, confirmed: true }, now) };
+    if (reply?.status === 202) {
+      // Accepted, also when the answer cannot be read.
+      const confirmed = { ...attempt, confirmed: true };
+      return { outcome: "follow", attempt: body?.reachable ? observe(body, confirmed, now) : confirmed };
     }
-    const refused = (reply?.status >= 400 && reply.status < 500 && body?.error) || reply?.signedOut;
-    if (refused) {
+    if ((reply?.status >= 400 && reply.status < 500) || reply?.signedOut) {
       // Another admin or an automatic installation was faster: follow that one.
       if (adopt(body, now)) return { outcome: "follow", attempt: observe(body, attempt, now) };
-      const error = body?.error || "The app refused the request. Reload the page and try again.";
+      const error = reply.signedOut
+        ? "The session ended. Sign in again, then install."
+        : body?.error || "The app refused the request. Reload the page and try again.";
       return { outcome: "refused", attempt: null, error };
     }
-    const reason = body?.error || (reply ? `The app answered with HTTP ${reply.status}.` : "The app did not answer.");
-    return { outcome: "ambiguous", attempt: { ...attempt, reason } };
+    return { outcome: "ambiguous", attempt: { ...attempt, reason: problem(reply) } };
   }
 
-  // "done", "failed", "waiting", or "lost" (an unconfirmed attempt the status never
-  // reported) for a status answer while following `attempt`, in the order of
-  // docs/updates.md. `outage`: the app did not answer at some point since.
-  function progress(response, attempt, { outage = false, now = Date.now() } = {}) {
+  // "done", "failed" or "waiting" for a reachable status while following `attempt`, in
+  // the order of docs/updates.md.
+  function progress(response, attempt) {
     const status = statusOf(response);
     const app = response?.app?.version ?? null;
     const { version } = attempt;
@@ -306,16 +363,30 @@
     // answer before that and still roll back.
     if (status?.installing?.version === version) return "waiting";
     if (last?.result === "installed") return "done";
-    // A platform accepts a deployment before it runs it.
-    if (last?.result === "accepted") return (app ? app === version : outage) ? "done" : "waiting";
+    // A platform accepts a deployment before it runs it. Without an app version, a
+    // reachable answer after an outage tells that the app restarted.
+    if (last?.result === "accepted") return (app ? app === version : attempt.outage) ? "done" : "waiting";
     // Only the updater can say that nothing reports the installation any more.
     if (status && app === version) return "done";
-    if (status && !attempt.confirmed && now - attempt.startedAt >= RECONCILE) return "lost";
     return "waiting";
   }
 
-  // Counted from when the installation started, as far as this page knows.
-  const tooSlow = (waiting, now = Date.now()) => now - Math.min(waiting.startedAt, waiting.since ?? Infinity) > PATIENCE;
+  // When the wait for an unconfirmed attempt ends, whatever the status requests return;
+  // null once confirmed.
+  const deadline = (attempt) => (attempt.confirmed ? null : attempt.startedAt + RECONCILE);
+
+  // Why an attempt is forgotten at its deadline.
+  function unconfirmed(attempt) {
+    const [message, detail] = attempt.answered
+      ? ["The installation did not start.", attempt.reason]
+      : ["The installation could not be confirmed.", attempt.error || attempt.reason];
+    return [message, detail].filter(Boolean).join(" ");
+  }
+
+  // When an installation asks the admin to look at the server: counted from when it
+  // started, as far as this page knows.
+  const slowAt = (waiting) => Math.min(waiting.startedAt, waiting.since ?? Infinity) + PATIENCE;
+  const tooSlow = (waiting, now = Date.now()) => now > slowAt(waiting);
 
   const api = {
     ago,
@@ -327,10 +398,16 @@
     automatic,
     settings,
     waitFor,
+    identity,
     adopt,
     observe,
+    outage,
+    problem,
     installAnswer,
     progress,
+    deadline,
+    unconfirmed,
+    slowAt,
     tooSlow,
     PATIENCE,
     RECONCILE,

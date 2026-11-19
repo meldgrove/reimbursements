@@ -86,7 +86,13 @@ def test_only_template_admins_reach_the_routes(client, service, role):
     if role:
         signed_in(client, role)
     for method, url in ROUTES:
-        assert getattr(client, method)(url).status_code == 404
+        response = getattr(client, method)(url)
+        assert response.status_code == 404
+        # The button stops its automatic requests on this mark, as after a sign-in redirect.
+        assert response.json() == {
+            "error": "Sign in as a template admin to manage updates.",
+            "signedOut": True,
+        }
     assert service[0] == []
 
 
@@ -185,6 +191,25 @@ def test_an_updater_refusal_answers_409_with_its_error_and_the_latest_status(adm
     answers["POST /v1/channel"] = httpx.Response(409, json={"error": "Change the tag there."})
     response = post(admin_client, "/admin/updates/channel/", {"channel": "preview"})
     assert response.status_code == 409 and response.json()["error"] == "Change the tag there."
+
+
+@pytest.mark.parametrize("code", [500, 503])
+def test_an_updater_server_error_of_an_installation_stays_one(admin_client, service, code):
+    calls, answers = service
+    answers["POST /v1/install"] = httpx.Response(code, json={"error": "The state file is busy."})
+    response = post(admin_client, "/admin/updates/install/", {"version": "0.2.1"})
+    # Never a 409: the button takes that as a refusal, and the installation may have started.
+    assert response.status_code == code
+    assert response.json() == {
+        "app": {"version": "0.2.0"},
+        "reachable": True,
+        "updater": STATUS,
+        "error": "The state file is busy.",
+    }
+    answers["POST /v1/install"] = httpx.Response(503, text="Service Unavailable")
+    response = post(admin_client, "/admin/updates/install/", {"version": "0.2.1"})
+    assert response.status_code == 503
+    assert response.json()["error"] == "The update service answered with HTTP 503."
 
 
 def test_an_updater_error_on_the_status_itself_answers_409(admin_client, service):

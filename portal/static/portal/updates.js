@@ -10,6 +10,11 @@
   const FOCUS_POLL = 60_000;
   const INSTALL_POLL = 2000;
   const SLOW_POLL = 10_000;
+  // Browser limits of each request, above the app's own limits towards the updater (3 s,
+  // 10 s and 35 s), so that a stalled request never holds up the next one.
+  const STATUS_TIMEOUT = 10_000;
+  const INSTALL_TIMEOUT = 15_000;
+  const CHECK_TIMEOUT = 45_000;
 
   const root = document.querySelector("[data-updates-root]");
   const button = root?.querySelector("[data-updates-button]");
@@ -24,15 +29,20 @@
     checking: false,
     waiting: null,
     restarting: false,
-    outage: false,
     slow: false,
     failedVersion: null,
     // An installation the admin stopped waiting for: not adopted again from the status.
     dismissed: null,
+    // The session no longer reaches the routes: no automatic requests until a reload.
+    signedOut: false,
     error: "",
   };
   let lastFetch = 0;
+  // The next status request while following an installation, and its two limits of
+  // their own: the 60 s of an unconfirmed attempt and the 15 minutes.
   let installTimer = 0;
+  let deadlineTimer = 0;
+  let slowTimer = 0;
   let chosen = null;
   let saving = false;
 
@@ -40,41 +50,80 @@
 
   // { status, body, signedOut }: body is an UpdatesResponse, or null when something else
   // answered (a proxy while the app restarts, a sign-in page); signedOut when the session
-  // no longer reaches the routes.
-  async function send(url, payload) {
-    const options = { credentials: "same-origin", headers: { Accept: "application/json" } };
+  // no longer reaches the routes: 401, 403, the routes' own 404 for everyone but template
+  // admins, a redirect (to the sign-in page) or an HTML page instead of JSON. Rejects
+  // without an answer within `timeout` ms.
+  async function send(url, payload, timeout) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeout);
+    const options = {
+      credentials: "same-origin",
+      redirect: "manual",
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    };
     if (payload !== undefined) {
       options.method = "POST";
       options.headers["Content-Type"] = "application/json";
       options.headers["X-CSRFToken"] = csrf;
       options.body = JSON.stringify(payload);
     }
-    const response = await fetch(url, options);
-    const signedOut = response.status === 401 || response.status === 403 || response.redirected;
-    let body = null;
     try {
-      body = await response.json();
-    } catch {
-      return { status: response.status, body: null, signedOut };
+      const response = await fetch(url, options);
+      const html = /text\/html/i.test(response.headers.get("Content-Type") || "");
+      let body = null;
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+      const signedOut =
+        response.status === 401 ||
+        response.status === 403 ||
+        response.type === "opaqueredirect" ||
+        (response.ok && html) ||
+        body?.signedOut === true;
+      const valid = body && typeof body === "object" && typeof body.reachable === "boolean";
+      return { status: response.status, body: valid ? body : null, signedOut };
+    } finally {
+      window.clearTimeout(timer);
     }
-    const valid = body && typeof body === "object" && typeof body.reachable === "boolean";
-    return { status: response.status, body: valid ? body : null, signedOut };
+  }
+
+  // Stops every automatic status request of the page; a remembered installation resumes
+  // on a later page load.
+  function signOut(message) {
+    state.signedOut = true;
+    if (message) fail(message);
+    else render();
   }
 
   // A refusal without the latest status keeps the status the page shows.
   function take(body) {
     if (!body) return;
+    state.signedOut = false;
     const keep = body.reachable && !body.updater && state.response?.updater;
     state.response = keep ? { ...body, updater: state.response.updater } : body;
   }
 
-  async function refresh() {
-    if (state.waiting) return;
+  // `automatic`: from the interval, a regained focus or the end of a wait, not a click.
+  async function refresh({ automatic = true } = {}) {
+    if (state.waiting || (automatic && state.signedOut)) return;
     lastFetch = Date.now();
     try {
-      const reply = await send(config.status);
+      const reply = await send(config.status, undefined, STATUS_TIMEOUT);
+      if (reply.signedOut) {
+        signOut();
+        return;
+      }
       take(reply.body);
       if (adopt(reply.body)) return;
+      // A click on the grey button: say why the updater is still not reachable (the
+      // Updates tab shows it with its unreachable notice).
+      if (!automatic && reply.body && !reply.body.reachable && !form) {
+        fail(reply.body.error || "No update service answered. See the deployment guide.");
+        return;
+      }
     } catch {
       // Offline for a moment: keep what the page shows.
     }
@@ -88,9 +137,17 @@
     render();
     let reply = null;
     try {
-      reply = await send(config.check, {});
-      take(reply.body);
-      if (reply.status !== 200) state.error = reply.body?.error || "The check did not finish. Try again.";
+      reply = await send(config.check, {}, CHECK_TIMEOUT);
+      if (reply.signedOut) {
+        state.signedOut = true;
+        state.error = "The session ended. Sign in again, then check again.";
+      } else {
+        take(reply.body);
+        if (reply.status !== 200 || !reply.body) state.error = reply.body?.error || "The check did not finish. Try again.";
+        // The app could not reach the updater: say why, as for a refusal (the Updates tab
+        // shows it with its unreachable notice).
+        else if (!reply.body.reachable && !form) state.error = reply.body.error || "No update service answered. See the deployment guide.";
+      }
     } catch {
       state.error = "The app did not answer. Try again.";
     }
@@ -112,17 +169,19 @@
   async function install(action) {
     if (!(await confirmInstall(action))) return;
     // Remembered before the request: its answer can get lost while the server installs.
+    // Its 60 s run from here, also while the request stalls.
     const attempt = Updates.waitFor(action.version, state.response);
-    Object.assign(state, { waiting: attempt, outage: false, restarting: false, slow: false, failedVersion: null, error: "" });
-    remember(attempt);
+    Object.assign(state, { restarting: false, failedVersion: null, error: "" });
+    follows(attempt);
     render();
     let reply = null;
     try {
-      reply = await send(config.install, { version: action.version });
+      reply = await send(config.install, { version: action.version }, Math.min(INSTALL_TIMEOUT, Updates.deadline(attempt) - Date.now()));
     } catch {
       reply = null;
     }
     if (state.waiting !== attempt) return;
+    if (reply?.signedOut) state.signedOut = true;
     take(reply?.body);
     const answer = Updates.installAnswer(reply, attempt);
     if (answer.outcome === "refused") {
@@ -149,43 +208,83 @@
     try {
       const waiting = JSON.parse(sessionStorage.getItem(storageKey) || "null");
       if (!waiting || typeof waiting.version !== "string" || !Number.isFinite(waiting.startedAt)) return null;
-      return { ...waiting, confirmed: waiting.confirmed === true, since: Number.isFinite(waiting.since) ? waiting.since : null };
+      const earlier = waiting.earlier && typeof waiting.earlier === "object" ? waiting.earlier : null;
+      return {
+        ...waiting,
+        confirmed: waiting.confirmed === true,
+        since: Number.isFinite(waiting.since) ? waiting.since : null,
+        earlier,
+        outage: waiting.outage === true,
+        answered: waiting.answered === true,
+      };
     } catch {
       return null;
     }
   }
 
-  function wait(waiting, delay = INSTALL_POLL) {
-    Object.assign(state, { waiting, outage: false, restarting: false, slow: false, failedVersion: null, error: "" });
+  // The installation this page waits for: remembered, with the timers of its two limits.
+  function follows(waiting) {
+    state.waiting = waiting;
     remember(waiting);
+    window.clearTimeout(deadlineTimer);
+    window.clearTimeout(slowTimer);
+    const now = Date.now();
+    const deadline = Updates.deadline(waiting);
+    if (deadline !== null) deadlineTimer = window.setTimeout(expire, Math.max(0, deadline - now));
+    const slowAt = Updates.slowAt(waiting);
+    state.slow = now > slowAt;
+    if (!state.slow) {
+      slowTimer = window.setTimeout(() => {
+        state.slow = true;
+        render();
+      }, slowAt - now + 1);
+    }
+  }
+
+  function wait(waiting, delay = INSTALL_POLL) {
+    Object.assign(state, { restarting: false, failedVersion: null, error: "" });
+    follows(waiting);
     render();
     window.clearTimeout(installTimer);
     installTimer = window.setTimeout(follow, delay);
   }
 
-  function stopWaiting() {
+  // `forget`: false keeps the remembered installation for a later page load.
+  function stopWaiting({ forget = true } = {}) {
     state.waiting = null;
     state.restarting = false;
     state.slow = false;
-    remember(null);
+    if (forget) remember(null);
     window.clearTimeout(installTimer);
+    window.clearTimeout(deadlineTimer);
+    window.clearTimeout(slowTimer);
+  }
+
+  // 60 s after an attempt whose answer got lost, whatever the status requests returned:
+  // forget it; normal polling then shows what runs.
+  function expire() {
+    const waiting = state.waiting;
+    if (!waiting || waiting.confirmed) return;
+    stopWaiting();
+    fail(Updates.unconfirmed(waiting), { open: true });
+    refresh();
   }
 
   // Follows an installation that a status reports (from a poll, a check or a refusal),
   // unless the admin stopped waiting for it.
   function adopt(body) {
     if (state.waiting) return false;
-    const attempt = Updates.adopt(body);
-    const dismissed = state.dismissed;
-    if (!attempt || (dismissed?.version === attempt.version && dismissed.since === attempt.since)) return false;
+    const attempt = Updates.adopt(body, Date.now(), state.dismissed);
+    if (!attempt) return false;
     wait(attempt);
     return true;
   }
 
-  // Stop waiting, after 15 minutes: forget the installation and poll as usual.
+  // Stop waiting, after 15 minutes: forget the installation, ignore it from now on by its
+  // identity on the attempt (also while the updater is unreachable), and poll as usual.
   function dismiss() {
     const waiting = state.waiting;
-    state.dismissed = waiting && { version: waiting.version, since: waiting.since };
+    state.dismissed = waiting && Updates.identity(waiting);
     stopWaiting();
     render();
     refresh();
@@ -195,34 +294,35 @@
     const waiting = state.waiting;
     if (!waiting) return;
     const now = Date.now();
+    // An unconfirmed attempt's request gets at most the time left until its deadline,
+    // whose timer then ends the wait.
+    const deadline = Updates.deadline(waiting);
+    const timeout = Math.min(STATUS_TIMEOUT, deadline === null ? Infinity : deadline - now);
+    if (timeout <= 0) return;
     let reply = null;
     try {
-      reply = await send(config.status);
+      reply = await send(config.status, undefined, timeout);
     } catch {
       reply = null;
     }
     if (state.waiting !== waiting) return;
     if (reply?.signedOut) {
       // Polling cannot go on; the remembered attempt resumes after the next sign-in.
-      window.clearTimeout(installTimer);
-      Object.assign(state, { waiting: null, restarting: false, slow: false });
-      fail("The session ended. Sign in again to follow the installation.");
+      stopWaiting({ forget: false });
+      signOut("The session ended. Sign in again to follow the installation.");
       return;
     }
-    if (!reply?.body) {
-      // Network errors, 502 and 503 while the app restarts.
-      state.outage = true;
+    take(reply?.body);
+    if (!reply?.body?.reachable) {
+      // Network errors, 502 and 503 while the app restarts; the updater restarts with the
+      // app when the image changes.
       state.restarting = true;
+      follows(Updates.outage(waiting, Updates.problem(reply)));
     } else {
-      take(reply.body);
-      // The updater restarts with the app when the image changes.
-      state.restarting = !reply.body.reachable;
+      state.restarting = false;
       const attempt = Updates.observe(reply.body, waiting, now);
-      if (attempt !== waiting) {
-        state.waiting = attempt;
-        remember(attempt);
-      }
-      const result = Updates.progress(reply.body, attempt, { outage: state.outage, now });
+      if (attempt !== waiting) follows(attempt);
+      const result = Updates.progress(reply.body, attempt);
       if (result === "done") {
         stopWaiting();
         render();
@@ -237,13 +337,7 @@
         openPopover();
         return;
       }
-      if (result === "lost") {
-        stopWaiting();
-        fail(["The installation did not start.", attempt.reason].filter(Boolean).join(" "), { open: true });
-        return;
-      }
     }
-    state.slow = Updates.tooSlow(state.waiting, now);
     render();
     installTimer = window.setTimeout(follow, state.slow ? SLOW_POLL : INSTALL_POLL);
   }
@@ -338,6 +432,7 @@
     if (view.preview) heading.append(element("span", "ui-badge ui-badge-warning", "Preview"));
     nodes.push(heading);
     if (view.meta) nodes.push(element("p", "-mt-2 text-sm text-muted-foreground", view.meta));
+    if (view.failure) nodes.push(element("p", "text-sm break-words text-destructive", view.failure));
     for (const line of view.text || []) nodes.push(element("p", "text-sm break-words", line));
     if (view.notes?.length) {
       const list = element("ul", "flex list-disc flex-col gap-1 pl-5 text-sm");
@@ -455,7 +550,7 @@
       }
       const kind = Updates.button(state.response, state).kind;
       if (kind === "checking") return;
-      if (kind === "loading" || kind === "unreachable") refresh();
+      if (kind === "loading" || kind === "unreachable") refresh({ automatic: false });
       else check({ open: true });
     });
     panel.querySelector("[data-updates-check]").addEventListener("click", () => check({ open: true }));
@@ -488,7 +583,8 @@
       saved.textContent = "Saving …";
       render();
       try {
-        const reply = await send(config.channel, { channel: chosen });
+        const reply = await send(config.channel, { channel: chosen }, CHECK_TIMEOUT);
+        if (reply.signedOut) state.signedOut = true;
         take(reply.body);
         // Saved only when the updater reports the chosen channel.
         if (reply.status === 200 && reply.body?.reachable && reply.body.updater?.channel === chosen) {
@@ -508,7 +604,7 @@
     });
   }
 
-  window.setInterval(refresh, POLL);
+  window.setInterval(() => refresh(), POLL);
   window.addEventListener("focus", () => {
     if (Date.now() - lastFetch >= FOCUS_POLL) refresh();
   });

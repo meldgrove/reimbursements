@@ -3,8 +3,10 @@ for the admins' update button and the Updates tab.
 
 Each call returns an `Answer`: the HTTP status for the app's route and the
 `UpdatesResponse` it sends. The updater refusing a request (any error answer) becomes
-409 with its `error` and the latest status. No answer, or an answer that is not the
-updater's, is 200 with `reachable: false`; so is an empty `UPDATER_URL`, without a call.
+409 with its `error` and the latest status; only a server error of an installation stays
+that error, since the installation may have started. No answer, or an answer that is not
+the updater's, is 200 with `reachable: false`; so is an empty `UPDATER_URL`, without a
+call.
 """
 
 import re
@@ -79,9 +81,15 @@ def _call(method, path, timeout, payload=None):
         body = None
     if response.is_success and _is_status(body):
         return Answer(response.status_code, True, body)
+    # The button treats a 5xx of an installation as ambiguous, a 409 as a refusal.
+    passed = path == "/v1/install" and response.is_server_error
     if response.is_error and isinstance(body, dict) and isinstance(body.get("error"), str):
         latest = status() if path != "/v1/status" else None
-        return Answer(409, True, latest.updater if latest else None, body["error"])
+        code = response.status_code if passed else 409
+        return Answer(code, True, latest.updater if latest else None, body["error"])
+    if passed:
+        error = f"The update service answered with HTTP {response.status_code}."
+        return Answer(response.status_code, False, error=error)
     return Answer(200, False, error=f"The service at {url} is not the update service.")
 
 

@@ -155,13 +155,18 @@ test("with automatic updates off, new versions show but offer no installation", 
   assert.equal(Updates.popover(attention, {}, { now: NOW }).action, null);
 });
 
-test("installing shows the stage and that the app restarts", () => {
+test("installing shows the stage, and that the page reloads only while it waits", () => {
   const installing = { version: "0.2.1", startedAt: hoursAgo(0), manual: true, stage: "rolling-back" };
   const response = answer(status({ installing }));
-  const view = Updates.popover(response, {}, { now: NOW, app: "Meldgrove Reimbursement" });
+  const options = { now: NOW, app: "Meldgrove Reimbursement" };
+  const view = Updates.popover(response, {}, options);
   assert.equal(view.title, "Installing 0.2.1…");
-  assert.deepEqual(view.text, ["Going back to 0.2.0", "Meldgrove Reimbursement restarts. This page reloads when it is back."]);
+  assert.deepEqual(view.text, ["Going back to 0.2.0"]);
   const waiting = Updates.waitFor("0.2.1", answer(status()), NOW);
+  assert.deepEqual(Updates.popover(response, { waiting }, options).text, [
+    "Going back to 0.2.0",
+    "Meldgrove Reimbursement restarts. This page reloads when it is back.",
+  ]);
   const restarting = Updates.popover(null, { waiting, restarting: true, slow: true }, { now: NOW });
   assert.equal(restarting.text[0], "Restarting…");
   assert.match(restarting.slow, /journalctl -u meldgrove-updater-reimbursements/);
@@ -216,12 +221,54 @@ test("a result that finished before the installation started is not its result",
 
 test("a platform deployment is done once the app runs it", () => {
   const attempt = Updates.waitFor("0.2.1", answer(status()), NOW, true);
+  const restarted = Updates.outage(attempt, "The app did not answer.");
   assert.equal(Updates.progress(following({ last: result("accepted") }), attempt), "waiting");
-  assert.equal(Updates.progress(following({ last: result("accepted") }), attempt, { outage: true }), "waiting");
+  assert.equal(Updates.progress(following({ last: result("accepted") }), restarted), "waiting");
   assert.equal(Updates.progress(following({ last: result("accepted") }, "0.2.1"), attempt), "done");
   // Without an app version (development), a restart tells.
   assert.equal(Updates.progress(following({ last: result("accepted") }, null), attempt), "waiting");
-  assert.equal(Updates.progress(following({ last: result("accepted") }, null), attempt, { outage: true }), "done");
+  assert.equal(Updates.progress(following({ last: result("accepted") }, null), restarted), "done");
+});
+
+test("reachable: false while following is an outage; a reachable accepted then completes", () => {
+  const attempt = Updates.waitFor("0.2.1", answer(status()), NOW, true);
+  const unreachable = { app: { version: null }, reachable: false, updater: null, error: "The update service did not answer within 3 s." };
+  const after = Updates.outage(attempt, Updates.problem({ status: 200, body: unreachable }));
+  assert.equal(after.outage, true);
+  assert.equal(after.error, "The update service did not answer within 3 s.");
+  assert.equal(Updates.progress(unreachable, after), "waiting");
+  assert.equal(Updates.progress(following({ last: result("accepted") }, null), after), "done");
+});
+
+test("a platform deployment accepted in the same second as an ambiguous request is fresh", () => {
+  // The updater writes whole seconds; the browser started the attempt 700 ms into one.
+  const started = NOW + 700;
+  const attempt = Updates.waitFor("0.2.1", answer(status()), started);
+  const ambiguous = Updates.installAnswer(null, attempt, started).attempt;
+  const accepted = following({ last: result("accepted", new Date(NOW).toISOString()) }, null);
+  const confirmed = Updates.observe(accepted, ambiguous, started + 2000);
+  assert.equal(confirmed.confirmed, true);
+  assert.equal(Updates.progress(accepted, confirmed), "waiting");
+  assert.equal(Updates.progress(accepted, Updates.outage(confirmed, "The app did not answer.")), "done");
+  // A result of the second before is not.
+  const before = following({ last: result("accepted", new Date(NOW - 1000).toISOString()) }, null);
+  assert.equal(Updates.observe(before, ambiguous, started + 2000).confirmed, false);
+});
+
+test("a retry in the same second does not take the earlier failure as its own", () => {
+  const failedAt = new Date(NOW).toISOString();
+  const failure = result("failed", failedAt);
+  const shown = answer(status({ last: failure, available: update("0.2.1", { failed: failure.message }) }));
+  // Try again, 400 ms into the second the first attempt failed in.
+  const attempt = Updates.waitFor("0.2.1", shown, NOW + 400);
+  assert.deepEqual(attempt.earlier, failure);
+  const ambiguous = Updates.installAnswer({ status: 504, body: null }, attempt, NOW + 400).attempt;
+  assert.equal(Updates.observe(shown, ambiguous, NOW + 2400).confirmed, false);
+  assert.equal(Updates.progress(shown, ambiguous), "waiting");
+  // Its own result, in the same second as well, differs from the earlier one.
+  const again = answer(status({ last: { ...failure, result: "rolled-back" } }));
+  assert.equal(Updates.observe(again, ambiguous, NOW + 2400).confirmed, true);
+  assert.equal(Updates.progress(again, ambiguous), "failed");
 });
 
 test("the install answer decides whether the attempt is followed, forgotten or reconciled", () => {
@@ -231,12 +278,17 @@ test("the install answer decides whether the attempt is followed, forgotten or r
   assert.equal(accepted.outcome, "follow");
   assert.equal(accepted.attempt.confirmed, true);
   assert.equal(accepted.attempt.since, NOW);
+  // 202 confirms, also when its answer cannot be read.
+  const unread = Updates.installAnswer({ status: 202, body: null }, attempt, NOW);
+  assert.deepEqual([unread.outcome, unread.attempt.confirmed], ["follow", true]);
   // No answer, a timeout of the updater, a proxy error: the server may install anyway.
   for (const reply of [
     null,
     { status: 200, body: { app: { version: "0.2.0" }, reachable: false, updater: null, error: "The update service did not answer within 10 s." } },
     { status: 502, body: null },
+    { status: 503, body: { ...following(), error: "The state file is broken." } },
     { status: 504, body: null },
+    { status: 200, body: null },
   ]) {
     const ambiguous = Updates.installAnswer(reply, attempt, NOW);
     assert.equal(ambiguous.outcome, "ambiguous");
@@ -252,6 +304,9 @@ test("the install answer decides whether the attempt is followed, forgotten or r
     error: "0.2.1 is not offered; check again.",
   });
   assert.equal(Updates.installAnswer({ status: 403, body: null, signedOut: true }, attempt, NOW).outcome, "refused");
+  assert.equal(Updates.installAnswer({ status: 0, body: null, signedOut: true }, attempt, NOW).outcome, "refused");
+  // Any 4xx refuses, also without the app's error.
+  assert.equal(Updates.installAnswer({ status: 400, body: null }, attempt, NOW).outcome, "refused");
   // A refusal whose status reports an installation follows that one.
   const faster = { ...following({ installing: { ...installing(), version: "0.2.2" } }), error: "0.2.2 is being installed." };
   const adopted = Updates.installAnswer({ status: 409, body: faster }, attempt, NOW);
@@ -262,31 +317,74 @@ test("the install answer decides whether the attempt is followed, forgotten or r
 });
 
 test("an attempt with a lost answer is followed once the status reports it, or forgotten after a minute", () => {
-  const attempt = { ...Updates.waitFor("0.2.1", answer(status()), NOW), reason: "The app did not answer." };
+  const attempt = Updates.installAnswer(null, Updates.waitFor("0.2.1", answer(status()), NOW), NOW).attempt;
+  assert.equal(Updates.deadline(attempt), NOW + Updates.RECONCILE);
+  // A reachable status without it: it did not start.
   const nothing = following();
-  assert.equal(Updates.progress(nothing, attempt, { now: NOW + 30_000 }), "waiting");
-  assert.equal(Updates.progress(nothing, attempt, { now: NOW + Updates.RECONCILE }), "lost");
-  // Without the updater's answer it waits.
-  const restarting = { app: { version: "0.2.0" }, reachable: false, updater: null, error: "No answer" };
-  assert.equal(Updates.progress(restarting, attempt, { now: NOW + 5 * 60_000 }), "waiting");
+  const answered = Updates.observe(nothing, attempt, NOW + 2000);
+  assert.equal(Updates.progress(nothing, answered), "waiting");
+  assert.equal(Updates.unconfirmed(answered), "The installation did not start. The app did not answer.");
+  // Without the updater's answer, nothing confirms whether it started.
+  const failed = Updates.outage(answered, "The app answered with HTTP 502.");
+  assert.equal(Updates.unconfirmed(failed), "The installation could not be confirmed. The app answered with HTTP 502.");
   // The status reports it: confirmed, and followed beyond the minute.
   const reported = Updates.observe(following({ installing: installing("pulling") }), attempt, NOW + 4000);
   assert.equal(reported.confirmed, true);
-  assert.equal(Updates.progress(nothing, reported, { now: NOW + 5 * 60_000 }), "waiting");
+  assert.equal(Updates.deadline(reported), null);
+  assert.equal(Updates.progress(nothing, reported), "waiting");
   // ... or its fresh result does.
   const finished = following({ last: result("failed") });
   assert.equal(Updates.observe(finished, attempt, NOW + 4000).confirmed, true);
-  assert.equal(Updates.progress(finished, attempt, { now: NOW + 4000 }), "failed");
+  assert.equal(Updates.progress(finished, attempt), "failed");
 });
 
 test("an installation that a status reports is followed", () => {
   assert.equal(Updates.adopt(following()), null);
   assert.equal(Updates.adopt({ app: { version: "0.2.0" }, reachable: false, updater: null, error: null }), null);
   const adopted = Updates.adopt(following({ installing: installing() }), NOW);
-  assert.deepEqual(adopted, { version: "0.2.1", before: "0.2.0", startedAt: NOW, confirmed: true, since: NOW });
+  assert.deepEqual(adopted, {
+    version: "0.2.1",
+    before: "0.2.0",
+    startedAt: NOW,
+    confirmed: true,
+    since: NOW,
+    earlier: null,
+    outage: false,
+    answered: false,
+  });
   // Following one installation, the status reports another instead.
   const other = Updates.observe(following({ installing: { ...installing(), version: "0.2.2" } }), adopted, NOW);
   assert.equal(other.version, "0.2.2");
+});
+
+test("Stop waiting ignores that installation by its identity, also after the updater was unreachable", () => {
+  // Followed, then the updater went away; the admin stopped waiting meanwhile.
+  const followed = Updates.observe(following({ installing: installing("pulling") }), Updates.waitFor("0.2.1", answer(status()), NOW + 3000), NOW + 5000);
+  assert.equal(followed.since, NOW);
+  const dismissed = Updates.identity(Updates.outage(followed, "No update service answers at http://updater:8080."));
+  // The updater is back and still reports it: not followed again.
+  assert.equal(Updates.adopt(following({ installing: installing("starting") }), NOW + 20 * 60_000, dismissed), null);
+  // Another installation is.
+  const next = { ...installing(), startedAt: hoursAgo(-0.5) };
+  assert.equal(Updates.adopt(following({ installing: next }), NOW + 40 * 60_000, dismissed).version, "0.2.1");
+  // Never reported: the version and when this page asked for it.
+  const asked = Updates.identity(Updates.waitFor("0.2.1", answer(status()), NOW + 400));
+  assert.equal(Updates.adopt(following({ installing: installing() }), NOW + 60_000, asked), null);
+  const older = { ...installing(), startedAt: hoursAgo(1) };
+  assert.equal(Updates.adopt(following({ installing: older }), NOW + 60_000, asked).version, "0.2.1");
+});
+
+test("a newer offer replaces an old failure and keeps its message", () => {
+  const last = { version: "0.2.1", result: "rolled-back", message: "web is unhealthy", finishedAt: hoursAgo(1) };
+  const newer = answer(status({ last, available: update("0.2.2") }));
+  assert.equal(kind(newer, { failedVersion: "0.2.1" }), "available");
+  const view = Updates.popover(newer, { failedVersion: "0.2.1" }, { now: NOW });
+  assert.equal(view.title, "Update available");
+  assert.equal(view.failure, "0.2.1 failed: web is unhealthy");
+  assert.deepEqual(view.action, { label: "Install now", version: "0.2.2", anyway: false });
+  const attention = Updates.popover(answer(status({ last, attention: update("0.3.0") })), {}, { now: NOW });
+  assert.equal(attention.failure, "0.2.1 failed: web is unhealthy");
+  assert.equal(Updates.popover(answer(status({ available: update("0.2.2") })), {}, { now: NOW }).failure, "");
 });
 
 test("an installation without a result asks to check the server after 15 minutes", () => {
@@ -295,6 +393,7 @@ test("an installation without a result asks to check the server after 15 minutes
   assert.equal(Updates.tooSlow(waiting, NOW + 16 * 60_000), true);
   // An adopted installation counts from when the updater started it.
   assert.equal(Updates.tooSlow({ ...waiting, since: NOW - 10 * 60_000 }, NOW + 6 * 60_000), true);
+  assert.equal(Updates.slowAt(waiting), NOW + Updates.PATIENCE);
 });
 
 test("the footer and times read naturally", () => {

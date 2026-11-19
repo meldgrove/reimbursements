@@ -1,8 +1,9 @@
 """The update button's routes and the Updates tab of the Admin section (docs/updates.md).
 
 Only template admins see the button and the tab. The routes answer everyone else 404,
-and the tab answers form editors 403, as the other tabs do. Sign-in and CSRF protection
-are the admin area's.
+marked `signedOut` so that the button stops its automatic requests when the session
+ends, and the tab answers form editors 403, as the other tabs do. Sign-in and CSRF
+protection are the admin area's.
 """
 
 import json
@@ -10,7 +11,7 @@ from functools import wraps
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, JsonResponse
+from django.http import JsonResponse
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.views.decorators.cache import never_cache
@@ -24,11 +25,14 @@ from portal.services import updater
 GUIDE_URL = "https://github.com/meldgrove/reimbursements/blob/main/docs/updates.md"
 
 
+SIGNED_OUT = {"error": "Sign in as a template admin to manage updates.", "signedOut": True}
+
+
 def admins_only(view):
     @wraps(view)
     def wrapper(request, *args, **kwargs):
         if not is_template_admin(request.user):
-            raise Http404
+            return JsonResponse(SIGNED_OUT, status=404)
         return view(request, *args, **kwargs)
 
     return never_cache(wrapper)
