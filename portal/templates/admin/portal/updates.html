@@ -1,4 +1,4 @@
-{% extends "admin/base_site.html" %}{% load ui %}
+{% extends "admin/base_site.html" %}{% load static ui %}
 {% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:portal_appsettings_changelist' %}">Admin</a>{% icon "chevron-right" class="breadcrumb-separator" %}<span aria-current="page">Updates</span></div>{% endblock %}
 {% block content_title %}
 <div class="grid gap-1">
@@ -7,70 +7,7 @@
 </div>
 {% endblock %}
 {% block content %}
-<form data-updates-settings aria-busy="true" class="flex flex-col gap-6">
-  {% csrf_token %}
-  <div data-updates-unreachable hidden>
-    {% component "alert" variant="warning" %}{% icon "triangle-alert" %}{% component "alert_description" %}The update service is not reachable. Automatic updates need the updater service from compose.yaml (<a href="{{ updates.config.guide }}" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2">deployment guide</a>).<span class="block" data-updates-unreachable-detail></span>{% endcomponent %}{% endcomponent %}
-  </div>
-  <div data-updates-error hidden>
-    {% component "alert" variant="destructive" %}{% icon "circle-alert" %}{% component "alert_description" data_updates_error_text=True %}{% endcomponent %}{% endcomponent %}
-  </div>
-  <fieldset class="module aligned">
-    <h2 class="fieldset-heading">Version</h2>
-    <div class="form-row">
-      <div class="field-grid">
-        <div class="field-label">Installed version</div>
-        <div class="field-input"><div class="readonly" data-updates-version>Loading …</div></div>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field-grid">
-        <div class="field-label">Channel</div>
-        <div class="field-input"><div class="readonly" data-updates-channel>Loading …</div></div>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field-grid">
-        <div class="field-label">Automatic installs</div>
-        <div class="field-input"><div class="readonly" data-updates-automatic>Loading …</div></div>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field-grid">
-        <div class="field-label">Last check</div>
-        <div class="field-input">
-          <div class="readonly flex flex-wrap items-center gap-x-3 gap-y-1"><span data-updates-checked>Loading …</span><button type="button" data-updates-check disabled class="text-sm font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50">Check now</button></div>
-          <div class="text-sm text-destructive" data-updates-check-error hidden></div>
-        </div>
-      </div>
-    </div>
-  </fieldset>
-  <fieldset class="module aligned">
-    <h2 class="fieldset-heading" id="updates-channel-heading">Channel</h2>
-    <div class="description" data-updates-locked hidden></div>
-    <div class="form-row">
-      <div class="flex flex-col gap-4" role="radiogroup" aria-labelledby="updates-channel-heading">
-        <label class="flex items-start gap-3 has-disabled:cursor-not-allowed has-disabled:opacity-60">
-          <input type="radio" name="channel" value="stable" disabled class="mt-0.5" aria-describedby="updates-stable-text">
-          <span class="grid gap-1">
-            <span class="flex flex-wrap items-center gap-2 text-sm font-medium">Stable{% component "badge" variant="outline" %}Recommended{% endcomponent %}</span>
-            <span id="updates-stable-text" class="text-sm text-muted-foreground" data-updates-stable-text>Releases. Updates that need no action install automatically.</span>
-          </span>
-        </label>
-        <label class="flex items-start gap-3 has-disabled:cursor-not-allowed has-disabled:opacity-60">
-          <input type="radio" name="channel" value="preview" disabled class="mt-0.5" aria-describedby="updates-preview-text">
-          <span class="grid gap-1">
-            <span class="text-sm font-medium">Preview</span>
-            <span id="updates-preview-text" class="text-sm text-muted-foreground">Unstable: every change on main as soon as its checks pass, before it is released. New features first, and now and then a new bug. Previews have no release notes.</span>
-          </span>
-        </label>
-        <p class="help">Switching back to Stable keeps this version until a release is newer.</p>
-      </div>
-    </div>
-  </fieldset>
-  <div class="submit-row">
-    <input type="submit" value="Save" class="default" disabled data-updates-save>
-    <span role="status" class="text-sm text-muted-foreground" data-updates-saved></span>
-  </div>
-</form>
+{# The installed version, the channel, automatic installs and the last check (@meldgrove/ui). The header loads the script too when the update button shows; it runs once. #}
+<script type="module" src="{% static 'portal/vendor/meldgrove-updates.js' %}"></script>
+<meldgrove-updates-settings {% include "admin/portal/updates_attributes.html" %}></meldgrove-updates-settings>
 {% endblock %}

@@ -59,8 +59,10 @@ the steps on the server first (on Debian, `git pull` when the release changes
 `compose.yaml`), then install it with **Install anyway…**. On Coolify, take the steps
 and change the tag in `REIMBURSEMENTS_VERSION` instead.
 
-Admin > Updates shows the installed version, the channel and when updates install
-automatically. Without a reachable updater, the icon is grey and Admin > Updates says
+Admin > Updates shows the installed version, the channel, when updates install
+automatically and the last check. The button and Admin > Updates come from
+`@meldgrove/ui`, the same in every Meldgrove app; the app serves their four routes under
+`/admin/updates/`. Without a reachable updater, the icon is grey and Admin > Updates says
 so. `UPDATER_URL` is where the app reaches the updater, `http://updater:8080` by
 default. Under `compose.yaml` an empty value falls back to that default; empty hides
 the icon only where the app reads its environment directly, as in the local setup.

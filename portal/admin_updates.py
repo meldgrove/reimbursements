@@ -17,7 +17,6 @@ from django.urls import path, reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST
 
-from portal import app_settings
 from portal.constants import APP_NAME
 from portal.roles import is_template_admin
 from portal.services import updater
@@ -117,14 +116,8 @@ def context(request):
     return {
         # The button needs the updater; the tab explains its absence.
         "button": bool(settings.UPDATER_URL),
-        "config": {
-            "app": APP_NAME,
-            "timezone": app_settings.current(request).timezone,
-            "guide": GUIDE_URL,
-            "settings": reverse("admin:portal_updates_settings"),
-            "status": reverse("admin:updates"),
-            "check": reverse("admin:updates_check"),
-            "install": reverse("admin:updates_install"),
-            "channel": reverse("admin:updates_channel"),
-        },
+        # The attributes of the @meldgrove/ui elements (updates_attributes.html).
+        "app_name": APP_NAME,
+        "url": reverse("admin:updates"),
+        "guide": f"{GUIDE_URL}#switch-it-on",
     }

@@ -103,9 +103,12 @@ def test_an_accent_color_restyles_public_pages_and_the_admin_area(admin_client, 
     assert response["Content-Type"] == "text/css; charset=utf-8"
     assert response["Cache-Control"] == "public, max-age=31536000, immutable"
     css = response.content.decode()
-    assert "--primary: #1d4ed8;" in css and "--primary-foreground: #ffffff;" in css
+    # The shared tokens derive the primary colors from the accent (@meldgrove/ui).
     dark = theme.dark_accent("#1d4ed8")
-    assert f"    --primary: {dark};" in css and "@media (prefers-color-scheme: dark)" in css
+    assert css.endswith(
+        ":root {\n  --mg-accent: #1d4ed8;\n  --mg-accent-foreground: #ffffff;\n}\n"
+        f".dark {{\n  --mg-accent: {dark};\n  --mg-accent-foreground: #09090b;\n}}\n"
+    )
     # An old link still answers, but browsers check again before reusing it.
     assert visitor.get("/theme/0000000000000000.css")["Cache-Control"] == "public, no-cache"
     page = admin_client.get(URL).content.decode()

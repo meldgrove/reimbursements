@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -270,39 +271,60 @@ def test_posts_need_the_csrf_token(service):
     assert service[0] == []
 
 
-def test_template_admins_see_the_update_button(admin_client, settings):
+def attributes(page, element):
+    """The attributes of the first <element …> in the page."""
+    tag = re.search(rf"<{element}\s([^>]*)>", page)
+    assert tag, f"no <{element}> in the page"
+    return dict(re.findall(r'([a-z-]+)="([^"]*)"', tag.group(1)))
+
+
+ELEMENT = {
+    "url": "/admin/updates/",
+    "app-name": "Meldgrove Reimbursement",
+    "project": "reimbursements",
+    "locale": "en",
+    "guide-url": "https://github.com/meldgrove/reimbursements/blob/main/docs/updates.md#switch-it-on",
+}
+SCRIPT = '<script type="module" src="/static/portal/vendor/meldgrove-updates.js"></script>'
+
+
+def test_template_admins_see_the_update_button(admin_client, settings, service):
     settings.UPDATER_URL = UPDATER
     page = admin_client.get("/admin/portal/claim/").content.decode()
-    assert "data-updates-button" in page and "data-updates-confirm" in page
-    assert '<script id="updates-config" type="application/json">' in page
-    assert '"install": "/admin/updates/install/"' in page
-    assert "portal/updates.js" in page and "portal/updates-state.js" in page
+    button = attributes(page, "meldgrove-update-button")
+    assert button.pop("csrf-token")
+    assert button == {"class": "ml-auto shrink-0", **ELEMENT}
+    assert SCRIPT in page
+    assert service[0] == [], "The page itself never waits for the updater."
 
 
 def test_form_editors_see_no_update_button(client, settings):
     settings.UPDATER_URL = UPDATER
     signed_in(client, roles.FORM_EDITOR)
     page = client.get("/admin/portal/claim/").content.decode()
-    assert "data-updates" not in page and "updates-config" not in page
+    assert "meldgrove-update" not in page
     assert "/admin/updates/" not in page
 
 
 def test_an_empty_updater_url_hides_the_button_but_not_the_tab(admin_client, settings):
     settings.UPDATER_URL = ""
     page = admin_client.get("/admin/portal/claim/").content.decode()
-    assert "data-updates-button" not in page
-    assert '<script id="updates-config" type="application/json">' in page
+    assert "meldgrove-update" not in page
     assert admin_client.get("/admin/portal/updates/").status_code == 200
 
 
-def test_template_admins_open_the_updates_tab(admin_client):
+def test_template_admins_open_the_updates_tab(admin_client, service):
     page = admin_client.get("/admin/portal/updates/").content.decode()
     assert '<h1 class="page-title">Updates</h1>' in page
     assert '<a href="/admin/portal/updates/" aria-current="page"' in page
     assert '<a href="/admin/portal/appsettings/" class' in page
-    assert 'name="channel" value="stable"' in page and 'name="channel" value="preview"' in page
-    assert "Switching back to Stable keeps this version until a release is newer." in page
-    assert "Previews have no release notes." in page
+    # The settings come from @meldgrove/ui; without an updater, they say so.
+    content = page.split('id="content"', 1)[1]
+    element = attributes(content, "meldgrove-updates-settings")
+    assert element.pop("csrf-token")
+    assert element == ELEMENT
+    assert SCRIPT in content
+    assert service[0] == [], "The tab never waits for the updater."
     page = admin_client.get("/admin/portal/appsettings/1/change/").content.decode()
     assert '<a href="/admin/portal/updates/" class' in page
 

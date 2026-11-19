@@ -1,5 +1,5 @@
-# Weekly version updates. A release is proposed once it has been out for seven days;
-# security updates ignore the schedule and the cooldown.
+# Weekly version updates. A release is proposed once it has been out for seven days,
+# except @meldgrove/*; security updates ignore the schedule and the cooldown.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -32,6 +32,10 @@ updates:
         update-types:
           - version-update:semver-major
           - version-update:semver-minor
+      # A new Node.js major goes together with engines in package.json.
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
   # compose.yaml and its compose.<name>.yaml variants.
   - package-ecosystem: docker-compose
     directory: /
@@ -44,6 +48,22 @@ updates:
       - dependency-name: postgres
         update-types:
           - version-update:semver-major
+  # @meldgrove/ui (package.json): the update button and the shared colors.
+  # Meldgrove's own packages come at once, in a pull request of their own.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      exclude: ["@meldgrove/*"]
+    groups:
+      meldgrove-ui:
+        patterns: ["@meldgrove/*"]
+      npm-minor-and-patch:
+        patterns: ["*"]
+        exclude-patterns: ["@meldgrove/*"]
+        update-types: [minor, patch]
   # Playwright for the browser checks; CI installs the Chromium of the locked version.
   - package-ecosystem: npm
     directory: /tests/browser

@@ -1,4 +1,12 @@
 FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
+
+# The update button and the shared colors from @meldgrove/ui (package.json).
+# The tarball stays only until the package is on npm.
+FROM node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS ui
+WORKDIR /app
+COPY package.json package-lock.json meldgrove-ui-0.1.0.tgz ./
+RUN npm ci --ignore-scripts --no-audit --no-fund && npm run static
+
 FROM python:3.13-slim-bookworm@sha256:a5a7017efc5969e00ae2b91c8eb0631049a569652aa4ffc4501769049ae45c72 AS base
 COPY --from=uv /uv /usr/local/bin/uv
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,15 +26,18 @@ ENV PATH="/app/.venv/bin:$PATH"
 CMD ["pytest", "-q"]
 
 FROM base AS assets
-# The stylesheet is built here with the pinned standalone Tailwind CLI; no Node.
+# The stylesheet is built here with the pinned standalone Tailwind CLI and the shared
+# colors from the ui stage.
 COPY scripts/tailwind.py scripts/
 COPY portal portal
+COPY --from=ui /app/portal/static/portal/vendor/ portal/static/portal/vendor/
 RUN python scripts/tailwind.py build
 
 FROM base AS runtime
 RUN uv sync --locked --no-dev
 COPY . .
 COPY --from=assets /app/portal/static/portal/ui.css portal/static/portal/ui.css
+COPY --from=ui /app/portal/static/portal/vendor/meldgrove-updates.js portal/static/portal/vendor/
 # Coolify injects deployment variables as build arguments. Static assets need
 # only development defaults, even when those arguments are empty or unresolved.
 RUN env -i PATH="$PATH" PYTHONDONTWRITEBYTECODE=1 DJANGO_DEBUG=1 DEPLOYMENT_ENV=development \
