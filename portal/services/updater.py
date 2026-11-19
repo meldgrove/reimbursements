@@ -1,5 +1,5 @@
-"""The updater service's API (docs/updates.md), for the admins' update button and the
-Updates tab.
+"""The updater service's API (https://github.com/meldgrove/updater#the-apps-update-button),
+for the admins' update button and the Updates tab.
 
 Each call returns an `Answer`: the HTTP status for the app's route and the
 `UpdatesResponse` it sends. The updater refusing a request (any error answer) becomes
