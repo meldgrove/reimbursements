@@ -293,6 +293,32 @@ test("a sign-out holds until the page reloads, whatever a request in flight answ
   assert.deepEqual(button.requests, ["/status", "/check", "/status"]);
 });
 
+test("a check that reports sign-out stops following an installation a poll just reported", async () => {
+  const current = status({ available: null });
+  const running = status({ available: null, installing: { version: "0.2.1", startedAt: "2026-11-19T12:00:30Z", manual: false, stage: "pulling" } });
+  let answerCheck;
+  const button = load({
+    "/status": () => json(200, answer(Date.now() === NOW ? current : running)),
+    "/check": () => new Promise((resolve) => (answerCheck = resolve)),
+  });
+  await advance(30_000, 1000);
+  button.click();
+  await settle();
+  // The focus poll reports an installation while the check still runs: followed.
+  await advance(31_000, 1000);
+  button.focus();
+  await settle();
+  assert.equal(button.tooltip(), "Installing 0.2.1…");
+  const followed = button.remembered();
+  assert.equal(followed.version, "0.2.1");
+  // The check answers that the session ended, before the next installation poll.
+  answerCheck(json(404, { error: "Sign in as a template admin to manage updates.", signedOut: true }));
+  await settle();
+  await advance(11 * 60_000, 1000);
+  assert.deepEqual(button.requests, ["/status", "/check", "/status"]);
+  assert.deepEqual(button.remembered(), followed);
+});
+
 test("a check from the header that cannot reach the updater says why", async () => {
   const current = status({ available: null });
   const unreachable = { app: { version: "0.2.0" }, reachable: false, updater: null, error: "The update service did not answer within 35 s." };

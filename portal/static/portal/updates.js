@@ -95,10 +95,10 @@
 
   // Stops every status request of the page until it reloads, also the polls of an
   // installation it follows; the remembered installation resumes on a later page load.
-  function signOut(message) {
+  function signOut(message, options) {
     state.signedOut = true;
     if (state.waiting) stopWaiting({ forget: false });
-    if (message) fail(message);
+    if (message) fail(message, options);
     else render();
   }
 
@@ -157,15 +157,15 @@
         return;
       }
       if (reply.signedOut) {
-        state.signedOut = true;
-        state.error = "The session ended. Sign in again, then check again.";
-      } else {
-        take(reply.body);
-        if (reply.status !== 200 || !reply.body) state.error = reply.body?.error || "The check did not finish. Try again.";
-        // The app could not reach the updater: say why, as for a refusal (the Updates tab
-        // shows it with its unreachable notice).
-        else if (!reply.body.reachable && !form) state.error = reply.body.error || "No update service answered. See the deployment guide.";
+        state.checking = false;
+        signOut("The session ended. Sign in again, then check again.", { open });
+        return;
       }
+      take(reply.body);
+      if (reply.status !== 200 || !reply.body) state.error = reply.body?.error || "The check did not finish. Try again.";
+      // The app could not reach the updater: say why, as for a refusal (the Updates tab
+      // shows it with its unreachable notice).
+      else if (!reply.body.reachable && !form) state.error = reply.body.error || "No update service answered. See the deployment guide.";
     } catch {
       state.error = "The app did not answer. Try again.";
     }
