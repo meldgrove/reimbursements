@@ -17,6 +17,7 @@ from django.urls import path, reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST
 
+from portal import app_settings
 from portal.constants import APP_NAME
 from portal.roles import is_template_admin
 from portal.services import updater
@@ -109,10 +110,15 @@ def urls(site):
     ]
 
 
+# The locale whose dates read like each date format (Admin > General); en-GB for YYYY-MM-DD.
+DATE_LOCALES = {"d.m.Y": "de-DE", "d/m/Y": "en-GB", "m/d/Y": "en-US"}
+
+
 def context(request):
     """What the admin pages need for the button and the tab, for template admins only."""
     if not is_template_admin(request.user):
         return None
+    general = app_settings.current(request)
     return {
         # The button needs the updater; the tab explains its absence.
         "button": bool(settings.UPDATER_URL),
@@ -120,4 +126,7 @@ def context(request):
         "app_name": APP_NAME,
         "url": reverse("admin:updates"),
         "guide": f"{GUIDE_URL}#switch-it-on",
+        # Dates as in the rest of the admin area: the format and timezone of Admin > General.
+        "date_locale": DATE_LOCALES.get(general.date_format, "en-GB"),
+        "time_zone": general.timezone,
     }

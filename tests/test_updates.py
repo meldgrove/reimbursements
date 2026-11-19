@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 
 from portal import roles
+from portal.models import AppSettings
 from portal.services import updater
 
 pytestmark = pytest.mark.django_db
@@ -284,6 +285,9 @@ ELEMENT = {
     "project": "reimbursements",
     "locale": "en",
     "guide-url": "https://github.com/meldgrove/reimbursements/blob/main/docs/updates.md#switch-it-on",
+    # The default date format (DD.MM.YYYY) and timezone of Admin > General.
+    "date-locale": "de-DE",
+    "time-zone": "Europe/Berlin",
 }
 SCRIPT = '<script type="module" src="/static/portal/vendor/meldgrove-updates.js"></script>'
 
@@ -352,3 +356,14 @@ def test_settings_refuse_an_updater_url_that_is_not_one(tmp_path, value):
     )
     assert result.returncode != 0
     assert "UPDATER_URL must be empty or a URL such as http://updater:8080." in result.stderr
+
+
+def test_the_elements_take_the_date_format_and_timezone_of_general(admin_client, settings, service):
+    settings.UPDATER_URL = UPDATER
+    general = AppSettings.load()
+    general.date_format, general.timezone = "m/d/Y", "America/New_York"
+    general.save()
+    page = admin_client.get("/admin/portal/claim/").content.decode()
+    button = attributes(page, "meldgrove-update-button")
+    assert button["date-locale"] == "en-US"
+    assert button["time-zone"] == "America/New_York"
