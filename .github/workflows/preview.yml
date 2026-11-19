@@ -15,15 +15,16 @@ on:
 permissions:
   contents: read
 
-# One preview at a time; each publishes the newest commit that passed CI.
-concurrency:
-  group: preview
-  cancel-in-progress: false
-
 jobs:
   preview:
     # Pushes to main only; CI also runs for pull requests.
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    # One preview at a time; each publishes the newest commit that passed CI.
+    # On the job, not the workflow: a failed CI run, which skips the job,
+    # must not replace a waiting preview.
+    concurrency:
+      group: preview
+      cancel-in-progress: false
     permissions:
       actions: read # find the CI run of the commit
       contents: write # requested by the shared jobs; a preview pushes nothing
