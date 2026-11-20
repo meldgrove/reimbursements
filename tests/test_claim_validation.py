@@ -8,7 +8,7 @@ import pytest
 from portal.forms import ClaimForm
 from portal.intake import IntakeError
 from portal.models import Claim, Job
-from portal.services import claim_validation
+from portal.services import claim_validation, terms
 from tests.test_forms import mileage_row, post
 from tests.test_improvements import validate
 
@@ -41,7 +41,8 @@ def test_expense_errors_agree_through_both_http_paths(prepared, changes, field):
 def test_checks_collect_fields_from_multiple_rows_even_when_claim_fields_fail(prepared):
     first, second = mileage_row(route_from=""), mileage_row(return_date="")
     result = claim_validation.review(
-        {**prepared["data"], "full_name": "", "expenses": [first, second]}, prepared["form"]
+        {**prepared["data"], "full_name": "", "expenses": [first, second]},
+        terms.of(prepared["form"]),
     )
     assert set(result.errors) == {
         "full_name",
@@ -62,16 +63,16 @@ def test_valid_review_returns_exact_values_without_consent_or_signature_or_io(
     )
     for key in ("signature", "declaration", "privacy_acknowledged"):
         data.pop(key)
-    original = deepcopy(data)
+    original, offered = deepcopy(data), terms.of(prepared["form"])
     with django_assert_num_queries(0):
-        reviewed = claim_validation.review(data, prepared["form"])
+        reviewed = claim_validation.review(data, offered)
     entries = reviewed.require_valid()
     assert entries.total == Decimal("73.80") and entries.signature is None
     assert entries.expenses[0]["vehicle_registration"] == "B-AB 123"
     assert entries.claim["trip_destination"] == "" and entries.claim["trip_start"] is None
     assert not entries.claim.keys() & {"declaration", "privacy_acknowledged", "is_trip"}
     assert data == original
-    assert set(claim_validation.submission(data, prepared["form"]).errors) == {
+    assert set(claim_validation.submission(data, terms.of(prepared["form"])).errors) == {
         "signature",
         "declaration",
         "privacy_acknowledged",
@@ -114,5 +115,5 @@ def test_reordered_rows_keep_their_error_identity(prepared):
 
 def test_every_stored_claim_form_field_is_a_claim_column(form):
     columns = {field.name for field in Claim._meta.concrete_fields}
-    stored = set(ClaimForm(form=form).fields) - claim_validation.NOT_STORED
+    stored = set(ClaimForm(terms=terms.of(form)).fields) - claim_validation.NOT_STORED
     assert stored <= columns, stored - columns

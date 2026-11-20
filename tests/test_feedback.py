@@ -16,6 +16,7 @@ from portal.constants import PAYMENT_TIMING
 from portal.i18n import t
 from portal.jobs import run_one
 from portal.models import Claim, ClaimReferenceCounter
+from portal.services import terms
 from portal.services.capacity import temporary_workspace
 from portal.services.documents import build_claim_pdf
 from portal.services.references import allocate_reference
@@ -195,4 +196,4 @@ def test_drafts_opened_before_the_intake_change_must_reload(prepared):
     assert "aktualisiert" in response.json()["error"]
     assert not Claim.objects.exists()
     assert prepared["client"].get("/f/test/").status_code == 200
-    assert Draft.objects.filter(revision=prepared["form"].revision()).exists()
+    assert Draft.objects.filter(revision=terms.of(prepared["form"]).revision).exists()

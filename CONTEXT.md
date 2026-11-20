@@ -10,9 +10,15 @@ are in [the form contract](docs/form-contract.md); operations in
   sets its internal values, travel mode, mileage and **Declaration**. Its status is
   draft, published or archived; an **Archived** form is closed and left out of the
   forms list (`portal/services/publication.py`).
+- **Terms**: what a participant agrees to and what their entries are validated against:
+  the declaration and its version, the privacy notice, the purpose options, the travel
+  mode and the mileage rate. Their digest is the form's **revision**. Validation reads a
+  form only through its terms; wording, opening times, internal values and contacts are
+  not terms (`portal/services/terms.py`).
 - **Draft**: one participant's session-bound, token-authorized copy of a form, opened
-  against the form's revision. Every participant action passes the Draft gate with a
-  named action: READ, REVIEW, REMOVE, UPLOAD or SUBMIT (`portal/services/drafts.py`).
+  against the form's terms by their revision. Every participant action passes the
+  Draft gate with a named action: READ, REVIEW, REMOVE, UPLOAD or SUBMIT
+  (`portal/services/drafts.py`).
 - **Upload**: a receipt or signature file of a draft. Validation scans it, normalizes
   it in the document sandbox and publishes its output; a PDF is its own output
   (`documents.validate_upload`). Every failure code has a participant message, or is

@@ -71,12 +71,12 @@ class ClaimForm(forms.Form):
     declaration = forms.BooleanField(label=t_lazy("Confirm the declaration"))
     privacy_acknowledged = forms.BooleanField(label=t_lazy("Privacy notice read"))
 
-    def __init__(self, *args, form, has_mileage=False, **kwargs):
-        self.portal_form = form
+    def __init__(self, *args, terms, has_mileage=False, **kwargs):
+        self.terms = terms
         self.has_mileage = has_mileage
         super().__init__(*args, **kwargs)
-        options = form.purpose_choices()
-        self.fixed_purpose = options[0] if len(options) == 1 else None
+        options = terms.purpose_options
+        self.fixed_purpose = terms.fixed_purpose
         if self.fixed_purpose:
             self.fields["purpose"].initial = self.fixed_purpose
             self.fields["purpose"].disabled = True
@@ -113,7 +113,7 @@ class ClaimForm(forms.Form):
 
     @property
     def travel_mode(self):
-        return self.portal_form.template.travel
+        return self.terms.travel
 
     def travel_required(self):
         if self.has_mileage or self.travel_mode == FormTemplate.Travel.OFF:
@@ -159,7 +159,7 @@ class ClaimForm(forms.Form):
         account = data.get("iban")
         if account and account[:2] not in SEPA_COUNTRIES and not data.get("bic"):
             self.add_error("bic", t("Accounts outside the SEPA area need a BIC."))
-        if not self.portal_form.purpose_choices():
+        if not self.terms.purpose_options:
             data["purpose_details"] = ""
         if not self.travel_required():
             data["trip_destination"], data["trip_start"], data["trip_end"] = "", None, None

@@ -12,7 +12,7 @@ from portal.intake import (
     mileage_amount,
     parse_amount,
 )
-from portal.services import claim_validation
+from portal.services import claim_validation, terms
 
 pytestmark = pytest.mark.django_db
 
@@ -57,7 +57,7 @@ def test_server_rejects_rows_beyond_the_configured_file_limit(prepared, settings
     settings.MAX_FILES_PER_EXPENSE = 1
     data = prepared["data"]
     data["expenses"][0]["uploads"].append(str(data["signature"]))
-    result = claim_validation.submission(data, prepared["form"])
+    result = claim_validation.submission(data, terms.of(prepared["form"]))
     with pytest.raises(IntakeError) as error:
         result.require_valid()
     assert "1 bis 1 Belegdateien" in str(error.value.errors)
