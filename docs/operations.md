@@ -269,6 +269,9 @@ validation keeps its admitted output reservation while awaiting another attempt.
 Rendering can be
 reclaimed; interrupted sends become unknown. It retries only known pre-acceptance
 email failures and transient scanner outages, with bounded backoff.
+A validation or render that finds too little storage or workspace waits a minute and
+runs again. Waiting does not count as an attempt, so a long capacity shortage does not
+use up the retries for a scanner outage or an interrupted worker.
 
 Queue age measures waiting time since `run_after` for runnable/running jobs.
 Scheduled backoffs do not fail readiness; a newly due retry gets a fresh waiting
