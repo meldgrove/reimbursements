@@ -12,7 +12,7 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.utils import timezone, translation
 
-from portal import dates, theme
+from portal import dates, numbers, theme
 from portal.constants import DECLARATION, DECLARATION_VERSION, FORM_DESCRIPTION, FORM_TITLE
 from portal.countries import country_name
 from portal.i18n import LANGUAGES, t
@@ -69,6 +69,16 @@ class AppSettings(models.Model):
         choices=dates.CHOICES,
         default=dates.DEFAULT_DATE_FORMAT,
         help_text="For dates everywhere, including the admin area and the claim PDF.",
+    )
+    number_format = models.CharField(
+        "Number format",
+        max_length=8,
+        choices=numbers.CHOICES,
+        default=numbers.DEFAULT_NUMBER_FORMAT,
+        help_text=(
+            "The decimal separator of amounts everywhere, including the admin area and "
+            "the claim PDF. Participants may type amounts with either separator."
+        ),
     )
     accent_color = models.CharField(
         "Accent color",

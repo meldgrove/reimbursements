@@ -61,8 +61,9 @@ production data, or external account identifiers are included. Configure:
 - Optionally `SENTRY_DSN` for error reports without claim content.
 
 In the admin area under Admin > General, choose the app language (German or
-English), timezone and date format. The app language applies to public pages, emails
-to participants and Finance, and the claim PDF. Under Admin > Appearance, optionally
+English), timezone, date format and number format (European 12,50 by default, or US
+12.50). The app language applies to public pages, emails to participants and Finance,
+and the claim PDF. Under Admin > Appearance, optionally
 set an accent color as a hex code and upload a favicon; both apply to public pages
 and the admin area.
 Replace the initial privacy setup notice in the admin area before opening forms.

@@ -11,7 +11,7 @@ from django.utils.crypto import constant_time_compare
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from portal import app_settings, dates, intake, theme
+from portal import app_settings, dates, intake, numbers, theme
 from portal.constants import PAYMENT_TIMING
 from portal.forms import ClaimForm
 from portal.i18n import t
@@ -104,6 +104,7 @@ def form_page(request, form_slug):
             "configuration": configuration,
             "intake_messages": intake.messages(),
             "amount_pattern": intake.AMOUNT_PATTERN,
+            "amount_placeholder": numbers.active().example("0.00"),
             "field_lengths": intake.EXPENSE_FIELD_LENGTHS,
             "max_distance_km": intake.MAX_DISTANCE_KM,
             "development": settings.DEBUG,

@@ -10,6 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 
+from portal import numbers
 from portal.i18n import language, t
 
 # Amounts are always EUR. Whole euros up to nine digits, an optional decimal comma or
@@ -169,6 +170,8 @@ def client_config():
         "messages": messages(),
         "text": script_text(),
         "locale": "de-DE" if language() == "de" else "en-GB",
+        "decimal_separator": numbers.active().decimal,
+        "thousands_separator": numbers.active().thousands,
     }
 
 
@@ -182,7 +185,10 @@ def script_text():
         "connection_lost": t("The connection was interrupted. Please try again."),
         "request_error": t("The request failed."),
         "field_required": t("Please fill in this field."),
-        "amount_invalid": t("Please enter a positive amount in euros, e.g. 12.50."),
+        "amount_invalid": t(
+            "Please enter a positive amount in euros, e.g. {example}.",
+            example=numbers.active().example(),
+        ),
         "check_marked": t("Please check the marked details."),
         "return_before_outward": t("The return date cannot be before the outward journey."),
         "total": t("Total"),
@@ -254,7 +260,12 @@ def script_text():
 def parse_amount(value):
     """An exact positive EUR Decimal with at most two cent digits, or ValueError."""
     if not isinstance(value, str) or not re.fullmatch(AMOUNT_PATTERN, value.strip()):
-        raise ValueError(t("Enter the amount in euros without thousands separators, e.g. 12.50."))
+        raise ValueError(
+            t(
+                "Enter the amount in euros without thousands separators, e.g. {example}.",
+                example=numbers.active().example(),
+            )
+        )
     amount = Decimal(value.strip().replace(",", "."))
     if amount <= 0:
         raise ValueError(t("Please enter a positive amount."))

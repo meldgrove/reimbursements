@@ -6,7 +6,8 @@ Follow [deployment](deployment.md) on a Linux server, or [Coolify](coolify.md). 
 application is one Compose project (web, worker, ClamAV, migrations, updater) on one
 domain; PostgreSQL is a server of your own or the container of
 `compose.postgres.yaml`. Forms, templates,
-the privacy notice, the General settings (app language, timezone, date format) and
+the privacy notice, the General settings (app language, timezone, date and number
+format) and
 the Appearance settings (accent color, favicon) and the update channel (Updates) are
 managed in the admin area at `/admin/`, which signs in through Keycloak and grants roles
 from the `groups` claim.

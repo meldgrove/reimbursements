@@ -114,8 +114,8 @@ TEXT = {
         "Mit Finger, Stift oder Maus unterschreiben oder ein Bild hochladen. "
         "JPG/PNG, höchstens {size}."
     ),
-    "Enter the amount in euros without thousands separators, e.g. 12.50.": (
-        "Betrag in Euro ohne Tausendertrennzeichen eingeben, z. B. 12,50."
+    "Enter the amount in euros without thousands separators, e.g. {example}.": (
+        "Betrag in Euro ohne Tausendertrennzeichen eingeben, z. B. {example}."
     ),
     "Please enter a positive amount.": "Bitte gib einen positiven Betrag ein.",
     "Please enter the distance in whole kilometres.": (
@@ -134,8 +134,8 @@ TEXT = {
     ),
     "The request failed.": "Die Anfrage ist fehlgeschlagen.",
     "Please fill in this field.": "Bitte fülle dieses Feld aus.",
-    "Please enter a positive amount in euros, e.g. 12.50.": (
-        "Bitte gib einen positiven Betrag in Euro ein, z. B. 12,50."
+    "Please enter a positive amount in euros, e.g. {example}.": (
+        "Bitte gib einen positiven Betrag in Euro ein, z. B. {example}."
     ),
     "Please check the marked details.": "Bitte prüfe die markierten Angaben.",
     "The return date cannot be before the outward journey.": (
@@ -497,7 +497,6 @@ TEXT = {
     "Reference/invoice no.": "Referenz/Rechnungsnr.",
     "if available": "falls vorhanden",
     "Amount in EUR *": "Betrag in EUR *",
-    "0.00": "0,00",
     "Add receipt": "Beleg hinzufügen",
     "Date of the outward journey *": "Datum der Hinfahrt *",
     "Registration *": "Kennzeichen *",
