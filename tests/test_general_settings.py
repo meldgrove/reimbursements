@@ -196,8 +196,7 @@ def test_the_claim_pdf_shows_amounts_in_the_app_number_format(
         return {}
 
     monkeypatch.setattr(documents, "assemble_pdf", assemble)
-    with app_settings.for_claim(accepted):
-        documents.build_claim_pdf(accepted, tmp_path)
+    documents.build_claim_pdf(accepted, tmp_path)
     assert f'<td class="amount">{amount} EUR</td>' in pages[0]
 
 
