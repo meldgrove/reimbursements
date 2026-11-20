@@ -148,6 +148,26 @@ services:
     volumes:
       - updater:/trigger
 
+  # Backups for Meldgrove Backups (docs/deployment.md#backups): the database and
+  # the `private_data` volume, sent when Backups asks. Idle while BACKUP_URL is
+  # empty; it only reads and opens no port.
+  backup-agent:
+    image: ghcr.io/meldgrove/backup-agent:0.1
+    restart: unless-stopped
+    # The app's user, so that the agent reads every file the app writes.
+    user: "10001:10001"
+    environment:
+      # From the app's source in Meldgrove Backups. Empty: the agent idles.
+      BACKUP_URL: ${BACKUP_URL:-}
+      BACKUP_TOKEN: ${BACKUP_TOKEN:-}
+      DATABASE_URL: ${DATABASE_URL:?Set the PostgreSQL URL}
+      APP_NAME: reimbursements
+      APP_IMAGE: *image
+      # Settings a restore needs that are not in the backup (names only).
+      APP_SECRETS: DJANGO_SECRET_KEY
+    volumes:
+      - private_data:/data/private_data:ro
+
 volumes:
   private_data:
   scanner_data:
