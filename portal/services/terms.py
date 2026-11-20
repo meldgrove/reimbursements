@@ -16,9 +16,15 @@ from decimal import Decimal
 
 from portal.i18n import language
 from portal.models import PrivacyNotice
+from portal.services.outbound import recipient_approved
 
 # Part of every revision. Raising it sends every open draft back.
 INTAKE_VERSION = 2
+
+# Why a form takes no new claims (`refusal`): it is closed, or it is open but unavailable.
+CLOSED = "closed"
+UNAPPROVED_RECIPIENT = "unapproved_recipient"
+NO_PRIVACY_NOTICE = "no_privacy_notice"
 
 
 @dataclass(frozen=True)
@@ -86,6 +92,27 @@ def of(form):
         travel=template.travel,
         mileage_rate=template.mileage_rate if template.mileage_enabled else None,
     )
+
+
+def refusal(form, offered):
+    """Why `form` takes no new claims now, or "" while it does. `offered` is `of(form)`.
+
+    A form takes claims while it is open (`Form.is_open`) and available: its inbox is an
+    approved Finance inbox and a privacy notice exists for participants to acknowledge.
+    The Draft gate, the start page and the admin's Open now follow this one rule.
+    """
+    if not form.is_open():
+        return CLOSED
+    if not recipient_approved(form.recipient):
+        return UNAPPROVED_RECIPIENT
+    if offered.privacy_notice is None:
+        return NO_PRIVACY_NOTICE
+    return ""
+
+
+def accepting(form):
+    """Whether `form` takes new claims now."""
+    return not refusal(form, of(form))
 
 
 def snapshot(form, terms):

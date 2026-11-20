@@ -10,6 +10,10 @@ are in [the form contract](docs/form-contract.md); operations in
   sets its internal values, travel mode, mileage and **Declaration**. Its status is
   draft, published or archived; an **Archived** form is closed and left out of the
   forms list (`portal/services/publication.py`).
+- **Accepting**: a form takes new claims while it is **open** (published, within its
+  opening times, its internal values fit its template) and **available** (an approved
+  Finance inbox and a privacy notice). The Draft gate, the start page and the admin's
+  Open now use one rule (`terms.refusal`).
 - **Terms**: what a participant agrees to and what their entries are validated against:
   the declaration and its version, the privacy notice, the purpose options, the travel
   mode and the mileage rate. Their digest is the form's **revision**. Validation reads a

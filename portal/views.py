@@ -44,7 +44,7 @@ def api_errors(view):
 @require_GET
 def index(request):
     primary = Form.objects.select_related("template").filter(primary=True).first()
-    if primary and primary.is_open():
+    if primary and terms.accepting(primary):
         return redirect("form_page", form_slug=primary.slug)
     return render(request, "portal/index.html")
 

@@ -39,6 +39,7 @@ from portal.services import (
     operations,
     publication,
     retention,
+    terms,
 )
 from portal.templatetags.ui import render_component
 
@@ -502,6 +503,12 @@ def report_archiving(request, changed, noun, *, archived):
         messages.info(request, f"None of the selected {noun}s were archived.")
 
 
+# Why an open form takes no claims; the other columns show why a form is closed.
+UNAVAILABLE = {
+    terms.UNAPPROVED_RECIPIENT: "Receiving inbox not approved",
+    terms.NO_PRIVACY_NOTICE: "No privacy notice",
+}
+
 FORM_STATUS_TONES = {
     Form.Status.DRAFT: "secondary",
     Form.Status.PUBLISHED: "success",
@@ -676,9 +683,19 @@ class FormAdmin(admin.ModelAdmin):
         request = getattr(self, "_request", None)
         return request.build_absolute_uri(url) if request else url
 
-    @admin.display(description="Open now", boolean=True)
+    @admin.display(description="Open now")
     def open_now(self, obj):
-        return obj.is_open()
+        refused = terms.refusal(obj, terms.of(obj))
+        icon = display_for_value(not refused, "", boolean=True)
+        reason = UNAVAILABLE.get(refused)
+        if not reason:
+            return icon
+        return format_html(
+            '<span class="inline-flex items-center gap-1.5">{}'
+            '<span class="text-muted-foreground">{}</span></span>',
+            icon,
+            reason,
+        )
 
     @admin.display(description="Internal values complete", boolean=True)
     def values_complete(self, obj):

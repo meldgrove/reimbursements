@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import uuid
 from datetime import timedelta
@@ -967,3 +968,27 @@ def test_local_admin_sidebar_has_no_identity_provider_account_link(admin_client)
 def test_failed_sign_ins_land_on_the_no_access_page(client, settings):
     response = client.get(settings.LOGIN_REDIRECT_URL_FAILURE)
     assert response.status_code == 403 and "No access" in response.content.decode()
+
+
+def open_now(client):
+    page = client.get("/admin/portal/form/").content.decode()
+    return re.search(r'<td class="field-open_now">(.*?)</td>', page, re.S).group(1)
+
+
+@pytest.mark.parametrize(
+    ("unavailable", "reason"),
+    [("recipient", "Receiving inbox not approved"), ("privacy_notice", "No privacy notice")],
+)
+def test_open_now_shows_why_an_open_form_accepts_no_claims(
+    admin_client, form, settings, unavailable, reason
+):
+    assert 'alt="True"' in open_now(admin_client)
+    if unavailable == "recipient":
+        settings.APPROVED_DELIVERY_RECIPIENTS = ["other@example.invalid"]
+    else:
+        PrivacyNotice.objects.all().delete()
+    cell = open_now(admin_client)
+    assert form.is_open() and 'alt="False"' in cell and reason in cell
+    Form.objects.filter(pk=form.pk).update(status=Form.Status.DRAFT)
+    cell = open_now(admin_client)
+    assert 'alt="False"' in cell and reason not in cell
