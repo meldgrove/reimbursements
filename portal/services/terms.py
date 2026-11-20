@@ -94,8 +94,9 @@ def of(form):
     )
 
 
-def refusal(form, offered):
-    """Why `form` takes no new claims now, or "" while it does. `offered` is `of(form)`.
+def refusal(form, privacy_notice):
+    """Why `form` takes no new claims now, or "" while it does. `privacy_notice` is the
+    current one (`PrivacyNotice.current()`, or the one `of(form)` offers).
 
     A form takes claims while it is open (`Form.is_open`) and available: its inbox is an
     approved Finance inbox and a privacy notice exists for participants to acknowledge.
@@ -105,14 +106,14 @@ def refusal(form, offered):
         return CLOSED
     if not recipient_approved(form.recipient):
         return UNAPPROVED_RECIPIENT
-    if offered.privacy_notice is None:
+    if privacy_notice is None:
         return NO_PRIVACY_NOTICE
     return ""
 
 
 def accepting(form):
     """Whether `form` takes new claims now."""
-    return not refusal(form, of(form))
+    return not refusal(form, PrivacyNotice.current())
 
 
 def snapshot(form, terms):

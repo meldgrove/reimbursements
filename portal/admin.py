@@ -683,9 +683,18 @@ class FormAdmin(admin.ModelAdmin):
         request = getattr(self, "_request", None)
         return request.build_absolute_uri(url) if request else url
 
+    def _privacy_notice(self):
+        """The current privacy notice, read once per page instead of once per row."""
+        request = getattr(self, "_request", None)
+        if request is None:
+            return PrivacyNotice.current()
+        if not hasattr(request, "_current_privacy_notice"):
+            request._current_privacy_notice = PrivacyNotice.current()
+        return request._current_privacy_notice
+
     @admin.display(description="Open now")
     def open_now(self, obj):
-        refused = terms.refusal(obj, terms.of(obj))
+        refused = terms.refusal(obj, self._privacy_notice())
         icon = display_for_value(not refused, "", boolean=True)
         reason = UNAVAILABLE.get(refused)
         if not reason:

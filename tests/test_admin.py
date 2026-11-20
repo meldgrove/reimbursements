@@ -8,7 +8,9 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import SuspiciousOperation
+from django.db import connection
 from django.test import Client, RequestFactory
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
@@ -992,3 +994,22 @@ def test_open_now_shows_why_an_open_form_accepts_no_claims(
     Form.objects.filter(pk=form.pk).update(status=Form.Status.DRAFT)
     cell = open_now(admin_client)
     assert 'alt="False"' in cell and reason not in cell
+
+
+def test_the_forms_list_reads_the_privacy_notice_once_per_page(admin_client, form, template):
+    def notice_queries():
+        with CaptureQueriesContext(connection) as captured:
+            assert admin_client.get("/admin/portal/form/").status_code == 200
+        return [q for q in captured if "portal_privacynotice" in q["sql"]]
+
+    for n in range(3):
+        Form.objects.create(
+            template=template,
+            slug=f"more-{n}",
+            name=f"More {n}",
+            field_values=form.field_values,
+            recipient=form.recipient,
+            support_email=form.support_email,
+            status=Form.Status.PUBLISHED,
+        )
+    assert len(notice_queries()) == 1

@@ -81,7 +81,7 @@ def _ensure_accepting(form, revision):
     """The form's terms if it is accepting. `revision` is the draft's; None checks a form
     before a draft exists."""
     current = terms.of(form)
-    refused = terms.refusal(form, current)
+    refused = terms.refusal(form, current.privacy_notice)
     if refused == terms.CLOSED:
         raise IntakeError(t("This form is closed for new claims."), status=409)
     if refused:
