@@ -1,4 +1,4 @@
-"""The General settings: app language, timezone and date format."""
+"""The General settings: app language, timezone, date format and number format."""
 
 import json
 import re
@@ -10,9 +10,9 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
-from portal import roles
+from portal import app_settings, intake, roles
 from portal.models import AppSettings, DeliveryAttempt, Form, FormTemplate
-from portal.services import confirmations, delivery
+from portal.services import confirmations, delivery, documents
 
 pytestmark = pytest.mark.django_db
 
@@ -32,7 +32,13 @@ def admin_client(client):
 
 
 def general(**changes):
-    return {"language": "de", "timezone": "Europe/Berlin", "date_format": "d.m.Y", **changes}
+    return {
+        "language": "de",
+        "timezone": "Europe/Berlin",
+        "date_format": "d.m.Y",
+        "number_format": "european",
+        **changes,
+    }
 
 
 def configuration(page):
@@ -47,16 +53,21 @@ def test_template_admins_change_the_general_settings(admin_client):
     assert response.status_code == 302 and response.url == URL
     page = admin_client.get(URL).content.decode()
     assert "App language" in page and '<option value="Europe/Berlin" selected>' in page
+    assert '<option value="european" selected>1.234,56 (European)</option>' in page
+    assert '<option value="us">1,234.56 (US)</option>' in page
     assert 'name="favicon_file"' not in page and 'name="accent_color"' not in page
     assert 'name="_save"' in page and 'name="_continue"' not in page
-    changes = general(language="en", timezone="America/New_York", date_format="Y-m-d")
+    changes = general(
+        language="en", timezone="America/New_York", date_format="Y-m-d", number_format="us"
+    )
     response = admin_client.post(URL, changes)
     assert response.status_code == 302 and response.url == URL
     saved = AppSettings.load()
-    assert (saved.language, saved.timezone, saved.date_format) == (
+    assert (saved.language, saved.timezone, saved.date_format, saved.number_format) == (
         "en",
         "America/New_York",
         "Y-m-d",
+        "us",
     )
     assert admin_client.post(URL, general(timezone="Mars/Olympus")).status_code == 200
     assert AppSettings.load().timezone == "America/New_York"
@@ -150,6 +161,52 @@ def test_admin_shows_and_reads_dates_in_the_app_date_format(admin_client, form):
     assert response.status_code == 200, response.content
     form.refresh_from_db()
     assert form.trip_start.isoformat() == "2099-10-20"
+
+
+def test_amounts_have_a_decimal_comma_until_the_us_number_format_is_chosen(
+    admin_client, client, form, accepted
+):
+    AppSettings.objects.create(language="en")
+    assert ">12,50<" in admin_client.get("/admin/portal/claim/").content.decode()
+    page = client.get("/f/test/").content.decode()
+    assert 'placeholder="0,00"' in page
+    assert configuration(page)["decimal_separator"] == ","
+    assert configuration(page)["thousands_separator"] == "."
+    assert configuration(page)["text"]["amount_invalid"].endswith("e.g. 12,50.")
+    AppSettings.objects.filter(pk=1).update(language="de", number_format="us")
+    assert ">12.50<" in admin_client.get("/admin/portal/claim/").content.decode()
+    page = client.get("/f/test/").content.decode()
+    assert 'placeholder="0.00"' in page
+    assert configuration(page)["decimal_separator"] == "."
+    assert configuration(page)["thousands_separator"] == ","
+    assert configuration(page)["text"]["amount_invalid"].endswith("z. B. 12.50.")
+
+
+@pytest.mark.parametrize(("number_format", "amount"), [("european", "12,50"), ("us", "12.50")])
+def test_the_claim_pdf_shows_amounts_in_the_app_number_format(
+    accepted, monkeypatch, tmp_path, number_format, amount
+):
+    AppSettings.objects.create(number_format=number_format)
+    accepted.snapshot["language"] = "en" if number_format == "european" else "de"
+    accepted.save()
+    pages = []
+
+    def assemble(manifest, output):
+        pages.append(json.loads(manifest.read_text())["html"])
+        return {}
+
+    monkeypatch.setattr(documents, "assemble_pdf", assemble)
+    with app_settings.for_claim(accepted):
+        documents.build_claim_pdf(accepted, tmp_path)
+    assert f'<td class="amount">{amount} EUR</td>' in pages[0]
+
+
+def test_amounts_may_be_typed_with_either_separator_in_any_number_format():
+    AppSettings.objects.create(number_format="us")
+    with app_settings.applied(AppSettings.load(), "en"):
+        assert intake.parse_amount("12,50") == intake.parse_amount("12.50")
+        with pytest.raises(ValueError, match=r"e\.g\. 12\.50\.$"):
+            intake.parse_amount("1,250.00")
 
 
 def test_claims_keep_the_language_their_participant_saw(accepted):

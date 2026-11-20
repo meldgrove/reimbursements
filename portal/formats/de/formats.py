@@ -1,7 +1,7 @@
-"""Date formats from the General settings; other formats come from Django's locale."""
+"""Date and number formats from the General settings; others come from Django's locale."""
 
-from portal import dates
+from portal import formats
 
 
 def __getattr__(name):
-    return dates.format_setting(name)
+    return formats.setting(name)

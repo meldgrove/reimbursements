@@ -217,11 +217,19 @@
   details.addEventListener("input", scheduleValidation);
   details.addEventListener("change", scheduleValidation);
   const amountFormat = new RegExp(`^(?:${config.amount_pattern})$`);
+  // An amount in cents as euros, with the separators of the app number format.
   function money(cents) {
+    const separators = {
+      decimal: config.decimal_separator,
+      group: config.thousands_separator,
+    };
     return new Intl.NumberFormat(config.locale, {
       style: "currency",
       currency: "EUR",
-    }).format(Number(cents) / 100);
+    })
+      .formatToParts(Number(cents) / 100)
+      .map((part) => separators[part.type] ?? part.value)
+      .join("");
   }
   // An exact EUR amount in cents, or null when the server would reject it.
   function cents(value) {

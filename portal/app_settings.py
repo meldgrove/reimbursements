@@ -5,8 +5,8 @@ portal.theme and portal.context_processors.
 
 The admin area is always English. Public pages, emails to participants and Finance and
 the claim PDF use the app language; a claim keeps the language its participant saw.
-Every page, email and PDF shows times in the app timezone and dates in the app date
-format.
+Every page, email and PDF shows times in the app timezone, dates in the app date format
+and amounts in the app number format.
 """
 
 import contextlib
@@ -14,7 +14,7 @@ import re
 
 from django.utils import timezone, translation
 
-from portal import dates
+from portal import dates, numbers
 from portal.models import AppSettings
 
 # Pages that are always English, whatever the app language.
@@ -37,8 +37,9 @@ def request_language(request, general):
 
 @contextlib.contextmanager
 def applied(general, language):
-    """Use `language` and the app timezone and date format until the block ends."""
+    """Use `language` and the app timezone, date and number format until the block ends."""
     dates.use(general.date_format)
+    numbers.use(general.number_format)
     with translation.override(language), timezone.override(general.timezone):
         yield
 

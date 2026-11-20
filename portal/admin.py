@@ -127,7 +127,7 @@ class GeneralSettingsForm(forms.ModelForm):
 
     class Meta:
         model = AppSettings
-        fields = ["language", "timezone", "date_format"]
+        fields = ["language", "timezone", "date_format", "number_format"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -261,14 +261,17 @@ class SettingsTabAdmin(admin.ModelAdmin):
 
 @admin.register(AppSettings, site=site)
 class AppSettingsAdmin(SettingsTabAdmin):
-    """The General tab: language, dates and the running version."""
+    """The General tab: language, date and number formats and the running version."""
 
     form = GeneralSettingsForm
     title = "General"
     description = "Settings for the whole app. The admin area is always in English."
     saved_message = "The general settings were saved."
     fieldsets = [
-        ("Language and dates", {"fields": ["language", "timezone", "date_format"]}),
+        (
+            "Language and formats",
+            {"fields": ["language", "timezone", "date_format", "number_format"]},
+        ),
         ("Version", {"fields": ["running_version"]}),
     ]
     readonly_fields = ["running_version"]
