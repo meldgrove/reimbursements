@@ -1,4 +1,5 @@
-# Weekly version updates. A release is proposed once it has been out for seven days,
+# Version updates: npm at the root every weekday, the rest weekly. A release
+# is proposed once it has been out for seven days,
 # except @meldgrove/*; security updates ignore the schedule and the cooldown.
 version: 2
 updates:
@@ -53,7 +54,7 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
       exclude: ["@meldgrove/*"]
