@@ -1,7 +1,8 @@
 """The single worker's job runner: lease a job, dispatch it to its kind, record the outcome.
 
 Job kinds (`portal.job_kinds`) own their target's transitions. The runner owns leases,
-capacity waits and the one retry policy.
+capacity waits and the one retry policy. Every lease counts as an attempt, except one
+that ends waiting for capacity: only processing uses up retries.
 """
 
 import logging
@@ -11,6 +12,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from portal.job_kinds import KINDS
@@ -54,17 +56,22 @@ class Lease:
             .exists()
         )
 
-    def finish(self, state=DONE, error_code="", delay=0):
+    def finish(self, state=DONE, error_code="", delay=0, **changes):
         Job.objects.filter(pk=self.job.pk, state=RUNNING, lease_token=self.token).update(
             state=state,
             error_code=error_code,
             run_after=timezone.now() + timedelta(seconds=delay),
             lease_token=None,
             lease_until=None,
+            **changes,
         )
 
     def cancel(self):
         self.finish(CANCELLED)
+
+    def wait_for_capacity(self):
+        """Run again shortly. Waiting is not an attempt, so this lease's attempt is returned."""
+        self.finish(PENDING, "storage_capacity", CAPACITY_WAIT_SECONDS, attempts=F("attempts") - 1)
 
     def retry(self, error_code, *, minimum_delay=0):
         """Schedule another attempt with backoff. False once attempts are exhausted."""
@@ -119,7 +126,7 @@ def run_one():
     except CapacityError:
         with transaction.atomic():
             if lease.live():
-                lease.finish(PENDING, "storage_capacity", CAPACITY_WAIT_SECONDS)
+                lease.wait_for_capacity()
         logger.warning("document_capacity_wait job=%s", job.pk)
     except Exception as exc:
         failure = kind.failure(exc)

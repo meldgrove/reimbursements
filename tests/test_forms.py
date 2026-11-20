@@ -65,6 +65,20 @@ def test_landing_page_redirects_to_the_open_primary_form(client, form, template)
     assert client.get("/").headers["Location"] == f"/f/{other.slug}/"
 
 
+@pytest.mark.parametrize("unavailable", ["recipient", "privacy_notice"])
+def test_landing_page_skips_a_primary_form_that_cannot_accept_claims(
+    client, form, settings, unavailable
+):
+    form.primary = True
+    form.save()
+    if unavailable == "recipient":
+        settings.APPROVED_DELIVERY_RECIPIENTS = ["other@example.invalid"]
+    else:
+        PrivacyNotice.objects.all().delete()
+    assert form.is_open() and client.get("/f/test/").status_code == 503
+    assert client.get("/").status_code == 200
+
+
 def test_footer_uses_operator_configuration(client, settings):
     assert b"Impressum" not in client.get("/").content
     settings.PORTAL_OPERATOR = "Beispielverein"

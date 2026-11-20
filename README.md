@@ -82,7 +82,11 @@ Template admins manage templates, internal accounting fields, privacy notices an
 all claims. Form editors manage their own forms and see their submissions. New
 forms start as drafts and save automatically. Publish a valid form, then share
 `/f/<slug>/`. A primary form can serve as the start page. Forms can open and close
-on a schedule. Claims retain the form configuration and consent version used at
+on a schedule. A form takes claims while it is published, within its opening times,
+its internal values fit its template, its receiving inbox is one of
+`APPROVED_DELIVERY_RECIPIENTS` and a privacy notice exists. The start page redirects
+only then, and the forms list's Open now column shows it, naming what keeps an open
+form from taking claims. Claims retain the form configuration and consent version used at
 submission. Archive forms and claims you are done with to keep the lists short; the
 Status filter's Archived option lists them again.
 

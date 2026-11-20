@@ -13,7 +13,7 @@ passes it with one of these actions, which says which checks run:
 | SUBMIT | yes                    | yes         | yes            | draft, then form |
 
 A form is accepting while it is open, available (an approved recipient and a privacy
-notice) and on the draft's revision: the digest of the form's terms
+notice; `terms.refusal`) and on the draft's revision: the digest of the form's terms
 (`portal.services.terms`). A draft is accepting while it is unsubmitted and its form is.
 """
 
@@ -31,7 +31,6 @@ from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Draft, Form
 from portal.services import network_budget, terms
-from portal.services.outbound import recipient_approved
 
 # New drafts one browser session may open per day.
 MAX_DRAFTS_PER_SESSION = 10
@@ -81,10 +80,11 @@ def digest(value):
 def _ensure_accepting(form, revision):
     """The form's terms if it is accepting. `revision` is the draft's; None checks a form
     before a draft exists."""
-    if not form.is_open():
-        raise IntakeError(t("This form is closed for new claims."), status=409)
     current = terms.of(form)
-    if not recipient_approved(form.recipient) or current.privacy_notice is None:
+    refused = terms.refusal(form, current.privacy_notice)
+    if refused == terms.CLOSED:
+        raise IntakeError(t("This form is closed for new claims."), status=409)
+    if refused:
         raise IntakeError(t("The form is currently unavailable."), status=503)
     if revision is not None and current.revision != revision:
         raise Outdated()

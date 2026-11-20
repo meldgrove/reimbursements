@@ -68,3 +68,57 @@ def test_interrupted_render_keeps_its_place_until_attempts_run_out(
     assert accepted.state == claim_state
     if claim_state == Claim.State.FAILED:
         assert accepted.error_code == "worker_interrupted"
+
+
+def queued_upload(prepared, uploaded_file):
+    response = prepared["client"].post(
+        "/f/test/uploads/",
+        {
+            "draft_id": str(prepared["draft"].id),
+            "token": prepared["data"]["token"],
+            "kind": "receipt",
+            "expense_id": prepared["data"]["expenses"][0]["id"],
+            "file": uploaded_file,
+        },
+    )
+    upload = Upload.objects.get(pk=response.json()["id"])
+    return upload, Job.objects.get(upload=upload)
+
+
+def wait_for_capacity(job, fake_disk, times):
+    """Let the job wait for workspace capacity `times` times, then free the workspace."""
+    fake_disk(10**12, workspace_free=0)
+    for _ in range(times):
+        assert run_one()
+        job.refresh_from_db()
+        assert (job.state, job.error_code) == ("pending", "storage_capacity")
+        Job.objects.filter(pk=job.pk).update(run_after=timezone.now())
+    fake_disk(10**12, workspace_free=10**12)
+
+
+def test_capacity_waits_leave_scanner_retries_intact(prepared, uploaded_file, settings, fake_disk):
+    upload, job = queued_upload(prepared, uploaded_file)
+    wait_for_capacity(job, fake_disk, len(BACKOFF) + 2)
+    unreachable_scanner(settings)
+    assert run_one()
+    job.refresh_from_db()
+    upload.refresh_from_db()
+    assert (job.state, job.error_code, job.attempts) == ("pending", "scanner_unavailable", 1)
+    assert upload.state == "pending"
+
+
+def test_capacity_waits_leave_an_interrupted_validation_resumable(
+    prepared, uploaded_file, fake_disk
+):
+    upload, job = queued_upload(prepared, uploaded_file)
+    wait_for_capacity(job, fake_disk, len(BACKOFF) + 2)
+    Job.objects.filter(pk=job.pk).update(
+        state="running",
+        attempts=job.attempts + 1,
+        lease_until=timezone.now() - timedelta(seconds=1),
+    )
+    reclaim_stale_jobs()
+    job.refresh_from_db()
+    upload.refresh_from_db()
+    assert (job.state, job.error_code) == ("pending", "worker_interrupted")
+    assert upload.state == "pending"
