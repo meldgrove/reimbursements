@@ -56,6 +56,13 @@ deployed one; they list the upgrade steps a release needs. Take the steps, then 
 `REIMBURSEMENTS_VERSION` in the resource's environment variables and redeploy. Coolify
 reads `compose.coolify.yaml` from `stable`, which is at the newest release.
 
+## Backups
+
+For [Meldgrove Backups](deployment.md#backups), set `BACKUP_URL` and
+`BACKUP_TOKEN` (from the app's source in Backups) in the resource's
+environment variables and redeploy. Each deploy pulls the backup agent's
+image.
+
 ## Automatic updates
 
 On Coolify, the image tag set in `REIMBURSEMENTS_VERSION` decides what installs, not
