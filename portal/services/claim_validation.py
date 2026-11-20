@@ -1,7 +1,8 @@
 """Claim and Expense rules shared by live feedback, review and acceptance.
 
-No storage reads or writes. Errors use Claim field names or stable browser Expense
-field IDs. Both entry points return all errors; callers decide which ones to show.
+They read a form only through its terms (`portal.services.terms`). No storage reads or
+writes. Errors use Claim field names or stable browser Expense field IDs. Both entry
+points return all errors; callers decide which ones to show.
 """
 
 import uuid
@@ -105,7 +106,7 @@ class _Row:
         return self.read(name, lambda value: _text(value, name, required=required))
 
 
-def _expense(row, template, purpose, key, result):
+def _expense(row, terms, purpose, key, result):
     fields = _Row(row, key, result)
     kind = row.get("kind", Expense.Kind.RECEIPT)
     item = {"kind": kind, "purpose": purpose}
@@ -113,7 +114,7 @@ def _expense(row, template, purpose, key, result):
         item["merchant"] = fields.text("merchant")
         item["receipt_reference"] = fields.text("receipt_reference", required=False)
         item["amount"] = fields.read("amount", parse_amount)
-    elif kind == Expense.Kind.MILEAGE and template.mileage_enabled:
+    elif kind == Expense.Kind.MILEAGE and terms.mileage_rate is not None:
         start = fields.read("travel_date", _date, t("Please enter the date of the journey."))
         returning = row.get("round_trip", False)
         if not isinstance(returning, bool):
@@ -144,8 +145,8 @@ def _expense(row, template, purpose, key, result):
             route_to=fields.text("route_to"),
             distance_km=distance,
             round_trip=returning,
-            mileage_rate=template.mileage_rate,
-            amount=mileage_amount(distance, returning, template.mileage_rate)
+            mileage_rate=terms.mileage_rate,
+            amount=mileage_amount(distance, returning, terms.mileage_rate)
             if distance is not None
             else None,
         )
@@ -165,7 +166,7 @@ def _expense(row, template, purpose, key, result):
     return item, ids, fields.valid
 
 
-def _check(data, form, *, submitting):
+def _check(data, terms, *, submitting):
     result = Validation()
     if not isinstance(data, dict):
         result.add("__all__", t("Invalid request."))
@@ -177,7 +178,7 @@ def _check(data, form, *, submitting):
     has_mileage = any(
         isinstance(row, dict) and row.get("kind") == Expense.Kind.MILEAGE for row in expenses
     )
-    claim_form = ClaimForm(data, form=form, has_mileage=has_mileage)
+    claim_form = ClaimForm(data, terms=terms, has_mileage=has_mileage)
     claim_form.is_valid()
     result.errors.update(
         {
@@ -197,7 +198,7 @@ def _check(data, form, *, submitting):
             continue
         row_ids.add(row_id)
         item, ids, valid = _expense(
-            row, form.template, claim_form.cleaned_data.get("purpose", ""), row_id, result
+            row, terms, claim_form.cleaned_data.get("purpose", ""), row_id, result
         )
         if len(set(ids)) != len(ids) or upload_ids.intersection(ids):
             result.add(f"expense-{row_id}-__all__", t("A receipt file can be assigned only once."))
@@ -222,11 +223,12 @@ def _check(data, form, *, submitting):
     return result
 
 
-def review(data, form):
-    """All Claim/Expense errors, or normalized values and exact total. No consent required."""
-    return _check(data, form, submitting=False)
+def review(data, terms):
+    """All Claim/Expense errors under a form's `terms`, or normalized values and exact total.
+    No consent required."""
+    return _check(data, terms, submitting=False)
 
 
-def submission(data, form):
+def submission(data, terms):
     """The same rules plus consent and a Signature ID. Stored Uploads are checked at acceptance."""
-    return _check(data, form, submitting=True)
+    return _check(data, terms, submitting=True)

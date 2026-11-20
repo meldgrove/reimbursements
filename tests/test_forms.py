@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from portal import roles
 from portal.intake import MAX_CLAIM_TOTAL
 from portal.models import Claim, Draft, Form, FormTemplate, PrivacyNotice, TemplateField
+from portal.services import terms
 
 pytestmark = pytest.mark.django_db
 
@@ -23,7 +24,7 @@ def post(prepared, data=None):
 
 def reopened(prepared):
     """The participant reloads after a configuration change and works on the new revision."""
-    revision = Form.objects.get(pk=prepared["form"].pk).revision()
+    revision = terms.of(Form.objects.get(pk=prepared["form"].pk)).revision
     Draft.objects.filter(pk=prepared["draft"].pk).update(revision=revision)
     prepared["data"]["revision"] = revision
 

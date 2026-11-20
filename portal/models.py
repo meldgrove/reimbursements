@@ -1,5 +1,4 @@
 import hashlib
-import json
 import re
 import uuid
 import zoneinfo
@@ -16,7 +15,7 @@ from django.utils import timezone, translation
 from portal import dates, theme
 from portal.constants import DECLARATION, DECLARATION_VERSION, FORM_DESCRIPTION, FORM_TITLE
 from portal.countries import country_name
-from portal.i18n import LANGUAGES, language, t
+from portal.i18n import LANGUAGES, t
 from portal.intake import EXPENSE_FIELD_LENGTHS
 
 
@@ -384,44 +383,12 @@ class Form(models.Model):
         # Marking a second start page is a handover that save() performs, not a conflict.
         super().validate_constraints(exclude={*(exclude or ()), "primary"})
 
-    def revision(self):
-        """A digest of what a participant agrees to and what their entries are validated against.
-
-        A draft is opened against one revision and accepted only while the form keeps it: the
-        declaration, the privacy notice version, the purpose options, the travel mode and the
-        mileage rate. Wording, opening times, internal values and contacts change without
-        sending open drafts back; the claim snapshot records them at acceptance.
-        """
-        return self._revision(PrivacyNotice.current())
-
-    def _revision(self, notice):
-        template = self.template
-        configuration = {
-            "intake_version": 2,
-            "declaration": template.declaration,
-            "declaration_version": template.declaration_version,
-            "privacy_version": notice.version if notice else None,
-            "purpose_options": self.purpose_choices(),
-            "travel": template.travel,
-            "mileage_rate": f"{template.mileage_rate:.2f}" if template.mileage_enabled else None,
-        }
-        encoded = json.dumps(configuration, sort_keys=True, ensure_ascii=False).encode()
-        return hashlib.sha256(encoded).hexdigest()[:16]
-
     def save(self, *args, **kwargs):
         with transaction.atomic():
             if self.primary:
                 # Only one form is the start page; the previous one just stops being it.
                 Form.objects.filter(primary=True).exclude(pk=self.pk).update(primary=False)
             super().save(*args, **kwargs)
-
-    def purpose_choices(self):
-        # Repeated presets are one choice, so a single distinct purpose stays fixed text.
-        return list(
-            dict.fromkeys(
-                line.strip() for line in self.purpose_options.splitlines() if line.strip()
-            )
-        )
 
     def internal_values(self):
         """(label, value) pairs in template order, for the PDF."""
@@ -430,24 +397,6 @@ class Form(models.Model):
             for field in self.template.fields.all()
             if self.field_values.get(field.key, "")
         ]
-
-    def snapshot(self):
-        template, notice = self.template, PrivacyNotice.current()
-        return {
-            "name": self.name,
-            "slug": self.slug,
-            "template": template.name,
-            "internal_values": self.internal_values(),
-            "recipient": self.recipient,
-            "support_email": self.support_email,
-            "declaration": template.declaration,
-            "declaration_version": template.declaration_version,
-            "privacy_version": notice.version if notice else None,
-            "mileage_rate": str(template.mileage_rate) if template.mileage_enabled else None,
-            "revision": self._revision(notice),
-            # The PDF and the emails use the language the participant saw.
-            "language": language(),
-        }
 
 
 class DraftAdmission(models.Model):
@@ -467,7 +416,7 @@ class Draft(models.Model):
     form = models.ForeignKey(Form, on_delete=models.PROTECT)
     session_hash = models.CharField(max_length=64)
     token_hash = models.CharField(max_length=64)
-    # The form's revision when the draft was opened; see Form.revision().
+    # The digest of the form's terms when the draft was opened; see portal.services.terms.
     revision = models.CharField(max_length=16)
     created_at = models.DateTimeField(default=timezone.now)
     expires_at = models.DateTimeField(default=draft_expiry, db_index=True)

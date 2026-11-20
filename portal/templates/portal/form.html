@@ -67,14 +67,14 @@
         {% component "button" variant="outline" type="button" id="add-expense" %}{% icon "plus" %}{% t "Expense with receipt" %}{% endcomponent %}
         {% if configuration.mileage_rate %}{% component "button" variant="outline" type="button" id="add-mileage" %}{% icon "plus" %}{% t "Mileage claim" %}{% endcomponent %}{% endif %}
       </div>
-      {% if template.travel != 'off' %}
-      {% if template.travel == 'optional' %}<details id="receipt-travel" class="rounded-lg border p-4" hidden><summary class="text-sm font-medium">{% t "Add travel details for expenses with receipts (optional)" %}</summary>{% else %}<div id="receipt-travel" class="rounded-lg border p-4" hidden><p class="text-sm font-medium">{% t "Travel details for expenses with receipts" %}</p>{% endif %}
+      {% if terms.travel != 'off' %}
+      {% if terms.travel == 'optional' %}<details id="receipt-travel" class="rounded-lg border p-4" hidden><summary class="text-sm font-medium">{% t "Add travel details for expenses with receipts (optional)" %}</summary>{% else %}<div id="receipt-travel" class="rounded-lg border p-4" hidden><p class="text-sm font-medium">{% t "Travel details for expenses with receipts" %}</p>{% endif %}
         <div class="grid gap-5 pt-4 sm:grid-cols-2" id="trip-fields">
           {% include 'portal/field.html' with field=claim_form.trip_destination required=True wide=True %}
           {% include 'portal/field.html' with field=claim_form.trip_start required=True %}
           {% include 'portal/field.html' with field=claim_form.trip_end required=True %}
         </div>
-      {% if template.travel == 'optional' %}</details>{% else %}</div>{% endif %}
+      {% if terms.travel == 'optional' %}</details>{% else %}</div>{% endif %}
       {% endif %}
       <div class="totals border-t pt-4" id="totals" aria-live="polite"></div>
       <p id="error-__all__" class="field-error" aria-live="polite"></p>
@@ -99,7 +99,7 @@
   <section class="panel rounded-xl border bg-card text-card-foreground shadow-sm" aria-labelledby="section-declaration">
     <div class="flex items-start gap-4 border-b p-5 sm:p-6"><span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{% icon "pen-line" %}</span><h2 id="section-declaration" class="pt-1.5 text-lg font-semibold">{% t "Declaration & signature" %}</h2></div>
     <div class="flex flex-col gap-5 p-5 sm:p-6">
-      <p class="declaration-text rounded-lg bg-muted/60 p-4 text-sm leading-relaxed">{{ template.declaration }}</p>
+      <p class="declaration-text rounded-lg bg-muted/60 p-4 text-sm leading-relaxed">{{ terms.declaration }}</p>
       <label class="check-label font-medium"><input type="checkbox" name="declaration" id="declaration" required><span>{% t "I confirm the declaration. *" %}</span></label>
       <div class="signature-section flex flex-col gap-2">
         <label class="text-sm font-medium" for="signature-canvas">{% t "Sign here" %}</label>
@@ -120,7 +120,7 @@
       <p>{% t "We process your details, receipts and signature to reimburse your expenses. We delete the PDF 7 days after it reaches accounting, and all other data in the portal 90 days after submission." %}</p>
       <details class="group rounded-lg border">
         <summary class="flex items-center justify-between gap-2 px-4 py-3 font-medium hover:bg-accent/50">{% t "Read the full privacy notice" %}{% icon "chevron-down" class="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" %}</summary>
-        <div class="privacy-text max-h-96 overflow-y-auto border-t px-4 py-4">{{ privacy_notice.text|paragraphs }}</div>
+        <div class="privacy-text max-h-96 overflow-y-auto border-t px-4 py-4">{{ terms.privacy_notice.text|paragraphs }}</div>
       </details>
       {% url 'privacy' as privacy_url %}
       <label class="check-label font-medium"><input type="checkbox" name="privacy_acknowledged" id="privacy_acknowledged" required><span>{% t_html 'I have read the <a class="ui-link" href="{url}" target="_blank" rel="noopener">privacy notice</a>. *' url=privacy_url %}</span></label>

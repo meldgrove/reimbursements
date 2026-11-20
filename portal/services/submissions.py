@@ -7,7 +7,15 @@ from django.utils.crypto import constant_time_compare
 from portal.i18n import t
 from portal.intake import IntakeError
 from portal.models import Claim, Expense
-from portal.services import claim_validation, confirmations, drafts, queue, retention, uploads
+from portal.services import (
+    claim_validation,
+    confirmations,
+    drafts,
+    queue,
+    retention,
+    terms,
+    uploads,
+)
 from portal.services.drafts import digest
 from portal.services.references import allocate_reference
 
@@ -37,10 +45,11 @@ def submit_claim(participant, form_slug, data, *, numbered=True):
             ) from None
         return submitted.draft.claim
     # A privacy notice published since the gate's check must not enter this claim.
-    snapshot = form.snapshot()
-    if snapshot["revision"] != draft.revision:
+    accepted = terms.of(form)
+    if accepted.revision != draft.revision:
         raise drafts.Outdated()
-    entries = claim_validation.submission(data, form).require_valid()
+    snapshot = terms.snapshot(form, accepted)
+    entries = claim_validation.submission(data, accepted).require_valid()
     files = uploads.claimable(draft, entries.expenses, entries.signature)
     if Expense.objects.filter(id__in=[row["id"] for row in entries.expenses]).exists():
         raise IntakeError(t("Invalid item ID. Please open a new form."), status=409)

@@ -12,7 +12,7 @@ from portal.constants import FORM_DESCRIPTION, FORM_TITLE, PAYMENT_TIMING
 from portal.i18n import t
 from portal.jobs import reclaim_stale_jobs, run_one
 from portal.models import Claim, Confirmation, Job
-from portal.services import confirmations, publication
+from portal.services import confirmations, publication, terms
 from portal.services.retention import purge_claim
 from portal.services.storage import outbox_key, path_for
 from tests.test_delivery import mock_provider
@@ -48,7 +48,7 @@ def test_admin_can_save_individual_form_title_and_description(client, form, djan
 
 
 def test_blank_form_copy_uses_existing_defaults_and_does_not_invalidate_drafts(client, form):
-    revision = form.revision()
+    revision = terms.of(form).revision
     data = publication.settings_form(form.template, form.status)(
         {
             "name": form.name,
@@ -63,7 +63,7 @@ def test_blank_form_copy_uses_existing_defaults_and_does_not_invalidate_drafts(c
     )
     assert data.is_valid(), data.errors
     data.save()
-    assert form.revision() == revision
+    assert terms.of(form).revision == revision
     page = client.get("/f/test/").content.decode()
     assert t(FORM_TITLE) in page and t(FORM_DESCRIPTION) in page
     assert (

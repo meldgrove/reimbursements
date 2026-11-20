@@ -19,7 +19,7 @@ from portal.intake import IntakeError
 from portal.models import Claim, Form, PrivacyNotice
 from portal.participants import RequestParticipant
 from portal.roles import manages
-from portal.services import claim_status, claim_validation, drafts, evidence, uploads
+from portal.services import claim_status, claim_validation, drafts, evidence, terms, uploads
 from portal.services.capacity import storage_available
 from portal.services.drafts import open_draft
 from portal.services.mailersend import verify_webhook, webhook_evidence
@@ -76,19 +76,15 @@ def form_page(request, form_slug):
                 {"form": form, "message": exc.message},
                 status=exc.status,
             )
-    template = form.template
-    notice = PrivacyNotice.current()
+    offered = terms.of(form)
     claim_form = ClaimForm(
-        form=form, initial={"trip_start": form.trip_start, "trip_end": form.trip_end}
+        terms=offered, initial={"trip_start": form.trip_start, "trip_end": form.trip_end}
     )
     configuration = {
         "draft_id": str(draft.id) if draft else "",
         "token": token,
         "preview": preview,
-        "travel": template.travel,
-        "mileage_rate": str(template.mileage_rate) if template.mileage_enabled else None,
-        "purpose_options": bool(form.purpose_choices()),
-        "fixed_purpose": claim_form.fixed_purpose,
+        **offered.script_configuration(),
         "trip_start": form.trip_start.isoformat() if form.trip_start else "",
         "trip_end": form.trip_end.isoformat() if form.trip_end else "",
         "upload_url": reverse("upload", kwargs={"form_slug": form.slug}),
@@ -102,9 +98,9 @@ def form_page(request, form_slug):
         "portal/form.html",
         {
             "form": form,
-            "template": template,
+            "template": form.template,
+            "terms": offered,
             "claim_form": claim_form,
-            "privacy_notice": notice,
             "configuration": configuration,
             "intake_messages": intake.messages(),
             "amount_pattern": intake.AMOUNT_PATTERN,
@@ -181,7 +177,7 @@ def validate_claim(request, form_slug):
         draft_token(request),
         drafts.REVIEW,
     )
-    return JsonResponse({"fields": claim_validation.review(data, form).errors})
+    return JsonResponse({"fields": claim_validation.review(data, terms.of(form)).errors})
 
 
 @require_POST

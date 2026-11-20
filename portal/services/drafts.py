@@ -13,8 +13,8 @@ passes it with one of these actions, which says which checks run:
 | SUBMIT | yes                    | yes         | yes            | draft, then form |
 
 A form is accepting while it is open, available (an approved recipient and a privacy
-notice) and on the draft's revision. A draft is accepting while it is unsubmitted and its
-form is.
+notice) and on the draft's revision: the digest of the form's terms
+(`portal.services.terms`). A draft is accepting while it is unsubmitted and its form is.
 """
 
 import hashlib
@@ -29,8 +29,8 @@ from django.utils.crypto import constant_time_compare
 
 from portal.i18n import t
 from portal.intake import IntakeError
-from portal.models import Draft, Form, PrivacyNotice
-from portal.services import network_budget
+from portal.models import Draft, Form
+from portal.services import network_budget, terms
 from portal.services.outbound import recipient_approved
 
 # New drafts one browser session may open per day.
@@ -79,13 +79,16 @@ def digest(value):
 
 
 def _ensure_accepting(form, revision):
-    """`revision` is the draft's; None checks a form before a draft exists."""
+    """The form's terms if it is accepting. `revision` is the draft's; None checks a form
+    before a draft exists."""
     if not form.is_open():
         raise IntakeError(t("This form is closed for new claims."), status=409)
-    if not recipient_approved(form.recipient) or PrivacyNotice.current() is None:
+    current = terms.of(form)
+    if not recipient_approved(form.recipient) or current.privacy_notice is None:
         raise IntakeError(t("The form is currently unavailable."), status=503)
-    if revision is not None and form.revision() != revision:
+    if revision is not None and current.revision != revision:
         raise Outdated()
+    return current
 
 
 def gate(participant, form_slug, draft_id, token, action):
@@ -127,8 +130,7 @@ def open_draft(participant, form):
     A submitted, expired or outdated draft starts a new one. Never call inside a
     transaction: a session started for a new draft must persist (see `portal.participants`).
     """
-    _ensure_accepting(form, None)
-    revision, now = form.revision(), timezone.now()
+    revision, now = _ensure_accepting(form, None).revision, timezone.now()
     binding = participant.binding()
     remembered = participant.remembered(form.slug)
     if remembered:
