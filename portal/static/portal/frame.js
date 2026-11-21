@@ -345,7 +345,8 @@
       openShortcuts();
       return;
     }
-    if (plain(event) && (event.metaKey || event.ctrlKey) && key === "b") {
+    // Not with Shift: Ctrl+Shift+B is the browser's bookmarks bar (the package matches "b" only).
+    if (plain(event) && (event.metaKey || event.ctrlKey) && !event.shiftKey && key === "b") {
       event.preventDefault();
       toggleSidebar();
       return;
