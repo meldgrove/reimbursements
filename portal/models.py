@@ -86,8 +86,8 @@ class AppSettings(models.Model):
         blank=True,
         validators=[RegexValidator(rf"\A{theme.HEX_COLOR}\Z", "Enter a hex code such as #0f766e.")],
         help_text=(
-            "Such as #0f766e. Leave empty for the standard teal. Dark mode "
-            "lightens it as needed so it stays readable."
+            "Such as #0f766e. Leave empty for the colors every Meldgrove app shares. "
+            "Dark mode lightens it as needed so it stays readable."
         ),
     )
     favicon = models.BinaryField("Favicon", blank=True, default=b"")

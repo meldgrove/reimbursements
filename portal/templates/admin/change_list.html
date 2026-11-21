@@ -3,13 +3,13 @@
 {% block extrahead %}{{ block.super }}{% if cl.formset or action_form %}<script src="{% url 'admin:jsi18n' %}"></script>{% endif %}{% endblock %}
 {% block breadcrumbs %}{% include "admin/portal/breadcrumbs.html" with opts=cl.opts %}{% endblock %}
 {% block content_title %}
-<div class="flex flex-wrap items-end justify-between gap-4">
-  <div class="grid gap-1">
+<div class="page-header">
+  <div class="page-heading">
     <h1 class="page-title">{{ cl.opts.verbose_name_plural|capfirst }}</h1>
-    {% if cl.model_admin.list_description %}<p class="text-sm text-muted-foreground">{{ cl.model_admin.list_description }}</p>{% endif %}
+    {% if cl.model_admin.list_description %}<p class="page-description">{{ cl.model_admin.list_description }}</p>{% endif %}
   </div>
   {% if has_add_permission and not is_popup %}{% url cl.opts|admin_urlname:'add' as add_url %}
-  {% component "button" href=add_url %}{% icon "plus" %}{{ cl.model_admin.add_label|default:"Add" }}{% endcomponent %}
+  <div class="page-actions">{% component "button" href=add_url %}{% icon "plus" %}{{ cl.model_admin.add_label|default:"Add" }}{% endcomponent %}</div>
   {% endif %}
 </div>
 {% endblock %}

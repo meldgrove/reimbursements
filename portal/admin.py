@@ -43,6 +43,9 @@ from portal.services import (
 )
 from portal.templatetags.ui import render_component
 
+# The sidebar's state on wide screens, the cookie of @meldgrove/ui's frame ("false": folded).
+SIDEBAR_COOKIE = "sidebar_state"
+
 
 class PortalAdminSite(admin.AdminSite):
     site_header = APP_NAME
@@ -76,9 +79,10 @@ class PortalAdminSite(admin.AdminSite):
     def each_context(self, request):
         context = super().each_context(request)
         if self.has_permission(request):
-            context["nav_sections"] = admin_navigation.sections(request)
-            context["settings_tabs"] = admin_navigation.settings_tabs(request)
-            context["account_url"] = settings.KEYCLOAK_ACCOUNT_URL if settings.OIDC_ENABLED else ""
+            context["navigation"] = admin_navigation.navigation(request)
+            context["person"] = admin_navigation.person(request.user)
+            # The frame keeps the sidebar folded with this cookie, as in every Meldgrove app.
+            context["sidebar_open"] = request.COOKIES.get(SIDEBAR_COOKIE) != "false"
             context["updates"] = admin_updates.context(request)
         return context
 
@@ -91,6 +95,7 @@ class PortalAdminSite(admin.AdminSite):
     def get_urls(self):
         return [
             path("no-access/", self.no_access, name="no_access"),
+            path("settings/", self.admin_view(self.person_settings), name="settings"),
             path("search/", self.admin_view(self.search), name="search"),
             path(
                 "search/suggestions/",
@@ -104,6 +109,19 @@ class PortalAdminSite(admin.AdminSite):
     def no_access(self, request):
         return render(request, "admin/portal/no_access.html", status=403)
 
+    def person_settings(self, request):
+        """The person's own settings ("Settings" in the user menu): their sign-in account,
+        appearance and single-letter shortcuts, both kept in this browser, and About."""
+        return TemplateResponse(
+            request,
+            "admin/portal/settings.html",
+            {
+                **self.each_context(request),
+                "title": "Settings",
+                "account_url": settings.KEYCLOAK_ACCOUNT_URL if settings.OIDC_ENABLED else "",
+            },
+        )
+
     def search(self, request):
         query = request.GET.get("q", "")[:100]
         groups = admin_navigation.search(request, self, query, admin_navigation.RESULT_LIMIT)
@@ -115,8 +133,7 @@ class PortalAdminSite(admin.AdminSite):
 
     def search_suggestions(self, request):
         query = request.GET.get("q", "")[:100]
-        groups = admin_navigation.search(request, self, query, admin_navigation.SUGGESTION_LIMIT)
-        return JsonResponse({"groups": groups})
+        return JsonResponse({"results": admin_navigation.results(request, self, query)})
 
 
 site = PortalAdminSite(name="admin")
@@ -216,7 +233,7 @@ class AppearanceForm(forms.ModelForm):
 
 
 class SettingsTabAdmin(admin.ModelAdmin):
-    """A tab of the one settings row, edited in place."""
+    """A page of the Admin group in the sidebar: part of the one settings row, edited in place."""
 
     change_form_template = "admin/portal/settings_tab.html"
     title = ""
@@ -331,7 +348,7 @@ class AppearanceAdmin(SettingsTabAdmin):
             'stroke-opacity=".2"/></svg>{} <code class="font-mono">{}</code></span>',
             [(light, "Light mode", light), (dark, "Dark mode", dark)],
         )
-        label = "Custom color" if obj.accent_color else "Standard teal"
+        label = "Custom color" if obj.accent_color else "Meldgrove standard"
         return format_html(
             '<span class="flex flex-col gap-2">{}<span class="flex flex-wrap gap-x-6 gap-y-2">'
             "{}</span></span>",

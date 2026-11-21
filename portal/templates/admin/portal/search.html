@@ -1,5 +1,6 @@
 {% extends "admin/base_site.html" %}{% load ui %}
-{% block breadcrumbs %}<div class="breadcrumbs"><span aria-current="page">Search</span></div>{% endblock %}
+{% block breadcrumbs %}{% breadcrumbs "Search" "" %}{% endblock %}
+{% block content_title %}<div class="page-header"><div class="page-heading"><h1 class="page-title">Search</h1><p class="page-description">Claims, forms and templates by name, email, full reference or form, and the pages of the sidebar.</p></div></div>{% endblock %}
 {% block content %}
 <form method="get" role="search" class="flex max-w-xl gap-2">
   <label class="sr-only" for="search-page-input">Search term</label>

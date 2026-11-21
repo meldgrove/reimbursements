@@ -2,12 +2,12 @@
 {% block extrahead %}{{ block.super }}<script src="{% static 'portal/admin-form.js' %}" defer></script>{% endblock %}
 {% block content_title %}
 <div class="grid gap-4">
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <div class="grid min-w-0 gap-1">
-      <p class="text-sm font-medium text-muted-foreground">{{ opts.verbose_name|capfirst }}</p>
-      <h1 class="page-title break-words" data-form-title>{% if add %}Add form{% else %}{{ original }}{% endif %}</h1>
+  <div class="page-header">
+    <div class="page-heading">
+      <h1 class="page-title" data-form-title>{% if add %}Add form{% else %}{{ original }}{% endif %}</h1>
+      <p class="page-description">{{ opts.verbose_name|capfirst }}</p>
     </div>
-    <div class="flex flex-wrap items-center gap-2" data-form-toolbar>
+    <div class="page-actions" data-form-toolbar>
       {% if has_change_permission or add %}
       {% if original.status == 'published' %}
       {% component "button" type="button" size="sm" form="form_form" value="unpublish" data_publication_toggle=True %}Unpublish{% endcomponent %}
@@ -44,7 +44,7 @@
       <span data-save-symbol="idle"{% if not add %} hidden{% endif %}>{% icon "info" %}</span>
       <span data-save-symbol="pending" hidden>{% icon "pen-line" %}</span>
       <span data-save-symbol="saving" hidden>{% icon "loader" class="size-4 animate-spin motion-reduce:animate-none" %}</span>
-      <span data-save-symbol="saved"{% if add %} hidden{% endif %}>{% icon "circle-check" class="size-4 text-success" %}</span>
+      <span data-save-symbol="saved"{% if add %} hidden{% endif %}>{% icon "circle-check" class="size-4 text-success-foreground" %}</span>
       <span data-save-symbol="error" hidden>{% icon "circle-alert" class="size-4 text-destructive" %}</span>
       <span data-autosave-status>{% if add %}Changes are saved automatically.{% else %}All changes saved.{% endif %}</span>
     </span>

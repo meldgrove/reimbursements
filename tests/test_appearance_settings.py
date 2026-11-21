@@ -44,9 +44,11 @@ def test_template_admins_open_the_appearance_tab(admin_client):
     page = admin_client.get(URL).content.decode()
     assert '<h1 class="page-title">Appearance</h1>' in page
     assert 'name="accent_color"' in page and 'name="favicon_file"' in page
-    assert 'data-color-picker="id_accent_color"' in page and 'value="#0f766e"' in page
-    assert "Standard teal" in page and "Standard favicon" in page
-    assert '<a href="/admin/portal/appearance/" aria-current="page"' in page
+    assert 'data-color-picker="id_accent_color"' in page and 'value="#171717"' in page
+    assert "Meldgrove standard" in page and "Standard favicon" in page
+    assert (
+        '<a href="/admin/portal/appearance/" class="frame-menu-button" aria-current="page"' in page
+    )
     assert '<a href="/admin/portal/appsettings/" class' in page
     assert 'name="_save"' in page and 'name="_continue"' not in page
     assert "portal/admin-color.js" in page

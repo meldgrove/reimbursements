@@ -1,8 +1,10 @@
 {% extends "admin/change_form.html" %}
-{% block breadcrumbs %}{% include "admin/portal/breadcrumbs.html" %}{% endblock %}
+{% block breadcrumbs %}{% load ui %}{% breadcrumbs title "" %}{% endblock %}
 {% block content_title %}
-<div class="grid gap-1">
-  <h1 class="page-title">{{ title }}</h1>
-  <p class="text-sm text-muted-foreground">{{ description }}</p>
+<div class="page-header">
+  <div class="page-heading">
+    <h1 class="page-title">{{ title }}</h1>
+    <p class="page-description">{{ description }}</p>
+  </div>
 </div>
 {% endblock %}
