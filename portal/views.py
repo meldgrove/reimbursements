@@ -170,6 +170,8 @@ def upload_remove(request, form_slug, upload_id):
 def validate_claim(request, form_slug):
     """Validate current entries without saving them or requiring a signature."""
     data = json.loads(request.body)
+    # Submitting refuses text that is not Unicode (a lone surrogate); so does the review.
+    json.dumps(data, ensure_ascii=False).encode()
     if not isinstance(data, dict):
         raise IntakeError(t("Invalid request."))
     _draft, form = drafts.gate(

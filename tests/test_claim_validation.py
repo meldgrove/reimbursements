@@ -131,7 +131,8 @@ def test_every_stored_claim_form_field_is_a_claim_column(form):
 )
 def test_json_values_that_are_not_text_are_refused_not_crashed_on(prepared, changes):
     prepared["data"].update(changes)
-    assert validate(prepared).status_code in {200, 400}
+    reviewed = validate(prepared)
+    assert reviewed.status_code == 400 or reviewed.json()["fields"]
     assert post(prepared).status_code == 400
     assert not Claim.objects.exists()
 
