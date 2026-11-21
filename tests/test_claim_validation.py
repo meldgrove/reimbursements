@@ -117,3 +117,33 @@ def test_every_stored_claim_form_field_is_a_claim_column(form):
     columns = {field.name for field in Claim._meta.concrete_fields}
     stored = set(ClaimForm(terms=terms.of(form)).fields) - claim_validation.NOT_STORED
     assert stored <= columns, stored - columns
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        # Values a form field cannot read as text.
+        {"trip_start": 5, "trip_end": ["2026-10-21"]},
+        # A lone surrogate is not Unicode text.
+        {"full_name": "Alex \ud800 Beispiel"},
+    ],
+)
+def test_json_values_that_are_not_text_are_refused_not_crashed_on(prepared, changes):
+    prepared["data"].update(changes)
+    assert validate(prepared).status_code in {200, 400}
+    assert post(prepared).status_code == 400
+    assert not Claim.objects.exists()
+
+
+def test_json_nested_too_deeply_is_an_invalid_request(prepared):
+    response = prepared["client"].post(
+        "/f/test/validate/", data="[" * 100_000, content_type="application/json"
+    )
+    assert response.status_code == 400
+
+
+def test_expense_text_with_a_nul_character_is_refused(prepared):
+    row = prepared["data"]["expenses"][0]
+    row["merchant"] = "Beleg\x00verkauf"
+    assert f"expense-{row['id']}-merchant" in validate(prepared).json()["fields"]
+    assert post(prepared).status_code == 400

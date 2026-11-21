@@ -35,7 +35,8 @@ def api_errors(view):
             return view(request, *args, **kwargs)
         except IntakeError as exc:
             return JsonResponse({"error": exc.message, "fields": exc.errors}, status=exc.status)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeError, RecursionError):
+            # Not JSON, text that is not Unicode (a lone surrogate), or nested too deeply.
             return JsonResponse({"error": t("Invalid request.")}, status=400)
 
     return wrapped

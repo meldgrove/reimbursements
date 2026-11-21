@@ -73,8 +73,14 @@ def refresh(delivery):
 def start_attempt(delivery_id):
     """In a transaction: a new attempt, or None when no automatic send may happen."""
     delivery = _lock_delivery(pk=delivery_id)
-    if delivery.state in NO_AUTOMATIC_SEND or delivery.claim.state != Claim.State.READY:
+    if delivery.claim.state != Claim.State.READY:
         return None
+    if delivery.state in NO_AUTOMATIC_SEND:
+        # After an earlier delivery the state stays delivered, also while an operator's
+        # resend waits to be retried because the provider refused it before acceptance.
+        latest = delivery.attempts.order_by("created_at").last()
+        if latest is None or latest.state != PENDING:
+            return None
     attempt = DeliveryAttempt.objects.create(delivery=delivery, state=SENDING)
     refresh(delivery)
     return attempt
