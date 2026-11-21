@@ -137,11 +137,14 @@ def test_json_values_that_are_not_text_are_refused_not_crashed_on(prepared, chan
     assert not Claim.objects.exists()
 
 
-def test_json_nested_too_deeply_is_an_invalid_request(prepared):
-    response = prepared["client"].post(
-        "/f/test/validate/", data="[" * 100_000, content_type="application/json"
-    )
-    assert response.status_code == 400
+@pytest.mark.parametrize("body", ["[" * 100_000, '{"full_name": ' + "1" * 5000 + "}"])
+def test_json_python_cannot_load_is_an_invalid_request(prepared, body):
+    """Nested too deeply, or an integer beyond the digits Python converts."""
+    for path in ("validate", "submit"):
+        response = prepared["client"].post(
+            f"/f/test/{path}/", data=body, content_type="application/json"
+        )
+        assert response.status_code == 400
 
 
 def test_expense_text_with_a_nul_character_is_refused(prepared):

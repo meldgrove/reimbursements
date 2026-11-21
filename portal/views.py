@@ -42,6 +42,14 @@ def api_errors(view):
     return wrapped
 
 
+def claim_json(request):
+    """The request's JSON. An integer with too many digits is a ValueError of its own."""
+    try:
+        return json.loads(request.body)
+    except ValueError as exc:
+        raise IntakeError(t("Invalid request.")) from exc
+
+
 @require_GET
 def index(request):
     primary = Form.objects.select_related("template").filter(primary=True).first()
@@ -169,7 +177,7 @@ def upload_remove(request, form_slug, upload_id):
 @api_errors
 def validate_claim(request, form_slug):
     """Validate current entries without saving them or requiring a signature."""
-    data = json.loads(request.body)
+    data = claim_json(request)
     # Submitting refuses text that is not Unicode (a lone surrogate); so does the review.
     json.dumps(data, ensure_ascii=False).encode()
     if not isinstance(data, dict):
@@ -187,7 +195,7 @@ def validate_claim(request, form_slug):
 @require_POST
 @api_errors
 def submit(request, form_slug):
-    data = json.loads(request.body)
+    data = claim_json(request)
     claim = submit_claim(RequestParticipant(request), form_slug, data)
     return JsonResponse(
         {
