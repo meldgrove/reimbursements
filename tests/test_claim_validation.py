@@ -124,6 +124,7 @@ def test_every_stored_claim_form_field_is_a_claim_column(form):
     [
         # Values a form field cannot read as text.
         {"trip_start": 5, "trip_end": ["2026-10-21"]},
+        {"trip_start": True},
         # A lone surrogate is not Unicode text.
         {"full_name": "Alex \ud800 Beispiel"},
     ],
