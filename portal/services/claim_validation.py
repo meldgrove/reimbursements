@@ -71,7 +71,12 @@ def _uuid(value):
 
 
 def _text(value, key, *, required=True):
-    if not isinstance(value, str) or len(value.strip()) > EXPENSE_FIELD_LENGTHS[key]:
+    # PostgreSQL stores no NUL characters; Django's form fields refuse them as well.
+    if (
+        not isinstance(value, str)
+        or "\x00" in value
+        or len(value.strip()) > EXPENSE_FIELD_LENGTHS[key]
+    ):
         raise ValueError(t("Invalid entry."))
     value = value.strip()
     if required and not value:
@@ -178,7 +183,14 @@ def _check(data, terms, *, submitting):
     has_mileage = any(
         isinstance(row, dict) and row.get("kind") == Expense.Kind.MILEAGE for row in expenses
     )
-    claim_form = ClaimForm(data, terms=terms, has_mileage=has_mileage)
+    # The form script sends text, and true or false for checkboxes. Django's fields expect
+    # that: any other JSON value counts as missing.
+    fields = {
+        key: value
+        for key, value in data.items()
+        if isinstance(value, str) or (isinstance(value, bool) and key in NOT_STORED)
+    }
+    claim_form = ClaimForm(fields, terms=terms, has_mileage=has_mileage)
     claim_form.is_valid()
     result.errors.update(
         {

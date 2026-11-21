@@ -438,3 +438,32 @@ def test_mailersend_reads_back_the_attempt_tag_it_sends(delivery, settings, monk
     evidence.record(provided)
     attempt.refresh_from_db()
     assert attempt.state == "delivered"
+
+
+def test_resend_of_a_delivered_claim_is_retried_after_a_refused_connection(
+    delivery, settings, monkeypatch
+):
+    settings.MAIL_DELIVERY_MODE = "mailersend"
+    DeliveryAttempt.objects.create(delivery=delivery, state="delivered", message_id="first")
+    delivery.state = "delivered"
+    delivery.save()
+    calls = []
+
+    def refuse_once(request):
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.ConnectError("synthetic refusal", request=request)
+        return httpx.Response(202, headers={"x-message-id": "second"})
+
+    mock_provider(monkeypatch, refuse_once)
+    operations.retry(
+        delivery.claim_id, actor="operator", reason="Lost", acknowledge_duplicate_risk=True
+    )
+    assert run_one()
+    assert Job.objects.get().state == "pending"
+    Job.objects.update(run_after=timezone.now())
+    assert run_one()
+    assert len(calls) == 2
+    assert Job.objects.get().state == "done"
+    states = DeliveryAttempt.objects.order_by("created_at").values_list("state", flat=True)
+    assert list(states) == ["delivered", "pending", "provider_accepted"]
