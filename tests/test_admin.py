@@ -894,63 +894,142 @@ def test_admin_home_opens_the_claims(admin_client):
     assert admin_client.get("/admin/portal/").url == "/admin/portal/claim/"
 
 
-def test_sidebar_shows_the_admin_section_only_to_template_admins(
-    admin_client, client, editor, oidc
-):
+def test_sidebar_shows_the_admin_section_only_to_template_admins(admin_client, client, editor):
     page = admin_client.get("/admin/portal/claim/").content.decode()
-    assert 'href="/admin/portal/appsettings/"' in page
+    assert 'data-group="Admin"' in page and 'href="/admin/portal/appsettings/"' in page
     assert "Welcome" not in page and "View site" not in page
-    assert "/realms/reimbursements/account/" in page
     client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
     page = client.get("/admin/portal/claim/").content.decode()
     assert 'href="/admin/portal/claim/"' in page
-    assert 'href="/admin/portal/appsettings/"' not in page
+    assert 'data-group="Admin"' not in page and 'href="/admin/portal/appsettings/"' not in page
 
 
-def suggestions(client, query):
+def nav_links(page):
+    """The sidebar's links: (label, href, shortcut, current), as @meldgrove/ui's frame has them."""
+    return [
+        (label, href, shortcut, bool(current))
+        for href, shortcut, current, label in re.findall(
+            r'<li class="relative"><a href="([^"]+)" class="frame-menu-button"'
+            r'(?: data-shortcut="(\w)")?( aria-current="page")?><span class="truncate">([^<]+)<',
+            page,
+        )
+    ]
+
+
+def test_sidebar_is_the_meldgrove_frame(admin_client):
+    """Text links in groups, "G then O" for the start page and no keys for admin pages."""
+    page = admin_client.get("/admin/portal/form/").content.decode()
+    assert nav_links(page) == [
+        ("Claims", "/admin/portal/claim/", "o", False),
+        ("Forms", "/admin/portal/form/", "f", True),
+        ("General", "/admin/portal/appsettings/", "", False),
+        ("Appearance", "/admin/portal/appearance/", "", False),
+        ("Templates", "/admin/portal/formtemplate/", "", False),
+        ("Privacy notice", "/admin/portal/privacynotice/", "", False),
+        ("Updates", "/admin/portal/updates/", "", False),
+    ]
+    # The person at the bottom, with Appearance, Settings, Keyboard shortcuts and Sign out.
+    assert ">A<" in page and "admin@example.invalid · Template admin" in page
+    for item in ("Appearance", "Settings", "Keyboard shortcuts", "Sign out"):
+        assert f"{item}<" in page
+    assert 'href="/admin/settings/"' in page
+    # The shortcuts overview lists the keys of the sidebar.
+    assert re.search(r"<span>Forms</span>.*?G</kbd>.*?then.*?F</kbd>", page, re.S)
+
+
+def test_sidebar_keeps_the_frames_folded_state(admin_client):
+    page = admin_client.get("/admin/portal/claim/").content.decode()
+    assert 'data-state="expanded" data-collapsible=""' in page
+    admin_client.cookies["sidebar_state"] = "false"
+    page = admin_client.get("/admin/portal/claim/").content.decode()
+    assert 'data-state="collapsed" data-collapsible="offcanvas"' in page
+
+
+def test_breadcrumbs_start_at_the_sidebars_page(admin_client, accepted):
+    page = admin_client.get(f"/admin/portal/claim/{accepted.pk}/history/").content.decode()
+    crumbs = re.search(r'<ol class="frame-crumbs">(.*?)</ol>', page, re.S).group(1)
+    reference = accepted.reference
+    if len(reference) > 40:
+        reference = reference[:39] + "…"
+    assert re.findall(r'title="([^"]+)"', crumbs) == ["Claims", reference, "History"]
+    assert 'aria-current="page" title="History"' in crumbs
+    # On phones only the way back.
+    assert f'aria-label="Back to {reference}"' in page
+    page = admin_client.get("/admin/portal/appsettings/", follow=True).content.decode()
+    crumbs = re.search(r'<ol class="frame-crumbs">(.*?)</ol>', page, re.S).group(1)
+    assert "Admin" not in crumbs and 'aria-current="page" title="General"' in crumbs
+
+
+def test_settings_page_has_the_frames_cards(admin_client, oidc):
+    page = admin_client.get("/admin/settings/").content.decode()
+    for title in ("Account", "Appearance", "Keyboard shortcuts", "About"):
+        assert f">{title}</h2>" in page
+    assert "/realms/reimbursements/account/" in page
+    assert "Reimbursements is part of Meldgrove" in page
+    assert 'href="https://github.com/meldgrove/reimbursements"' in page
+    # The sign-in account is on the settings page, not in the user menu.
+    assert "/account/" not in admin_client.get("/admin/portal/claim/").content.decode()
+
+
+def test_settings_page_is_for_everyone_with_admin_access(client, editor):
+    assert client.get("/admin/settings/").status_code == 302
+    client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
+    page = client.get("/admin/settings/").content.decode()
+    assert ">Appearance</h2>" in page and ">Account</h2>" not in page
+
+
+def results(client, query):
     response = client.get("/admin/search/suggestions/", {"q": query})
     assert response.status_code == 200
-    return {group["label"]: group["items"] for group in response.json()["groups"]}
+    return response.json()["results"]
 
 
 def test_search_finds_only_what_the_person_may_open(client, editor, accepted, template):
     client.force_login(editor, backend="django.contrib.auth.backends.ModelBackend")
-    assert suggestions(client, "Alex") == {}
-    assert suggestions(client, template.name[:6]) == {}
+    assert results(client, "Alex") == []
+    assert results(client, template.name[:6]) == []
     accepted.form.owners.add(editor)
-    groups = suggestions(client, "Alex")
-    assert [item["name"] for item in groups["Claims"]] == ["Alex Beispiel"]
-    assert groups["Claims"][0]["url"] == f"/admin/portal/claim/{accepted.pk}/change/"
-    assert suggestions(client, accepted.reference[:8]) == {}
-    assert "Claims" in suggestions(client, accepted.reference)
-    assert suggestions(client, "form")["Navigation"][0]["url"] == "/admin/portal/form/"
-    assert suggestions(client, "a") == {}
+    assert results(client, "Alex") == [
+        {
+            "href": f"/admin/portal/claim/{accepted.pk}/change/",
+            "title": "Alex Beispiel",
+            "reference": accepted.bookkeeping_reference or str(accepted.pk)[:8],
+            "kind": "Claim",
+        }
+    ]
+    assert results(client, accepted.reference[:8]) == []
+    assert [result["title"] for result in results(client, accepted.reference)] == ["Alex Beispiel"]
+    # The frame finds the pages itself, in the sidebar.
+    assert "/admin/portal/form/" not in [result["href"] for result in results(client, "Forms")]
+    assert results(client, "a") == []
 
 
-def test_template_admins_find_templates_and_settings(admin_client, template):
-    groups = suggestions(admin_client, template.name[:6])
-    assert groups["Templates"][0]["url"] == f"/admin/portal/formtemplate/{template.pk}/change/"
-    assert suggestions(admin_client, "privacy")["Navigation"][0]["name"] == "Privacy notice"
-    assert (
-        suggestions(admin_client, "general")["Navigation"][0]["url"] == "/admin/portal/appsettings/"
-    )
-    assert (
-        suggestions(admin_client, "appear")["Navigation"][0]["url"] == "/admin/portal/appearance/"
-    )
+def test_template_admins_find_templates(admin_client, template):
+    assert results(admin_client, template.name[:6]) == [
+        {
+            "href": f"/admin/portal/formtemplate/{template.pk}/change/",
+            "title": template.name,
+            "reference": "",
+            "kind": "Template",
+        }
+    ]
 
 
 def test_search_finds_archived_claims_and_forms_and_marks_them(admin_client, accepted):
     Claim.objects.filter(pk=accepted.pk).update(archived_at=accepted.submitted_at)
     Form.objects.filter(pk=accepted.form_id).update(status=Form.Status.ARCHIVED)
-    claim = suggestions(admin_client, "Alex")["Claims"][0]
-    assert claim["detail"] == f"Test Workshop · {accepted.reference} · Archived"
-    assert suggestions(admin_client, "Workshop")["Forms"][0]["detail"] == "/f/test/ · Archived"
+    assert [result["kind"] for result in results(admin_client, "Alex")] == ["Archived"]
+    assert [result["kind"] for result in results(admin_client, "Workshop")] == ["Archived"]
+    page = admin_client.get("/admin/search/", {"q": "Alex"}).content.decode()
+    assert f"Test Workshop · {accepted.reference} · Archived" in page
 
 
 def test_search_page_lists_all_results(admin_client, accepted):
     page = admin_client.get("/admin/search/", {"q": "Beispiel"}).content.decode()
     assert "Alex Beispiel" in page and f"/admin/portal/claim/{accepted.pk}/change/" in page
     assert "No results" in admin_client.get("/admin/search/", {"q": "zzz"}).content.decode()
+    page = admin_client.get("/admin/search/", {"q": "privacy"}).content.decode()
+    assert "Pages" in page and 'href="/admin/portal/privacynotice/"' in page
 
 
 def test_list_search_box_sends_the_query_and_reset_clears_it(admin_client, accepted):

@@ -1,10 +1,11 @@
 """The accent color from the Appearance settings, as a stylesheet over the standard one.
 
-ui.css holds the standard palette: the shared Meldgrove tokens with the app's teal as
-their accent (`--mg-accent`). A chosen accent color replaces it: light pages use it as
+ui.css holds the standard palette: the shared Meldgrove tokens without an accent of the
+app's own, so the app looks like every other Meldgrove app (near-black buttons and links,
+near-white in dark mode). A chosen accent color sets `--mg-accent`: light pages use it as
 chosen, and dark pages (class "dark" on <html>) lighten it until it reads on their dark
-background, as the standard palette does. Text on the accent is white or near-black,
-whichever contrasts more. The update button's elements take the accent too.
+background. Text on the accent is white or near-black, whichever contrasts more. The
+update button's elements take the accent too.
 """
 
 import hashlib
@@ -13,9 +14,10 @@ import re
 from functools import cache
 
 HEX_COLOR = r"#[0-9a-f]{6}"
-# The standard accent of light and dark pages in ui.css.
-STANDARD_ACCENT = "#0f766e"
-STANDARD_DARK_ACCENT = "#5eead4"
+# The primary color of light and dark pages without an accent: the shared tokens'
+# oklch(0.205 0 0) and oklch(0.922 0 0) (@meldgrove/ui).
+STANDARD_ACCENT = "#171717"
+STANDARD_DARK_ACCENT = "#e5e5e5"
 WHITE = "#ffffff"
 # About the foreground and dark background of the shared tokens.
 NEAR_BLACK = "#09090b"

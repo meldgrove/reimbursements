@@ -65,7 +65,8 @@ English), timezone, date format and number format (European 12,50 by default, or
 12.50). The app language applies to public pages, emails to participants and Finance,
 and the claim PDF. Under Admin > Appearance, optionally
 set an accent color as a hex code and upload a favicon; both apply to public pages
-and the admin area.
+and the admin area. Without an accent color, the app uses the colors every Meldgrove
+app shares.
 Replace the initial privacy setup notice in the admin area before opening forms.
 Review the declaration and retention periods for your deployment. Texts written in the
 admin area, such as the privacy notice, declarations and form descriptions, are shown
@@ -114,15 +115,27 @@ builds the stylesheet from `portal/assets/ui.css`. No remote fonts or client-sid
 CDN resources are required. Rebuild styles with `python scripts/tailwind.py build`,
 or use `watch` while editing templates.
 
-The colors and the update button come from `@meldgrove/ui`, the npm package the
-Meldgrove apps share. `npm ci` copies two of its files to `portal/static/portal/vendor/`
-(ignored by git): `tokens.css`, the colors light and dark, which `ui.css` imports, and
-`meldgrove-updates.js`, the custom elements `<meldgrove-update-button>` and
-`<meldgrove-updates-settings>`. Run `npm ci` again after an update of the package, then
-rebuild the styles; the Docker image does both. `ui.css` sets the app's teal as the
-accent (`--mg-accent`) and keeps the status colors the package does not have. Dark mode
-is the class `dark` on `<html>`, which `portal/static/portal/theme.js` sets from the
-device's setting.
+The admin area looks like every other Meldgrove app. Their React interface package,
+`@meldgrove/ui`, cannot render Django's pages, so the app rebuilds its parts on the
+server with the same class names: the app frame (`admin/base.html`, `frame.css` and
+`frame.js`: the sidebar with the search and the person's menu, the header with the
+breadcrumbs, the keyboard shortcuts), the page header, the sign-in page and the
+person's Settings page, and the components in `ui.css` (buttons, badges, cards,
+alerts, fields). A change of these in the package belongs here too. The keys are the
+package's: ⌘K or Ctrl+K and "/" search, "G then O" opens Claims and "G then F" Forms,
+Ctrl+/ lists the shortcuts and ⌘B or Ctrl+B hides the sidebar. Appearance (light, dark
+or the device's setting) and the single-letter keys are kept in the browser, under the
+same names as in the other apps.
+
+The colors, the update button and the eye button of the password field come from
+`@meldgrove/ui` itself. `npm ci` copies three of its files to
+`portal/static/portal/vendor/` (ignored by git): `tokens.css`, the colors light and dark,
+which `ui.css` imports, `meldgrove-updates.js`, the custom elements
+`<meldgrove-update-button>` and `<meldgrove-updates-settings>`, and
+`meldgrove-secret-input.js` for the local development sign-in. Run `npm ci` again after
+an update of the package, then rebuild the styles; the Docker image does both. `ui.css`
+adds the status colors the package does not have. Dark mode is the class `dark` on
+`<html>`, which `portal/static/portal/theme.js` sets before the page shows.
 
 See the [form contract](docs/form-contract.md) for validation and document behavior,
 and [release checks](docs/production-readiness.md) for deployment verification.

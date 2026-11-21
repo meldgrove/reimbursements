@@ -1,0 +1,31 @@
+{% load ui %}{# The overview of every shortcut: Ctrl+/, the user menu or the search open it. #}
+<dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title" aria-describedby="shortcuts-description" data-shortcuts-dialog class="frame-dialog sm:max-w-md">
+  <div class="flex flex-col gap-2 text-center sm:text-left">
+    <h2 id="shortcuts-title" class="text-lg leading-none font-semibold">Keyboard shortcuts</h2>
+    <p id="shortcuts-description" class="text-sm text-muted-foreground">They work on every page, except while typing in a field.</p>
+  </div>
+  <section class="flex flex-col gap-1">
+    <h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">General</h3>
+    <ul class="divide-y">
+      <li class="flex items-center justify-between gap-4 py-1.5 text-sm"><span>Search</span><span class="inline-flex items-center gap-1">{% component "kbd" data_mod=True %}Ctrl{% endcomponent %}{% component "kbd" %}K{% endcomponent %}</span></li>
+      <li class="flex items-center justify-between gap-4 py-1.5 text-sm" data-single-key><span>Search</span><span class="inline-flex items-center gap-1">{% component "kbd" %}/{% endcomponent %}</span></li>
+      <li class="flex items-center justify-between gap-4 py-1.5 text-sm"><span>Show or hide the sidebar</span><span class="inline-flex items-center gap-1">{% component "kbd" data_mod=True %}Ctrl{% endcomponent %}{% component "kbd" %}B{% endcomponent %}</span></li>
+      <li class="flex items-center justify-between gap-4 py-1.5 text-sm"><span>Show these shortcuts</span><span class="inline-flex items-center gap-1">{% component "kbd" %}Ctrl{% endcomponent %}{% component "kbd" %}/{% endcomponent %}</span></li>
+    </ul>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Go to</h3>
+    <ul class="divide-y">
+      {% for group in navigation %}{% for item in group.items %}{% if item.shortcut %}
+      <li class="flex items-center justify-between gap-4 py-1.5 text-sm" data-single-key><span>{{ item.label }}</span><span class="inline-flex items-center gap-1">{% component "kbd" %}G{% endcomponent %}<span class="text-xs text-muted-foreground">then</span>{% component "kbd" %}{{ item.shortcut|upper }}{% endcomponent %}</span></li>
+      {% endif %}{% endfor %}{% endfor %}
+    </ul>
+  </section>
+  <p class="text-xs text-muted-foreground"><span data-single-keys-on>Shortcuts with single letters can be turned off in Settings.</span><span data-single-keys-off hidden>Shortcuts with single letters are off. Turn them on in Settings.</span> <a href="{% url 'admin:settings' %}" class="text-foreground underline underline-offset-4">Open Settings</a></p>
+  <button type="button" data-dialog-close class="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden">{% icon "x" %}<span class="sr-only">Close</span></button>
+</dialog>
+{# While G waits for its second key: which letter opens which page. #}
+<div role="status" data-go-hint hidden class="fixed bottom-6 left-1/2 z-50 hidden max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg md:flex">
+  <span class="text-muted-foreground">Go to</span>
+  {% for group in navigation %}{% for item in group.items %}{% if item.shortcut %}<span class="flex items-center gap-1.5">{% component "kbd" %}{{ item.shortcut|upper }}{% endcomponent %}{{ item.label }}</span>{% endif %}{% endfor %}{% endfor %}
+</div>

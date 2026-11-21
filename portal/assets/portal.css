@@ -53,7 +53,7 @@
     @apply rounded-lg border p-3 transition-colors has-checked:border-primary/60 has-checked:bg-primary/5 hover:bg-accent/50;
   }
   .choice-list input[type="radio"] {
-    @apply mt-0.5 size-4 shrink-0 accent-primary;
+    @apply ui-radio mt-0.5;
   }
 
   /* Expense and mileage cards (templates in form.html) */
@@ -108,7 +108,7 @@
     @apply size-1.5 rounded-full bg-current;
   }
   .file-status.ready {
-    @apply border-success-border bg-success-background text-success;
+    @apply border-success-border bg-success-background text-success-foreground;
   }
   .file-status.failed {
     @apply border-error-border bg-error-background text-destructive;

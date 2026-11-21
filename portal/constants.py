@@ -1,5 +1,9 @@
 # The product name, the same in every language and deployment.
 APP_NAME = "Meldgrove Reimbursement"
+# The app's repository: the About card and the sign-in page say it is part of Meldgrove.
+REPOSITORY_URL = "https://github.com/meldgrove/reimbursements"
+# What the app is for, in one sentence: the large text of the sign-in page.
+APP_TAGLINE = "Collect expense claims with receipts and signatures, and send them to accounting."
 # Standard participant texts, in English; portal.i18n holds their German version.
 DECLARATION = (
     "I confirm that the stated expenses were actually incurred, serve the stated purpose "

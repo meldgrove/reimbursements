@@ -5,7 +5,7 @@ from django.templatetags.static import static
 from django.urls import reverse
 
 from portal import app_settings, theme
-from portal.constants import APP_NAME
+from portal.constants import APP_NAME, APP_TAGLINE, REPOSITORY_URL
 from portal.i18n import language
 
 
@@ -18,6 +18,9 @@ def branding(request):
     color = general.accent_color
     return {
         "app_name": APP_NAME,
+        # The sign-in page and the About card (@meldgrove/ui's SignInPage and AboutCard).
+        "app_tagline": APP_TAGLINE,
+        "repository_url": REPOSITORY_URL,
         "page_language": language(),
         "portal_operator": settings.PORTAL_OPERATOR,
         "portal_legal_url": settings.PORTAL_LEGAL_URL,

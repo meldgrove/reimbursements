@@ -297,7 +297,7 @@ def test_template_admins_see_the_update_button(admin_client, settings, service):
     page = admin_client.get("/admin/portal/claim/").content.decode()
     button = attributes(page, "meldgrove-update-button")
     assert button.pop("csrf-token")
-    assert button == {"class": "ml-auto shrink-0", **ELEMENT}
+    assert button == ELEMENT
     assert SCRIPT in page
     assert service[0] == [], "The page itself never waits for the updater."
 
@@ -320,7 +320,7 @@ def test_an_empty_updater_url_hides_the_button_but_not_the_tab(admin_client, set
 def test_template_admins_open_the_updates_tab(admin_client, service):
     page = admin_client.get("/admin/portal/updates/").content.decode()
     assert '<h1 class="page-title">Updates</h1>' in page
-    assert '<a href="/admin/portal/updates/" aria-current="page"' in page
+    assert '<a href="/admin/portal/updates/" class="frame-menu-button" aria-current="page"' in page
     assert '<a href="/admin/portal/appsettings/" class' in page
     # The settings come from @meldgrove/ui; without an updater, they say so.
     content = page.split('id="content"', 1)[1]

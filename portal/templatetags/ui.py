@@ -77,6 +77,11 @@ def component(parser, token):
 
 
 ICONS = {
+    "arrow-up-right": '<path d="M9 23L23 9M11 9H23V21"/>',
+    "keyboard": '<rect x="3" y="7" width="26" height="18" rx="2"/><path d="M8 12H8.01M12 12H12.01M16 12H16.01M20 12H20.01M24 12H24.01M8 16H8.01M12 16H12.01M16 16H16.01M20 16H20.01M24 16H24.01M10 20H22"/>',
+    "log-in": '<path d="M19 4H27V28H19M4 16H20L14 10M20 16L14 22"/>',
+    "more-horizontal": '<path d="M7 16H7.01M16 16H16.01M25 16H25.01"/>',
+    "sun-moon": '<circle cx="16" cy="16" r="6"/><path d="M16 10A6 6 0 0 1 16 22Z" fill="currentColor"/><path d="M16 3V5M16 27V29M3 16H5M27 16H29M6.8 6.8L8.2 8.2M23.8 23.8L25.2 25.2M6.8 25.2L8.2 23.8M23.8 8.2L25.2 6.8"/>',
     "archive": '<rect x="3" y="5" width="26" height="7" rx="1"/><path d="M5 12V27H27V12M13 18H19"/>',
     "arrow-down": '<path d="M16 6V26L8 18M16 26L24 18"/>',
     "arrow-up": '<path d="M16 26V6L8 14M16 6L24 14"/>',
@@ -112,7 +117,7 @@ ICONS = {
     "refresh-cw": '<path d="M6 12A11 11 0 0 1 26 9M26 3V10H19M26 20A11 11 0 0 1 6 23M6 29V22H13"/>',
     "search": '<circle cx="13" cy="13" r="9"/><path d="M20 20L29 29"/>',
     "send": '<path d="M3 5L29 16L3 27L8 16ZM8 16H29"/>',
-    "settings": '<path d="M5 8H27M5 16H27M5 24H27"/><rect x="10" y="5" width="5" height="6"/><rect x="20" y="13" width="5" height="6"/><rect x="7" y="21" width="5" height="6"/>',
+    "settings": '<circle cx="16" cy="16" r="4"/><path d="M13.5 3H18.5L19.3 6.6L22.1 8.2L25.6 7.1L28.1 11.4L25.4 13.9V17.1L28.1 19.6L25.6 23.9L22.1 22.8L19.3 24.4L18.5 28H13.5L12.7 24.4L9.9 22.8L6.4 23.9L3.9 19.6L6.6 17.1V13.9L3.9 11.4L6.4 7.1L9.9 8.2L12.7 6.6Z"/>',
     "shield-check": '<path d="M16 3L27 8V17Q27 24 16 29Q5 24 5 17V8ZM10 16L14 20L22 12"/>',
     "trash": '<path d="M4 8H28M8 8L10 28H22L24 8M12 8V4H20V8M14 13V23M18 13V23"/>',
     "triangle-alert": '<path d="M16 3L30 28H2ZM16 11V19"/><circle cx="16" cy="24" r="1"/>',
@@ -124,6 +129,28 @@ ICONS = {
     "circle-x": '<circle cx="16" cy="16" r="13"/><path d="M11 11L21 21M11 21L21 11"/>',
     "info": '<circle cx="16" cy="16" r="13"/><path d="M16 14V24"/><circle cx="16" cy="9" r="1"/>',
 }
+
+
+@register.simple_tag
+def breadcrumbs(*steps):
+    """The frame's breadcrumbs, from (label, link) pairs: `{% breadcrumbs "Claims" url ref "" %}`.
+
+    As in @meldgrove/ui: from the sidebar's page to this one, the last step is the page.
+    Steps without a label are left out; a step without a link has no page of its own. At
+    most three show (the first, then the last two); on phones only "‹ parent".
+    """
+    if len(steps) % 2:
+        raise template.TemplateSyntaxError("breadcrumbs takes pairs of a label and a link.")
+    crumbs = [
+        {"label": str(label), "href": href or ""}
+        for label, href in zip(steps[::2], steps[1::2], strict=True)
+        if label
+    ]
+    if not crumbs:
+        return ""
+    shown = [crumbs[0], None, *crumbs[-2:]] if len(crumbs) > 3 else crumbs
+    parent = crumbs[-2] if len(crumbs) > 1 and crumbs[-2]["href"] else None
+    return get_template("ui/breadcrumbs.html").render({"shown": shown, "parent": parent})
 
 
 @register.simple_tag

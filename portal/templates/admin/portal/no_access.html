@@ -1,16 +1,16 @@
 {% extends "admin/base_site.html" %}{% load ui %}
-{% block title %}No access · {{ app_name }}{% endblock %}
-{% block content_title %}{% endblock %}
-{% block content %}
-<div class="flex flex-col items-center gap-4 text-center">
-  <span class="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">{% icon "lock" class="size-6" %}</span>
+{% block title %}{% if unconfigured %}Sign-in unavailable{% else %}No access{% endif %} · {{ app_name }}{% endblock %}
+{% block content_title %}
+<div class="space-y-1">
   {% if unconfigured %}
-  <div class="grid gap-1.5"><h1 class="text-xl font-semibold tracking-tight">Sign-in unavailable</h1>
-  <p class="text-sm text-muted-foreground">Sign-in with Keycloak is not set up for this environment.</p></div>
+  <h1 class="text-2xl font-semibold tracking-tight">Sign-in unavailable</h1>
+  <p class="text-sm text-muted-foreground">Sign-in with Keycloak is not set up for this environment.</p>
   {% else %}
-  <div class="grid gap-1.5"><h1 class="text-xl font-semibold tracking-tight">No access</h1>
-  <p class="text-sm text-muted-foreground">Your sign-in account is not enabled for the administration of {{ app_name }}. Please contact the IT team if you want to create forms.</p></div>
+  <h1 class="text-2xl font-semibold tracking-tight">No access</h1>
+  <p class="text-sm text-muted-foreground">Your sign-in account is not enabled for the administration of {{ app_name }}. Please contact the IT team if you want to create forms.</p>
   {% endif %}
-  {% component "button" variant="outline" href="/" class="w-full" %}Go to the start page{% endcomponent %}
 </div>
+{% endblock %}
+{% block content %}
+{% component "button" variant="outline" href="/" class="w-full" %}Go to the start page{% endcomponent %}
 {% endblock %}
