@@ -464,14 +464,21 @@ class SetupCheck:
                 "Finance inbox",
                 "SMTP reports no deliveries. Check that the email arrived.",
             )
+        if not self.connection.webhook_secret:
+            return self.report(
+                SKIP,
+                "MailerSend webhook",
+                "No signing secret is set, so only reconcile_deliveries learns whether the "
+                "email arrived.",
+            )
         if not self.until(lambda: self.webhook_received(claim)):
             origin = next(iter(settings.CSRF_TRUSTED_ORIGINS), "https://<your host>")
             return self.report(
                 FAIL,
                 "MailerSend webhook",
                 f"No signed delivery event within {self.timeout} s. Check that the "
-                f"webhook URL is {origin}/webhooks/mailersend/ and that "
-                "MAILERSEND_WEBHOOK_SIGNING_SECRET is its signing secret.",
+                f"webhook URL is {origin}/webhooks/mailersend/ and that its signing "
+                "secret is the one under Admin > Email.",
             )
         self.report(OK, "MailerSend webhook received, signature verified")
         delivery = self.until(

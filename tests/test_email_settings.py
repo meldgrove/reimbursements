@@ -493,6 +493,17 @@ def test_smtp_connection_failures_happen_before_anything_is_sent(smtp_server):
     assert not smtp_server.received
 
 
+def test_what_smtplib_cannot_send_in_ascii_is_never_unknown(smtp_server):
+    smtp_server.credentials = ("kim", "pässword")
+    login = account(smtp_server, username="kim", password="pässword")
+    result = smtp.SmtpTransport(login).send(message())
+    assert (result.state, result.error_code) == (PENDING, "smtp_login_not_ascii")
+    idn = message(recipient="kim@bücher.example")
+    result = smtp.SmtpTransport(account(smtp_server)).send(idn)
+    assert (result.state, result.error_code) == (FAILED, "address_not_ascii")
+    assert not smtp_server.received
+
+
 @pytest.mark.parametrize(
     ("drop", "state", "code"),
     [

@@ -255,6 +255,14 @@ def test_a_missing_webhook_names_the_url_to_configure(worker, mailersend):
     assert nothing_left()
 
 
+def test_without_a_signing_secret_the_webhook_is_skipped(worker, mailersend, settings):
+    settings.MAILERSEND_WEBHOOK_SIGNING_SECRET = ""
+    output, error = verify(to="finance@example.invalid", timeout=30)
+    assert error is None, output
+    assert "skip  MailerSend webhook\n        No signing secret is set" in output
+    assert nothing_left()
+
+
 def test_a_bounce_reported_by_webhook_fails_the_check(worker, mailersend, client, settings):
     sent = set()
 

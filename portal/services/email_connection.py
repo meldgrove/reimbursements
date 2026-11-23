@@ -48,6 +48,9 @@ PROBLEMS = {
     "empty, or choose encryption: many servers only offer a login over an encrypted "
     "connection.",
     "smtp_login_failed": "The SMTP server refused the username or the password.",
+    "smtp_login_not_ascii": "The SMTP login takes only ASCII characters in the username "
+    "and the password.",
+    "address_not_ascii": "SMTP takes only email addresses in ASCII characters.",
     "smtp_sender_refused": "The SMTP server refused the sender address.",
     "smtp_deferred": "The SMTP server deferred the email. Try again later.",
 }

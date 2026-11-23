@@ -55,7 +55,11 @@ def connect(account, timeout=TIMEOUT_SECONDS):
         if account.username:
             if not server.has_extn("auth"):
                 raise Refused("smtp_login_unavailable", 900)
-            server.login(account.username, account.password)
+            try:
+                server.login(account.username, account.password)
+            except UnicodeEncodeError as exc:
+                # smtplib sends the login in ASCII only.
+                raise Refused("smtp_login_not_ascii", 900) from exc
         return server
     except (Refused, OSError) as exc:
         if server is not None:
@@ -118,6 +122,9 @@ class SmtpTransport:
                 return _refusal(code)
             server.putcmd("data")
             code, _ = server.getreply()
+        except UnicodeEncodeError:
+            # smtplib sends commands in ASCII only; the server received nothing of them.
+            return SendResult(FAILED, error_code="address_not_ascii")
         except OSError:
             return SendResult(PENDING, error_code="smtp_connection", retry_after=60)
         if code != 354:
