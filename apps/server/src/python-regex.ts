@@ -150,26 +150,30 @@ class Translator {
     return out;
   }
 
-  /** The rest of a group after its opening, with its closing parenthesis. */
-  private body(frame: Frame): string {
+  /**
+   * The rest of a group after its opening, with its closing parenthesis.
+   * `verbose`: whether the scope around the group is verbose (scoped flags
+   * change it only inside).
+   */
+  private body(frame: Frame, verbose = this.flags.verbose): string {
     this.frames.push(frame);
     const out = this.sequence();
     this.frames.pop();
     if (this.chars[this.at] !== ")") throw new Untranslatable("unterminated group");
     this.at += 1;
     // A quantifier that allows no repetition makes the group optional.
-    const next = this.ignoredFrom(this.at);
+    const next = this.ignoredFrom(this.at, verbose);
     const rest = this.chars.slice(next, next + 12).join("");
     if (/^[?*]/.test(rest) || /^\{(0*,|,|0+\}|0+,)/.test(rest)) frame.optional = true;
     return out;
   }
 
   /** Where the pattern goes on after the whitespace and comments Python skips from `from`. */
-  private ignoredFrom(from: number): number {
+  private ignoredFrom(from: number, verbose: boolean): number {
     let next = from;
     for (;;) {
-      if (this.flags.verbose && next < this.chars.length && /\s/.test(this.chars[next]!)) next += 1;
-      else if (this.flags.verbose && this.chars[next] === "#") {
+      if (verbose && next < this.chars.length && /\s/.test(this.chars[next]!)) next += 1;
+      else if (verbose && this.chars[next] === "#") {
         while (next < this.chars.length && this.chars[next] !== "\n") next += 1;
       } else if (this.chars.slice(next, next + 3).join("") === "(?#") {
         const end = this.chars.indexOf(")", next);
@@ -341,7 +345,7 @@ class Translator {
       }
       const fold = this.flags.ignoreCase && !this.flags.ascii;
       this.foldCase = fold;
-      const inner = this.body(frame);
+      const inner = this.body(frame, saved.verbose);
       this.flags = saved;
       this.foldCase = savedFold;
       if (fold === savedFold) return `(?:${inner})`;

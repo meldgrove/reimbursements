@@ -11,7 +11,6 @@ import {
 } from "@reimbursements/shared/api/admin";
 import { config } from "../../config";
 import { APP_NAME } from "../../constants";
-import { sealingSecretName } from "../../encryption";
 import type { EmailSettingsRow } from "../../db/schema";
 import type { AppEnv } from "../../http/env";
 import { validationError } from "../../http/errors";
@@ -95,8 +94,7 @@ function secretStates(saved: EmailSettingsRow): Record<EmailSecretName, EmailSec
     const isSaved = emailConnection.secretSaved(saved, name);
     let placeholder = "";
     if (environment) placeholder = "Set in the environment";
-    else if (value === null)
-      placeholder = `Saved, but unreadable since ${sealingSecretName()} changed: enter it again`;
+    else if (value === null) placeholder = "Saved, but can no longer be read: enter it again";
     else if (value) placeholder = "Saved · type a new one to replace it";
     states[name] = {
       saved: isSaved,
@@ -132,7 +130,7 @@ function status(connection: emailConnection.Connection): EmailSettingsPage["stat
       ? "Without a webhook signing secret, only reconcile-deliveries learns whether emails were delivered."
       : "";
   const unreadable = connection.unreadable.length
-    ? `Saved but unreadable since ${sealingSecretName()} changed: ${connection.unreadable
+    ? `Saved but can no longer be read: ${connection.unreadable
         .map((name) => SECRET_LABELS[name][0].toLowerCase())
         .join(", ")}. Enter it again.`
     : "";

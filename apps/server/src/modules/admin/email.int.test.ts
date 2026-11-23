@@ -177,6 +177,12 @@ describe("the email connection", () => {
       const connection = await current();
       expect([connection.unreadable, connection.ready]).toEqual([["mailersendToken"], false]);
       expect(connection.missing).toEqual(["a MailerSend API token"]);
+      // Which secret sealed it is unknown, so the page names none: the value has to be entered again.
+      const shown = await page();
+      expect(shown.secrets.mailersendToken.placeholder).toBe(
+        "Saved, but can no longer be read: enter it again",
+      );
+      expect(shown.status.unreadable).toBe("Saved but can no longer be read: api token. Enter it again.");
     } finally {
       restore();
     }

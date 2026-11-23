@@ -29,11 +29,6 @@ function keyOf(secret: string): Key {
   return { signing: key.subarray(0, 16), encryption: key.subarray(16) };
 }
 
-/** The variable whose secret seals: DJANGO_SECRET_KEY when it is set, else AUTH_SECRET. */
-export function sealingSecretName(): "DJANGO_SECRET_KEY" | "AUTH_SECRET" {
-  return config().DJANGO_SECRET_KEY ? "DJANGO_SECRET_KEY" : "AUTH_SECRET";
-}
-
 /** The keys that open sealed values, the sealing one first (Django's MultiFernet). */
 function keys(): Key[] {
   const settings = config();

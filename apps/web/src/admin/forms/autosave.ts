@@ -179,7 +179,8 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
       else if (dirty.current) show("pending", "Unsaved changes …");
       else show("saved", "All changes saved.");
       setRetryVisible(Boolean(failedPublication.current));
-      if (created && mounted.current) onCreated.current?.(result);
+      // After "Leave without saving" the new form's address does not replace the next page.
+      if (created && mounted.current && !left.current) onCreated.current?.(result);
     } catch {
       dirty.current = true;
       if (action) failedPublication.current = action;

@@ -291,7 +291,7 @@ describe("Admin › Email", () => {
             mailersendToken: {
               ...SAVED,
               unreadable: true,
-              placeholder: "Saved, but unreadable since AUTH_SECRET changed: enter it again",
+              placeholder: "Saved, but can no longer be read: enter it again",
             },
             webhookSecret: NOTHING,
             smtpPassword: NOTHING,
@@ -302,7 +302,7 @@ describe("Admin › Email", () => {
             text: "Forms take no claims until email is set up. Missing: the MailerSend API token.",
             warning:
               "Without a webhook signing secret, only reconcile-deliveries learns whether emails were delivered.",
-            unreadable: "Saved but unreadable since AUTH_SECRET changed: api token. Enter it again.",
+            unreadable: "Saved but can no longer be read: api token. Enter it again.",
           },
           webhook: {
             ...emailPage().webhook,
@@ -317,12 +317,10 @@ describe("Admin › Email", () => {
     expect(within(status).getByText(/^Without a webhook signing secret/)).toHaveClass(
       "text-muted-foreground",
     );
-    expect(within(status).getByText(/^Saved but unreadable since AUTH_SECRET changed/)).toHaveClass(
-      "text-destructive",
-    );
+    expect(within(status).getByText(/^Saved but can no longer be read/)).toHaveClass("text-destructive");
     expect(screen.getByLabelText("API token")).toHaveAttribute(
       "placeholder",
-      "Saved, but unreadable since AUTH_SECRET changed: enter it again",
+      "Saved, but can no longer be read: enter it again",
     );
     expect(screen.getByText(/Last signed event: 23.11.2026 10:00./)).toBeInTheDocument();
   });

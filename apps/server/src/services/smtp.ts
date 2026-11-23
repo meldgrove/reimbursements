@@ -118,15 +118,22 @@ class Session {
   }
 
   /**
-   * A complete reply (smtplib's getreply). `complete`: a last line the server
-   * cut off by closing (without its line end) is an error, not a reply.
+   * A complete reply (smtplib's getreply). `complete`: only a well-formed reply
+   * counts; a line the server cut off by closing (without its line end), a line
+   * that is not a code followed by a space, "-" or the line end, and a code that
+   * changes across the lines are an error, not a reply.
    */
   async reply({ complete = false } = {}): Promise<Reply> {
     const lines: string[] = [];
+    let first: string | undefined;
     for (;;) {
       const line = await this.line();
       if (line.length > MAX_LINE) throw new Error("Line too long.");
-      if (complete && line.at(-1) !== 0x0a) throw new Error("Incomplete reply");
+      if (complete) {
+        const head = /^(\d{3})(?:[ -]|\r?\n$)/.exec(line.toString("latin1"));
+        if (line.at(-1) !== 0x0a || !head || (first ?? head[1]) !== head[1]) throw new Error("Unclear reply");
+        first = head[1];
+      }
       lines.push(
         line
           .subarray(4)
@@ -514,9 +521,10 @@ async function transmit(session: Session, message: Message, content: Buffer): Pr
   } catch {
     return sendResult(UNKNOWN, { errorCode: "provider_outcome_unknown" });
   }
-  // The server has the content: only a complete reply with a valid code decides. Anything
-  // else (a blank, cut-off or malformed reply) may follow an accepted message, so it is
-  // unknown, never retried (smtplib would retry a blank or malformed one).
+  // The server has the content: only a complete, well-formed reply with a valid code
+  // decides. Anything else (a blank, cut-off or malformed reply, or one whose code changes
+  // across its lines) may follow an accepted message, so it is unknown, never retried
+  // (smtplib would retry a blank or malformed one).
   if (code >= 200 && code < 300) return sendResult(DELIVERED, { messageId: `smtp-${message.attemptId}` });
   if (code >= 400 && code < 600) return refusal(code);
   return sendResult(UNKNOWN, { errorCode: "provider_outcome_unknown" });

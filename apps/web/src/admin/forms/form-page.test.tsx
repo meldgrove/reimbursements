@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FormEditor, FormSaved } from "@reimbursements/shared/api/admin";
+import type { ClaimList, FormEditor, FormSaved } from "@reimbursements/shared/api/admin";
 import { ADMIN, mockApi, renderApp, testMeta } from "@/test-utils";
 
 /**
@@ -56,6 +56,18 @@ const saved = (changes: Partial<FormSaved> = {}): FormSaved => ({
   canDelete: true,
   ...changes,
 });
+
+/** The Claims page, where the exit tests leave to: complete, so it renders. */
+const CLAIMS: ClaimList = {
+  rows: [],
+  count: 0,
+  page: 1,
+  pages: 1,
+  forms: [],
+  statuses: [],
+  dates: { crumbs: [], options: [] },
+  canOperate: true,
+};
 
 const meta = { "/api/v1/meta": { body: testMeta({ user: ADMIN }) } };
 const bodyOf = async (request: Request) =>
@@ -242,9 +254,7 @@ describe("the form editor", () => {
         body: { ...EDITOR, form: saved(), settings: { ...EDITOR.settings, name: "Werkstatt" } },
       },
       "PUT /api/v1/admin/forms/7": { body: saved() },
-      "GET /api/v1/admin/claims": {
-        body: { rows: [], count: 0, page: 1, pages: 1, forms: [], canDelete: true },
-      },
+      "GET /api/v1/admin/claims": { body: CLAIMS },
     });
     // The first save hangs until the person has left.
     let release!: () => void;
@@ -276,9 +286,7 @@ describe("the form editor", () => {
         body: { ...EDITOR, form: saved(), settings: { ...EDITOR.settings, name: "Werkstatt" } },
       },
       "PUT /api/v1/admin/forms/7": { body: saved() },
-      "GET /api/v1/admin/claims": {
-        body: { rows: [], count: 0, page: 1, pages: 1, forms: [], canDelete: true },
-      },
+      "GET /api/v1/admin/claims": { body: CLAIMS },
     });
     // The first save hangs, and so does the next page's session check once the person confirmed.
     let releaseSave!: () => void;
@@ -311,7 +319,50 @@ describe("the form editor", () => {
     expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1);
     releasePage();
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/claims"));
+    expect(await screen.findByText("No claims yet")).toBeInTheDocument();
     expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1);
+  });
+
+  it("stays on the next page when the first save of a new form ends after the exit was confirmed", async () => {
+    const { calls, fetchMock } = mockApi({
+      ...meta,
+      "GET /api/v1/admin/forms/new": { body: EDITOR },
+      "POST /api/v1/admin/forms": { status: 201, body: saved() },
+      "GET /api/v1/admin/forms/7": {
+        body: { ...EDITOR, form: saved(), settings: { ...EDITOR.settings, name: "Werkstatt" } },
+      },
+      "GET /api/v1/admin/claims": { body: CLAIMS },
+    });
+    // The first save hangs, and so does the next page's session check once the person confirmed.
+    let releaseSave!: () => void;
+    const heldSave = new Promise<void>((resolve) => (releaseSave = resolve));
+    let releasePage!: () => void;
+    const heldPage = new Promise<void>((resolve) => (releasePage = resolve));
+    let confirmed = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const answer = fetchMock(input, init);
+      if (init?.method === "POST") await heldSave;
+      if (confirmed && String(input).includes("/api/v1/meta")) await heldPage;
+      return answer;
+    });
+    const user = userEvent.setup();
+    const { router, queryClient } = renderApp("/admin/forms/new?template=1");
+    await user.type(await screen.findByLabelText(/^Name/), "Werkstatt");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saving …"), { timeout: 3000 });
+    await user.click(screen.getByRole("link", { name: "Claims" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await queryClient.invalidateQueries({ queryKey: ["meta"], refetchType: "none" });
+    confirmed = true;
+    await user.click(within(dialog).getByRole("button", { name: "Leave without saving" }));
+    // The new form's address does not take over the exit the person confirmed.
+    releaseSave();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    releasePage();
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/claims"));
+    expect(await screen.findByText("No claims yet")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(router.state.location.pathname).toBe("/admin/claims");
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
   });
 
   it("reads the form again when it is opened again, so a later save keeps the earlier one", async () => {

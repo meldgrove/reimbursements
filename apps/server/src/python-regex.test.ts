@@ -156,6 +156,8 @@ describe("pythonFullmatch", () => {
     ["(a)+\\1", "aaa", true],
     ["(?x)(a) # c\n \\1 b", "aab", true],
     ["(a)(?#x)\\1b", "aab", true],
+    // After a scoped (?x:…) group, # is a literal again: the group is not optional.
+    ["(?x:(a))# comment\n?\\1b", "a# commentab", true],
   ] as const)("%s on %j is %s, as in Python", (pattern, value, expected) => {
     expect(pythonFullmatch(pattern)?.test(value)).toBe(expected);
   });
@@ -181,6 +183,8 @@ describe("pythonFullmatch", () => {
     // A comment between a group and its quantifier: the group is still optional.
     "(?x)(a)# comment\n?\\1b",
     "(a)(?#x)?\\1b",
+    // The same after a (?-x:…) group: what follows it is read with the enclosing (?x).
+    "(?x)(?-x:(a))# comment\n?\\1b",
     // Python compares these by ASCII case only ((?ai)(a)\1 matches aA, not a\u212a).
     "(?ai)(a)\\1",
     "(?i)(a)(?a:\\1)",

@@ -107,6 +107,8 @@ describe("an SMTP server", () => {
     ["a code cut off", "25"],
     ["a reply cut off", "250"],
     ["no code", "Queued\r\n"],
+    ["a code run into its text", "451Oops\r\n"],
+    ["a code that changes across lines", "250-ok\r\n451 later\r\n"],
   ])("never retries an unclear reply to the content: %s", async (_name, raw) => {
     server.dataRaw = raw;
     const result = await new SmtpTransport(account()).send(message());
