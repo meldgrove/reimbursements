@@ -1,10 +1,14 @@
 # Release checks
 
-Require the CI workflow to pass for the revision being deployed. It checks lint,
-formatting, Django configuration, migration drift, the PostgreSQL regression suite,
-document confinement, and the production image with compiled styles. A second job
-runs that image with a worker: the participant smoke test in Chromium and
-`verify_setup` with local email delivery.
+Require the CI workflow to pass for the revision being deployed. Its first job checks
+the public repository contents, lint, formatting, types, the unit tests, that the
+database migrations match the schema, the integration tests on PostgreSQL (document
+confinement included), the production dependencies' audit and the production image:
+it runs as uid 10001, refuses to start without its settings, passes its sandbox
+self-test, and starts with the Compose file of 0.4 and back (the upgrade test). A
+second job runs that image with a worker: the participant browser checks in Chromium,
+the admin editor check after a real Keycloak sign-in, and `cli verify-setup` with
+local email delivery ([browser checks](browser-checks.md)).
 
 Before accepting claims, run the [setup check](operations.md#setup-check) and verify
 the following in staging with synthetic data:
@@ -23,26 +27,20 @@ archiving.
 Review external recipient retention separately. Replace the initial privacy setup
 notice before publishing forms.
 
-## Capacity and restore exercise
+## Capacity
 
-```bash
-./scripts/capacity.sh 250
-```
-
-This creates disposable PostgreSQL, web and worker containers, submits synthetic
-claims, captures local email, verifies storage, restores a matching database/file
-backup and exercises deletion. `CAPACITY_OUTPUT_DIR` chooses the private evidence
-directory. `CAPACITY_PAUSE_SECONDS=10` includes a worker pause.
-
-The workload uses two web processes, one worker limited to two CPUs and 2 GB,
-two receipt images and one signature per claim. A useful starting target is zero
-failures and p95 completion below 15 minutes. Record hardware, image revision and
-conditions. This workload excludes malware scanning and external delivery latency;
-measure those with staging integrations. No previous installation's performance
-results are included.
+Measure capacity on staging with synthetic claims before launch: two receipt images
+and one signature per claim, the worker limited to two CPUs and 2 GB as in
+`compose.yaml`. A useful starting target for 250 participants is zero failures and a
+p95 completion below 15 minutes. Record hardware, image revision and conditions, and
+include malware scanning and external delivery latency. No previous installation's
+performance results are included. The scripted capacity and restore exercise of 0.4
+(`scripts/capacity.sh`) is not part of 0.5; test restores with
+[Meldgrove Backups](deployment.md#backups) or by hand
+([operations](operations.md#backup-and-restore)).
 
 The image requires Linux Landlock ABI 3+ and libseccomp2. Web and worker each need
 a private tmpfs workspace bounded to at most 750 MB; the supplied definition uses
-700 MB. Startup refuses missing production credentials, development mode, SQLite,
+700 MB. Outside development, startup refuses missing production credentials,
 disabled scanning, local email delivery, disabled confinement or missing heartbeat
 checks. See [operations](operations.md) for recovery commands and monitoring.

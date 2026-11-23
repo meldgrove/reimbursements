@@ -4,7 +4,7 @@ Use `compose.yaml` for the web process, worker, scanner, migration job and updat
 Linux server with Debian 13 or later, or a similar system with systemd and apt such as
 Ubuntu 24.04. The document sandbox needs Linux 6.2 or later (Landlock ABI 3); Debian 12
 runs Linux 6.1. The file runs the published release image; `REIMBURSEMENTS_VERSION`
-names the release series, such as `0.3`, and automatic updates set it to the exact
+names the release series, such as `0.5`, and automatic updates set it to the exact
 version they install (see [automatic updates](updates.md)). The branch `stable` is at
 the newest release; `main` has changes that are not released yet. Caddy on the same
 server terminates HTTPS and routes the public hostname to the web service only. Keep
@@ -52,15 +52,20 @@ Only users with a verified email and a mapped portal group may sign in.
 | `KEYCLOAK_EDITOR_GROUP` | `/reimbursements/editors` | Own forms and their submissions |
 
 Set `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
-Membership is refreshed at every sign-in. Admin sessions expire after eight hours.
+Another OpenID Connect provider works too: set `OIDC_ISSUER` to its issuer URL instead
+of the two Keycloak settings, and `OIDC_GROUPS_CLAIM` if its groups are not in the
+`groups` claim. Membership is refreshed at every sign-in. Admin sessions expire after
+eight hours.
 
 ## Application settings
 
 Create `.env` from `.env.production.example` and replace all placeholder values
-([set up](#set-up), step 4). Set the public hostname in `ALLOWED_HOSTS`, the HTTPS
-origin in `CSRF_TRUSTED_ORIGINS`, and the address Caddy's requests come from in
-`TRUSTED_PROXY_CIDRS` ([set up](#set-up), step 6). Include `127.0.0.1` in allowed hosts
-for container probes.
+([set up](#set-up), step 4). Set the public HTTPS origin in `CSRF_TRUSTED_ORIGINS`
+(or `APP_URL`, its new name), such as `https://reimbursements.example.invalid`, and the
+address Caddy's requests come from in `TRUSTED_PROXY_CIDRS` ([set up](#set-up),
+step 6). Sign-in sends the provider back to that origin, so it must name exactly one
+address; origins with a wildcard are ignored. `DJANGO_SECRET_KEY` (or `AUTH_SECRET`)
+signs the sessions: a random secret of at least 50 characters.
 
 Set `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app language, timezone and date
 format are set after the first sign-in under Admin > General, the accent color and
@@ -136,7 +141,7 @@ Run the commands as root (`sudo -i`).
 
    Then `systemctl reload caddy`. Caddy gets the certificate itself. It refuses a
    request larger than 10 MiB and receives a smaller one in full before it passes it
-   on, so a slowly sent upload does not hold one of the web process's workers. Debian
+   on, so a slowly sent upload does not keep an upload open in the app. Debian
    13's package is Caddy 2.6; Caddy 2.8 and later take `request_buffers 10MiB` instead
    of the two lines under `reverse_proxy`.
 
@@ -148,7 +153,7 @@ Run the commands as root (`sudo -i`).
    in the web container, with one of your approved inboxes in place of the example:
 
    ```sh
-   docker compose exec web python manage.py verify_setup --to finance@your-org.example.invalid
+   docker compose run --rm web cli verify-setup --to finance@your-org.example.invalid
    ```
 
 9. **Automatic updates:** [switch them on](updates.md#switch-it-on).
@@ -158,7 +163,7 @@ Run the commands as root (`sudo -i`).
 Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your
 operator's notice, review the template declaration, and create a form with an
 approved recipient, support address and required internal values. Then run
-`python manage.py verify_setup --to <an approved inbox>` in the web container.
+`docker compose run --rm web cli verify-setup --to <an approved inbox>`.
 It sends a synthetic claim through the scanner, document sandbox, MailerSend and the
 signed delivery webhook, and deletes it again; see
 [setup check](operations.md#setup-check). Publish your form and send a synthetic claim
@@ -186,9 +191,9 @@ While `BACKUP_URL` is empty, it idles.
 3. Let the backup end before the update window (`UPDATE_WINDOW`): automatic
    updates run migrations without anyone present.
 
-Keep `DJANGO_SECRET_KEY` apart from the backups (open drafts of participants
-are tied to it): a restore needs it, the backups do not hold it, and Backups
-shows the name on the source page.
+Keep `DJANGO_SECRET_KEY` apart from the backups (sessions and the open drafts of
+participants are tied to it): a restore needs it, the backups do not hold it, and
+Backups shows the name on the source page.
 
 With [automatic updates](updates.md), run the updater's host setup again once
 the app's folder has updater 0.2.2 or later (`git pull`): its deploy script
@@ -200,12 +205,56 @@ To restore, take the database and the private files back as the
 steps 1 to 3), but do not start the app yet. First take the steps in
 [Operations](operations.md#backup-and-restore): keep the public web service
 stopped, run overdue purges, apply recorded deletions, and run
-`verify_storage`. Then start web and worker.
+`cli verify-storage`. Then start web and worker.
 
 ### By hand
 
 Back up PostgreSQL and the private files together, encrypted and off-host:
 [Operations](operations.md#backup-and-restore) has the rules.
+
+## Upgrade from 0.4
+
+Release 0.5 is the same app rebuilt in TypeScript, on the stack of the other Meldgrove
+apps. It takes over the database of 0.3 or 0.4 in place: the tables keep their names,
+and 0.4 runs on the database again if you go back. The private files stay where they
+are. An older installation (0.1, 0.2) installs 0.4 first; 0.5's migration job refuses
+its database and changes nothing.
+
+1. Back up the database and the private files together, and keep `.env`.
+2. In `/srv/reimbursements`, run `git pull` for 0.5's `compose.yaml` (on Coolify, the
+   new `compose.coolify.yaml` comes from `stable`).
+3. Keep `.env`: `DJANGO_SECRET_KEY` and `CSRF_TRUSTED_ORIGINS` still work, as
+   `AUTH_SECRET` and `APP_URL` do. `CSRF_TRUSTED_ORIGINS` must name exactly one address
+   besides origins with a wildcard; otherwise set `APP_URL` to the public URL.
+   `ALLOWED_HOSTS` is no longer read and can go.
+4. Set `REIMBURSEMENTS_VERSION=0.5`, stop web and worker
+   (`docker compose stop web worker`), and run `docker compose up -d --pull always`.
+5. Sign in at `/admin/` and run the [setup check](operations.md#setup-check).
+
+What changes:
+
+- Forms that participants are filling in at the moment of the switch are lost: their
+  drafts were tied to the sessions of 0.4, which end. Participants open the form again
+  and start over. Submitted claims are kept, and their queued processing and sending
+  continue in the new worker.
+- Everyone in the admin area signs in once more.
+- The admin area is the app frame of the other Meldgrove apps. Its pages have new
+  addresses (`/admin/claims`, `/admin/forms`, ...); links to the pages of 0.4 lead to
+  the new ones. Participant links (`/f/<form>/`, `/received/<id>/`) stay.
+- The claim PDF's summary page is drawn directly instead of rendered from an HTML page
+  (WeasyPrint): the same content and layout, not the same bytes.
+- Operator commands run as `docker compose run --rm web cli <command>`, such as
+  `cli verify-setup` instead of `python manage.py verify_setup`
+  ([operations](operations.md#recovery-commands)).
+
+The image also starts with the `compose.yaml` of 0.4, whose commands and health
+checks still call `python`. A server on the Preview channel therefore installs it by
+itself; run `git pull` there afterwards for the new file.
+
+To go back to 0.4, take its Compose files and version:
+`git checkout v0.4.0 -- compose.yaml compose.coolify.yaml compose.postgres.yaml`,
+`REIMBURSEMENTS_VERSION=0.4.0` in `.env`, and `docker compose up -d`. 0.4 runs on the
+database again; everyone signs in again, and open drafts are lost again.
 
 ## Upgrades
 

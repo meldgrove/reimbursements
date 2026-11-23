@@ -9,8 +9,8 @@ domain; PostgreSQL is a server of your own or the container of
 the privacy notice, the General settings (app language, timezone, date and number
 format) and
 the Appearance settings (accent color, favicon) and the update channel (Updates) are
-managed in the admin area at `/admin/`, which signs in through Keycloak and grants roles
-from the `groups` claim.
+managed in the admin area at `/admin/`, which signs in through Keycloak (or another
+OpenID Connect provider) and grants roles from the `groups` claim.
 
 Use a TLS reverse proxy for the public hostname. Expose only the web
 HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports.
@@ -18,18 +18,19 @@ HTTP service. Do not publish PostgreSQL, ClamAV, worker, or storage ports.
 server reaches it. `compose.coolify.yaml` publishes no host port; Coolify routes
 directly to the web container, so do not add a second reverse proxy there.
 
-For production set `DJANGO_DEBUG=0`, a random `DJANGO_SECRET_KEY`, production
-PostgreSQL credentials/URL, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and
-`DEPLOYMENT_ENV=production`. Set `TRUST_PROXY_HEADERS=1` only when the existing
-proxy replaces forwarded protocol headers. Configure:
+For production set `DEPLOYMENT_ENV=production`, a random `DJANGO_SECRET_KEY` (or
+`AUTH_SECRET`), production PostgreSQL credentials/URL, and the public HTTPS origin in
+`CSRF_TRUSTED_ORIGINS` (or `APP_URL`). `TRUST_PROXY_HEADERS=1`, which `compose.yaml`
+sets, requires `TRUSTED_PROXY_CIDRS`. Configure:
 
 - `MAIL_DELIVERY_MODE=mailersend`, `MAILERSEND_API_TOKEN` and
   `MAILERSEND_WEBHOOK_SIGNING_SECRET`. Set `MAIL_FROM_ADDRESS` to an address on a
   verified sender domain and `MAIL_REPLY_TO_ADDRESS` to the support inbox.
 - `APPROVED_DELIVERY_RECIPIENTS`, comma-separated approved Buchhaltung inboxes.
   Admins choose a form's recipient from this list.
-- `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`, with
-  `KEYCLOAK_ADMIN_GROUP` / `KEYCLOAK_EDITOR_GROUP` for other group paths.
+- `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM` (or `OIDC_ISSUER`), `OIDC_CLIENT_ID` and
+  `OIDC_CLIENT_SECRET`, with `KEYCLOAK_ADMIN_GROUP` / `KEYCLOAK_EDITOR_GROUP` for other
+  group paths.
 - `UPLOAD_SCANNER=clamav`, its private host/port, and `HEALTHCHECK_TOKEN`.
 - Persistent encrypted database/private storage volumes and an independent,
   encrypted off-host backup destination. Backup keys remain outside Git.
@@ -41,23 +42,23 @@ edits, such as autosaved wording or opening times, leave them open. Accepted cla
 keep their original configuration snapshot. Stop web and
 worker before migrations, then replace both with the new image. Old workers must
 not create reservations during this upgrade.
-Locally, without Keycloak, create an admin with `python manage.py createsuperuser`
-and sign in with a password; `python manage.py seed_demo` creates the form
-`/f/demo/`. Password sign-in exists only in development mode.
+Locally, without Keycloak, `npm run cli -- create-superuser --username dev` and
+`DEV_LOGIN=1` sign in without a password; `npm run cli -- seed-demo` creates the form
+`/f/demo/`. Both exist only in development mode ([development](development.md)).
 Only one worker process is supported operationally; its queue uses row locks and
 leases and acquires ready jobs in FIFO order across validation, rendering and
 sending. Later uploads cannot indefinitely overtake accepted claims.
 
-The Django deployment check leaves HSTS preload disabled and suppresses only its
-optional preload warning. TLS redirection, secure cookies, and HSTS are enabled in production.
-Decide preload enrollment with the owner of the selected public domain.
+With an `https://` public URL, the app sends HSTS (one year, subdomains included, no
+preload) and its cookies carry `Secure` and the `__Host-` prefix. Caddy redirects
+HTTP to HTTPS. Decide preload enrollment with the owner of the selected public domain.
 
 The supplied image requires Linux x86_64/aarch64, Landlock ABI 3 or newer and
-libseccomp. Startup and readiness run a real confinement probe. Document children
+libseccomp. Readiness and the setup check run a real confinement probe. Document children
 can read only their selected inputs and trusted runtime/font files, can write only
 their own workspace, and cannot open network sockets. Keep the private 700 MB
-tmpfs mount at `PRIVATE_STORAGE_ROOT/work` on both web and worker. Startup rejects
-a missing, shared or unbounded workspace in production. This mount is separate
+tmpfs mount at `PRIVATE_STORAGE_ROOT/work` on both web and worker. Readiness fails
+with a missing, shared or unbounded workspace in production. This mount is separate
 from persistent source/PDF storage; publishing copies files atomically between them.
 Workspace reservations charge the tmpfs allowance there and reserve only the
 bounded normalized/final output on persistent storage. Local setups sharing one
@@ -114,7 +115,7 @@ delivery, and recipient-server delivery is not proof of completed accounting pro
 The merged PDF is the authoritative document in the configured accounting workflow.
 Content purge is always on; no environment variable turns it off or changes its
 periods. `PDF_RETENTION_DAYS` (7) and `CONTENT_RETENTION_DAYS` (90) in
-`config/settings.py` are the periods the privacy notice states; change them only
+`apps/server/src/config.ts` are the periods the privacy notice states; change them only
 together with the notice, the summary on the form page and a migration that
 publishes the updated notice. An already started purge always resumes.
 
@@ -128,12 +129,15 @@ an approved private process.
 
 ## Setup check
 
-After the first launch, each upgrade and any change of credentials, run in the web
-container, with the worker running:
+After the first launch, each upgrade and any change of credentials, run it with the
+worker running:
 
 ```bash
-python manage.py verify_setup --to finance@your-org.example.invalid
+docker compose run --rm web cli verify-setup --to finance@your-org.example.invalid
 ```
+
+In a running container, such as Coolify's terminal of `web`, the same command is
+`docker-entrypoint.sh cli verify-setup --to …`.
 
 It checks the database, private storage, the worker's heartbeat, the document sandbox,
 ClamAV (including that it detects the EICAR test file) and the Keycloak realm's issuer,
@@ -188,29 +192,32 @@ deletes forms. A template admin can delete an archived form without claims.
 
 The commands below run through authorized host access and record the host actor.
 Use operational reasons without participant names, account details, or receipt text.
+On a server, run each as `docker compose run --rm web cli <command>` in
+`/srv/reimbursements`; `cli help` lists them. They replace the `python manage.py`
+commands of 0.4 (`claim_status` became `claim-status`, and so on).
 
 ```bash
-python manage.py claim_status
-python manage.py claim_status --state processing_failed
-python manage.py claim_status --status send_unknown
-python manage.py claim_status CLAIM_UUID
-python manage.py reconcile_deliveries --batch-size 100
-python manage.py verify_storage
-python manage.py retry_claim CLAIM_UUID --reason 'Resolved the sender configuration'
-python manage.py retry_claim CLAIM_UUID --reason 'Provider activity checked; intentional resend' \
+cli claim-status
+cli claim-status --state processing_failed
+cli claim-status --status send_unknown
+cli claim-status CLAIM_UUID
+cli reconcile-deliveries --batch-size 100
+cli verify-storage
+cli retry-claim CLAIM_UUID --reason 'Resolved the sender configuration'
+cli retry-claim CLAIM_UUID --reason 'Provider activity checked; intentional resend' \
   --acknowledge-duplicate-risk
-python manage.py purge_expired
-python manage.py purge_expired --execute
+cli purge-expired
+cli purge-expired --execute
 ```
 
 `--status` filters by the status the admin list shows: the claim state until a Finance
 delivery exists, then the delivery state, and `purging` while a claim is being deleted.
 It lists archived claims too; each row says whether the claim is `archived`.
-`claim_status` and `retry_claim` also accept the full readable bookkeeping reference.
+`claim-status` and `retry-claim` also accept the full readable bookkeeping reference.
 It includes the participant's surname; the internal UUID remains available for
 operational correlation until content purge deletes the claim.
 
-`retry_claim` records the host actor and reason. It retries failed renders only
+`retry-claim` records the host actor (`--actor`, or the container's user) and reason. It retries failed renders only
 before a PDF has become ready, and cannot resend once the PDF has been deleted. Delivery retries reuse the existing immutable PDF
 and destination. While any earlier send may have reached Finance (an ambiguous,
 paused, accepted or delivered send), a resend requires explicit duplicate-risk
@@ -249,20 +256,18 @@ headers and local variables. Use request IDs and operational references to
 investigate failures without putting financial content in logs.
 
 Set `SENTRY_DSN` to also send errors to Sentry or a compatible service. Reports
-cover unhandled errors in web requests and management commands, and errors the
-application logs, such as failed jobs or purges. They follow the same limits as
+cover unhandled errors in the web app, the worker and the migration job, and errors
+the application logs, such as failed jobs or purges. They follow the same limits as
 the logs: exception type, code locations, the URL pattern and the application's
 own log message, without exception values, request data, users, local variables
 or breadcrumbs. Reports omit raw request paths when there is no matched route.
-For library log errors, reports keep the logger name and omit the message text.
-Outgoing requests and document processes get no tracing headers or variables. The `process` tag
-is `web` or the management command, e.g. `run_jobs`. `SENTRY_ENVIRONMENT`
+Outgoing requests and document processes get no tracing headers or variables. The `role` tag
+is the process: `web`, `worker`, `migrate` or `all`. `SENTRY_ENVIRONMENT`
 defaults to `DEPLOYMENT_ENV`. `SENTRY_RELEASE` names the deployed version and
 defaults to `reimbursements@<version>` in [release images](releases.md).
 
 The worker reclaims expired leases and runs cleanup each minute, including deletion
-of expired Django sessions through the configured session backend. Active sessions
-are preserved.
+of expired admin and participant sessions. Active sessions are preserved.
 Reservations older than a job lease are reclaimed when their execution lock is free, including after
 a restart clears tmpfs. Both supervisor and parser hold the lock, so a stale job
 cannot cause cleanup to remove a live parser's workspace. An interrupted
@@ -276,18 +281,18 @@ use up the retries for a scanner outage or an interrupted worker.
 
 Queue age measures waiting time since `run_after` for runnable/running jobs.
 Scheduled backoffs do not fail readiness; a newly due retry gets a fresh waiting
-interval. `claim_status` uses the same measure. Transient sandbox probe failures
+interval. `claim-status` uses the same measure. Transient sandbox probe failures
 are retried by the next readiness request; successful probes remain cached.
 
-Schedule `reconcile_deliveries` every 15 minutes in the host's scheduler and
+Schedule `cli reconcile-deliveries` every 15 minutes in the host's scheduler and
 monitor its exit status. It rotates through bounded batches, including failed
 provider lookups, and exits nonzero on provider failures; unmatched webhook events
-also rotate, and the worker drops them after 30 days. `claim_status` streams all matches
+also rotate, and the worker drops them after 30 days. `claim-status` streams all matches
 and supports state filters.
 Monitor queued job age, worker heartbeat, failed jobs,
 `send_unknown`/paused/failed deliveries, scanner availability, free disk, and purge
 failures. Use the independent monitoring channel, so a MailerSend outage cannot
-suppress its own alert. `claim_status` emits redacted operational state for this.
+suppress its own alert. `claim-status` emits redacted operational state for this.
 Name the technical owner and Finance contact before launch.
 
 Drafts expire after 24 hours. After recipient-server delivery, the PDF and local
@@ -314,8 +319,8 @@ before restarting processing. Never automatically resend every restored job.
 Test a restore using dummy data and verify database/file consistency, unknown-send
 handling, and deletion. Keep exceptional deletion evidence outside the rollback
 scope so an old backup cannot silently reactivate deleted financial data.
-Run `python manage.py verify_storage` before restarting the restored application;
-it checks recorded source/final PDF hashes, sizes and normalized-file presence
-without printing participant content. `./scripts/capacity.sh 250` includes a
-separate synthetic restore/deletion exercise; see `docs/production-readiness.md`
-for its scope and the remaining staging and owner evidence.
+Run `docker compose run --rm web cli verify-storage` before restarting the restored
+application; it checks recorded source/final PDF hashes, sizes and normalized-file
+presence without printing participant content. With Meldgrove Backups, the
+[deployment guide](deployment.md#backups) has the restore steps;
+[release checks](production-readiness.md) list the remaining staging and owner evidence.

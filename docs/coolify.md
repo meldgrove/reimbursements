@@ -46,7 +46,7 @@ differences:
 
 Deploy, then sign in at `/admin/` and continue as
 [first launch](deployment.md#first-launch) describes, with the setup check run in the
-web container. The migration job must complete before web and worker start. For
+terminal of the web container: `docker-entrypoint.sh cli verify-setup --to …`. The migration job must complete before web and worker start. For
 upgrades, stop old workers before migrations and preserve database, private files and
 scanner volumes. Back up the database and private files together before a manual
 upgrade; automatic updates rely on scheduled backups instead.
@@ -55,6 +55,10 @@ Before a manual upgrade, read the GitHub release notes of every version since th
 deployed one; they list the upgrade steps a release needs. Take the steps, then change
 `REIMBURSEMENTS_VERSION` in the resource's environment variables and redeploy. Coolify
 reads `compose.coolify.yaml` from `stable`, which is at the newest release.
+
+To upgrade from 0.4, take the steps of [upgrade from 0.4](deployment.md#upgrade-from-04):
+the environment variables stay, `REIMBURSEMENTS_VERSION` becomes `0.5`, and the deploy
+reads 0.5's `compose.coolify.yaml` from `stable`.
 
 ## Backups
 

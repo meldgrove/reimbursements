@@ -2,7 +2,7 @@
 
 A release bundles everything merged to `main` since the previous one. Maintainers
 start it by hand; nothing is released on merge. A release is a `vX.Y.Z` tag on a
-`main` commit that passed CI. No file holds the version (`pyproject.toml` stays at
+`main` commit that passed CI. No file holds the version (`package.json` stays at
 `0.0.0`), and releasing pushes nothing to `main`. Every Meldgrove project releases
 the same way.
 
@@ -75,8 +75,8 @@ testing on a staging server. It publishes only that image tag (never `latest`) a
 marks the GitHub Release as a prerelease. Release with the same choice of patch, minor
 or major afterwards.
 
-Pull requests that change the `Dockerfile`, `.dockerignore`,
-`scripts/start-web.sh` or the workflow build and start both images without
+Pull requests that change the `Dockerfile`, `.dockerignore`, `docker-entrypoint.sh`,
+`docker-django-compat.sh` or the workflow build and start both images without
 publishing.
 
 ## Release images

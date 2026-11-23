@@ -10,8 +10,9 @@ Field names below are the German labels.
   12 letters, digits, spaces and hyphens.
 - Kontoinhaber:in → `Claim.account_holder`, prefilled with the name; also `&` and
   `,` for joint accounts.
-- IBAN → normalized `Claim.iban`: country format and checksum validated with
-  python-stdnum, any IBAN country. `Claim.bic` is validated when given and required
+- IBAN → normalized `Claim.iban`: country format and checksum validated as 0.4 did
+  with python-stdnum (`apps/server/src/bank-accounts.ts`), any IBAN country; stdnum's
+  directory of Belgian bank codes is not checked. `Claim.bic` is validated when given and required
   for IBANs outside the SEPA countries.
 - Purpose → `Claim.purpose`. When the
   form has one purpose option, it is fixed text; several options require a choice
@@ -28,8 +29,8 @@ Field names below are the German labels.
   rate instead of a merchant. A return trip requires a return date on or after the
   outbound date; one-way trips discard any return date. Their amount is calculated
   on the server. Totals use exact decimal arithmetic.
-- Declaration → the standard text in `portal/constants.py` (German in
-  `portal/i18n/de.py`), the default of each new template in the app language,
+- Declaration → the standard text in `packages/shared/src/constants.ts` (German in
+  `packages/shared/src/i18n/de.ts`), the default of each new template in the app language,
   versioned and snapshotted at acceptance.
 - Signature → required private drawn/uploaded image, normalized and included
   in the PDF. Date → server-recorded submission date in the app timezone.

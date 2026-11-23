@@ -7,47 +7,32 @@ use it in German or English; the admin area is always in English.
 
 The app includes configurable form templates, receipt and mileage expenses, private
 uploads, malware scanning, PDF compression, role-based administration, delivery
-tracking, retries, retention cleanup, and health checks.
+tracking, retries, retention cleanup, and health checks. Since 0.5 it is written in
+TypeScript on the stack of the other Meldgrove apps: a Hono server with Drizzle on
+PostgreSQL, and a React web app (Vite, TanStack Router and Query) built from
+`@meldgrove/ui`. Up to 0.4 it was a Django app; 0.5 takes over its database in place
+([upgrade from 0.4](docs/deployment.md#upgrade-from-04)).
 
 ## Run locally
 
-Requires Docker with Compose. Local delivery captures private `.eml` files and
-sends no external email. `compose.yaml` is the production setup; the
-`COMPOSE_FILE` line in `.env` makes these commands use `compose.dev.yaml`.
+Requires Docker with Compose and Node.js 26. `compose.dev.yaml` runs PostgreSQL and a
+Keycloak with a ready realm; the app runs on the host. Local delivery writes private
+`.eml` files and sends no external email.
 
 ```bash
+docker compose -f compose.dev.yaml up -d
 cp .env.example .env
-docker compose build
-docker compose up -d database scanner
-docker compose run --rm web python manage.py migrate
-docker compose run --rm web python manage.py seed_demo
-docker compose run --rm web python manage.py createsuperuser
-docker compose up -d web worker
-```
-
-Open <http://localhost:8000/f/demo/>. The admin area is at
-<http://localhost:8000/admin/>. The scanner's initial startup may take several minutes.
-Use synthetic data only. Database passwords in the examples are local placeholders.
-
-For development outside Docker, install Python 3.13, uv, Node.js 26, the system
-libraries listed in `Dockerfile`, and run:
-
-```bash
-uv sync --locked
 npm ci
-uv run python scripts/tailwind.py build
-export DJANGO_DEBUG=1 DEPLOYMENT_ENV=development
-uv run python manage.py migrate
-uv run python manage.py seed_demo
-uv run python manage.py createsuperuser
-uv run python manage.py runserver
-# In a second terminal with the same environment:
-uv run python manage.py run_jobs
+npm run db:migrate
+npm run cli -- seed-demo
+npm run dev
 ```
 
-This development mode uses SQLite, skips malware scanning, and captures email
-locally. Document confinement requires Linux Landlock ABI 3+ and libseccomp2.
-A local-only fallback is available with `DOCUMENT_SANDBOX_ENABLED=0`.
+Open <http://localhost:5173/f/demo/>. The admin area is at
+<http://localhost:5173/admin/>: sign in with `admin` / `admin` (template admin) or
+`editor` / `editor` (form editor). Use synthetic data only. Passwords in the examples
+are local placeholders. [Development](docs/development.md) covers the stack, the
+document sandbox, the database and the checks.
 
 ## Configure a deployment
 
@@ -55,7 +40,8 @@ Each operator supplies their own identity and infrastructure settings. No creden
 production data, or external account identifiers are included. Configure:
 
 - `PORTAL_OPERATOR`, `PORTAL_LEGAL_URL` for the footer of public pages.
-- `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, client credentials and role groups for admin sign-in.
+- `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM` (or `OIDC_ISSUER` for another OpenID Connect
+  provider), client credentials and role groups for admin sign-in.
 - `MAIL_FROM_ADDRESS`, `MAIL_REPLY_TO_ADDRESS`, MailerSend credentials and approved recipients.
 - PostgreSQL, private storage, malware scanner, TLS proxy and health check settings.
 - Optionally `SENTRY_DSN` for error reports without claim content.
@@ -73,9 +59,10 @@ admin area, such as the privacy notice, declarations and form descriptions, are 
 as written, so write them in the app language. Payment timing is left to the
 operator's support process.
 
-Production requires PostgreSQL, Keycloak, MailerSend, ClamAV, a bounded private
-document workspace, and worker heartbeat checks. Password sign-in is available
-only in development. See [deployment](docs/deployment.md) on a Linux server (Debian,
+Production requires PostgreSQL, Keycloak (or another OpenID Connect provider),
+MailerSend, ClamAV, Linux 6.2 or later for the document sandbox, a bounded private
+document workspace, and worker heartbeat checks. The development sign-in exists only
+in development. See [deployment](docs/deployment.md) on a Linux server (Debian,
 Ubuntu), or [with Coolify](docs/coolify.md), and [operations](docs/operations.md).
 
 ## Manage forms
@@ -95,50 +82,31 @@ Status filter's Archived option lists them again.
 ## Development checks
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
-DJANGO_DEBUG=1 uv run python manage.py check
-DJANGO_DEBUG=1 uv run python manage.py makemigrations --check --dry-run
-uv run pytest -q
-node --test tests/js/*.test.cjs
-python3 scripts/check_public_repository.py
+node scripts/check-public-repository.mjs
+npm run lint && npm run format:check && npm run typecheck
+npm test
+npm run test:integration          # PostgreSQL of compose.dev.yaml
 ```
 
-The [CI workflow](.github/workflows/ci.yaml) runs the server suite against disposable
-PostgreSQL and builds the production image. A second job starts that image with a
-worker and runs the participant smoke test in Chromium and the setup check.
-`compose.ci.yaml` contains only inert test settings. [Browser checks](docs/browser-checks.md)
-describes the browser scripts and how to run that job locally.
+The [CI workflow](.github/workflows/ci.yaml) runs these, checks that the migrations
+match the schema, builds the production image, checks its document sandbox and runs
+the upgrade from 0.4 with 0.4's own `compose.yaml`. A second job starts that image with
+a worker and runs the participant and admin browser checks in Chromium and the setup
+check. [Browser checks](docs/browser-checks.md) describes the browser scripts.
 
-Interface templates use local components and inline geometric icons. Tailwind
-builds the stylesheet from `portal/assets/ui.css`. No remote fonts or client-side
-CDN resources are required. Rebuild styles with `python scripts/tailwind.py build`,
-or use `watch` while editing templates.
-
-The admin area looks like every other Meldgrove app. Their React interface package,
-`@meldgrove/ui`, cannot render Django's pages, so the app rebuilds its parts on the
-server with the same class names: the app frame (`admin/base.html`, `frame.css` and
-`frame.js`: the sidebar with the search and the person's menu, the header with the
-breadcrumbs, the keyboard shortcuts), the page header, the sign-in page and the
-person's Settings page, and the components in `ui.css` (buttons, badges, cards,
-alerts, fields). A change of these in the package belongs here too. The keys are the
-package's: ⌘K or Ctrl+K and "/" search, "G then O" opens Claims and "G then F" Forms,
-Ctrl+/ lists the shortcuts and ⌘B or Ctrl+B hides the sidebar. Appearance (light, dark
-or the device's setting) and the single-letter keys are kept in the browser, under the
-same names as in the other apps.
-
-The colors, the update button and the eye button of the password field come from
-`@meldgrove/ui` itself. `npm ci` copies three of its files to
-`portal/static/portal/vendor/` (ignored by git): `tokens.css`, the colors light and dark,
-which `ui.css` imports, `meldgrove-updates.js`, the custom elements
-`<meldgrove-update-button>` and `<meldgrove-updates-settings>`, and
-`meldgrove-secret-input.js` for the local development sign-in. Run `npm ci` again after
-an update of the package, then rebuild the styles; the Docker image does both. `ui.css`
-adds the status colors the package does not have. Dark mode is the class `dark` on
-`<html>`, which `portal/static/portal/theme.js` sets before the page shows.
+The interface is the shared Meldgrove one: the theme, the components, the app frame
+(sidebar with the search and the person's menu, header with the breadcrumbs, keyboard
+shortcuts), the sign-in page, the cards of the person's Settings page and the update
+button come from the npm package `@meldgrove/ui`
+([meldgrove/ui](https://github.com/meldgrove/ui)), so a change there reaches this app
+with its next version of the package. The keys are the package's: ⌘K or Ctrl+K and
+"/" search, "G then O" opens Claims and "G then F" Forms, Ctrl+/ lists the shortcuts
+and ⌘B or Ctrl+B hides the sidebar. The participant pages use the same theme and
+components without the frame.
 
 See the [form contract](docs/form-contract.md) for validation and document behavior,
-and [release checks](docs/production-readiness.md) for deployment verification.
+and [release checks](docs/production-readiness.md) for deployment verification. The
+words the code and docs use are in [CONTEXT.md](CONTEXT.md).
 
 ## Releases
 
