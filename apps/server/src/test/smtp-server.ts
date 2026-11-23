@@ -14,6 +14,8 @@ export class FakeSmtpServer {
   drop: "" | "data" | "content" = "";
   rcptReply = "250 OK";
   dataReply = "250 Queued";
+  /** Written as is after the content instead of `dataReply`, then the server closes. */
+  dataRaw: string | null = null;
   private readonly server = net.createServer((socket) => this.handle(socket));
   private readonly sockets = new Set<net.Socket>();
 
@@ -55,6 +57,10 @@ export class FakeSmtpServer {
           content = null;
           if (this.drop === "content") {
             socket.destroy();
+            return;
+          }
+          if (this.dataRaw !== null) {
+            socket.end(this.dataRaw);
             return;
           }
           reply(this.dataReply);

@@ -53,9 +53,12 @@ export const provider = {
   fetch: (url: string, init: RequestInit): Promise<Response> => fetch(url, init),
 };
 
-/** A call to the MailerSend API with the API token from the environment or Admin > Email. */
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = (await emailConnection.current()).mailersendToken;
+/**
+ * A call to the MailerSend API with `token`, by default the API token from the
+ * environment or Admin > Email.
+ */
+async function call(path: string, init: RequestInit = {}, token?: string): Promise<Response> {
+  token ??= (await emailConnection.current()).mailersendToken;
   return provider.fetch(new URL(path, API_URL).toString(), {
     ...init,
     headers: {
@@ -105,8 +108,13 @@ export function connectionRefused(error: unknown): boolean {
   return false;
 }
 
-/** Deployment transport: the MailerSend email API. */
+/**
+ * Deployment transport: the MailerSend email API, with the API token of the
+ * email connection that chose it, so a send reads nothing from the database.
+ */
 export class MailerSendTransport implements Transport {
+  constructor(private readonly token: string) {}
+
   async send(message: Message): Promise<SendResult> {
     const payload: Record<string, unknown> = {
       from: { email: message.sender, name: APP_NAME },
@@ -129,7 +137,7 @@ export class MailerSendTransport implements Transport {
     let response: Response;
     let body: string;
     try {
-      response = await call("email", { method: "POST", body: JSON.stringify(payload) });
+      response = await call("email", { method: "POST", body: JSON.stringify(payload) }, this.token);
       body = await response.text();
     } catch (error) {
       // Connection failures known to precede acceptance can retry.

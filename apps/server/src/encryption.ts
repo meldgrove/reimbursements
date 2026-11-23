@@ -4,10 +4,10 @@
  *
  * Fernet tokens, with the key derived from the app's secret as Django derived it from
  * DJANGO_SECRET_KEY (HKDF-SHA256, no salt), so a database backup alone does not reveal
- * them and values sealed by 0.4.2 open here and the other way round. AUTH_SECRET seals;
- * DJANGO_SECRET_KEY, when it is set and differs, still opens what 0.4.2 sealed with it.
- * After the secret changes otherwise, saved values cannot be read and have to be entered
- * again.
+ * them and values sealed by 0.4.2 open here and the other way round. DJANGO_SECRET_KEY
+ * seals when it is set, since 0.4.2 reads only that one after a rollback; otherwise
+ * AUTH_SECRET. Both open. After the secret changes otherwise, saved values cannot be read
+ * and have to be entered again.
  */
 import {
   createCipheriv,
@@ -29,13 +29,16 @@ function keyOf(secret: string): Key {
   return { signing: key.subarray(0, 16), encryption: key.subarray(16) };
 }
 
+/** The variable whose secret seals: DJANGO_SECRET_KEY when it is set, else AUTH_SECRET. */
+export function sealingSecretName(): "DJANGO_SECRET_KEY" | "AUTH_SECRET" {
+  return config().DJANGO_SECRET_KEY ? "DJANGO_SECRET_KEY" : "AUTH_SECRET";
+}
+
 /** The keys that open sealed values, the sealing one first (Django's MultiFernet). */
 function keys(): Key[] {
   const settings = config();
-  const secrets = [settings.AUTH_SECRET];
-  if (settings.DJANGO_SECRET_KEY && settings.DJANGO_SECRET_KEY !== settings.AUTH_SECRET) {
-    secrets.push(settings.DJANGO_SECRET_KEY);
-  }
+  const secrets = settings.DJANGO_SECRET_KEY ? [settings.DJANGO_SECRET_KEY] : [];
+  if (settings.AUTH_SECRET !== settings.DJANGO_SECRET_KEY) secrets.push(settings.AUTH_SECRET);
   return secrets.map(keyOf);
 }
 

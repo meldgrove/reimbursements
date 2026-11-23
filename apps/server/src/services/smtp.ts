@@ -117,12 +117,16 @@ class Session {
     }
   }
 
-  /** A complete reply (smtplib's getreply). */
-  async reply(): Promise<Reply> {
+  /**
+   * A complete reply (smtplib's getreply). `complete`: a last line the server
+   * cut off by closing (without its line end) is an error, not a reply.
+   */
+  async reply({ complete = false } = {}): Promise<Reply> {
     const lines: string[] = [];
     for (;;) {
       const line = await this.line();
       if (line.length > MAX_LINE) throw new Error("Line too long.");
+      if (complete && line.at(-1) !== 0x0a) throw new Error("Incomplete reply");
       lines.push(
         line
           .subarray(4)
@@ -506,10 +510,14 @@ async function transmit(session: Session, message: Message, content: Buffer): Pr
   if (!stuffed.endsWith("\r\n")) stuffed += "\r\n";
   try {
     session.send(Buffer.from(`${stuffed}.\r\n`, "latin1"));
-    code = (await session.reply()).code;
+    code = (await session.reply({ complete: true })).code;
   } catch {
     return sendResult(UNKNOWN, { errorCode: "provider_outcome_unknown" });
   }
-  if (code !== 250) return refusal(code);
-  return sendResult(DELIVERED, { messageId: `smtp-${message.attemptId}` });
+  // The server has the content: only a complete reply with a valid code decides. Anything
+  // else (a blank, cut-off or malformed reply) may follow an accepted message, so it is
+  // unknown, never retried (smtplib would retry a blank or malformed one).
+  if (code >= 200 && code < 300) return sendResult(DELIVERED, { messageId: `smtp-${message.attemptId}` });
+  if (code >= 400 && code < 600) return refusal(code);
+  return sendResult(UNKNOWN, { errorCode: "provider_outcome_unknown" });
 }

@@ -13,6 +13,10 @@ describe("confirmation placeholders", () => {
   it.each([
     ["Hallo {name}", ""],
     ["Eingang {referenz}", unknown("referenz")],
+    // Names every JavaScript object inherits are no placeholders either.
+    ["Hello {constructor}", unknown("constructor")],
+    ["Hello {toString}", unknown("toString")],
+    ["Hello {__proto__}", unknown("__proto__")],
     ["Hi {name!r}", spec("name")],
     ["Hi } there", BRACE],
     ["Hi { there", BRACE],

@@ -42,6 +42,19 @@ describe("sealed secrets", () => {
     expect(unseal(sealed)).toBe("mlsn.synthetic-token");
   });
 
+  it("seal with DJANGO_SECRET_KEY when it is set, so 0.4.2 opens a replaced secret after a rollback", () => {
+    secrets("another-secret-key-".repeat(4), DJANGO_SECRET);
+    const replaced = seal("mlsn.replaced-token");
+    // 0.4.2 reads only DJANGO_SECRET_KEY.
+    secrets(DJANGO_SECRET);
+    expect(unseal(replaced)).toBe("mlsn.replaced-token");
+    // AUTH_SECRET still opens what this version sealed before DJANGO_SECRET_KEY was set.
+    secrets("another-secret-key-".repeat(4));
+    const before = seal("mlsn.before");
+    secrets("another-secret-key-".repeat(4), DJANGO_SECRET);
+    expect(unseal(before)).toBe("mlsn.before");
+  });
+
   it("open what the Django version sealed with the same secret", () => {
     secrets(DJANGO_SECRET);
     expect(unseal(DJANGO_TOKEN)).toBe("mlsn.synthetic-token");

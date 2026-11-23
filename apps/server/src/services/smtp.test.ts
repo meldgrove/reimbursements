@@ -103,6 +103,18 @@ describe("an SMTP server", () => {
   });
 
   it.each([
+    ["a blank line", "\r\n"],
+    ["a code cut off", "25"],
+    ["a reply cut off", "250"],
+    ["no code", "Queued\r\n"],
+  ])("never retries an unclear reply to the content: %s", async (_name, raw) => {
+    server.dataRaw = raw;
+    const result = await new SmtpTransport(account()).send(message());
+    expect(server.received).toHaveLength(1);
+    expect([result.state, result.errorCode]).toEqual([UNKNOWN, "provider_outcome_unknown"]);
+  });
+
+  it.each([
     // Before the content: nothing was sent, so it is retried.
     ["data", PENDING, "smtp_connection"],
     // After the content: the server may have accepted it.

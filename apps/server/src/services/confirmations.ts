@@ -162,7 +162,7 @@ export function placeholderProblem(text: string): string {
   if (segments === null) return "Write a single brace as {{ or }}; braces otherwise enclose a placeholder.";
   for (const { field } of segments) {
     if (!field) continue;
-    if (!(field.name in PLACEHOLDERS)) {
+    if (!Object.hasOwn(PLACEHOLDERS, field.name)) {
       const known = Object.keys(PLACEHOLDERS)
         .map((name) => `{${name}}`)
         .join(", ");
@@ -181,7 +181,7 @@ function fill(text: string, values: Record<string, string>): string {
   return segments
     .map(({ literal, field }) => {
       if (!field) return literal;
-      const value = values[field.name];
+      const value = Object.hasOwn(values, field.name) ? values[field.name] : undefined;
       if (value === undefined || field.spec || field.conversion) throw new Error("Invalid confirmation text");
       return literal + value;
     })

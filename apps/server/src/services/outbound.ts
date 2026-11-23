@@ -11,6 +11,7 @@
  */
 import { inArray, or } from "drizzle-orm";
 import { config } from "../config";
+import { connectionLost } from "../database";
 import { deliveryEvents } from "../db/schema";
 import { q } from "../db/tx";
 import { logger } from "../logger";
@@ -51,7 +52,7 @@ export async function configuredTransport(connection?: emailConnection.Connectio
   if (using.provider === emailConnection.LOCAL) return new LocalOutbox();
   if (!using.ready) return new NotSetUp();
   if (using.provider === emailConnection.SMTP) return new SmtpTransport(using.smtp);
-  return new MailerSendTransport();
+  return new MailerSendTransport(using.mailersendToken);
 }
 
 /**
@@ -59,8 +60,10 @@ export async function configuredTransport(connection?: emailConnection.Connectio
  *
  * No database writes; call outside a transaction. Anything that fails while
  * composing, or a recipient the test allowlist excludes, is a definite
- * failure: nothing reached the provider. An exception from the transport
- * propagates, because the provider may have accepted the message.
+ * failure: nothing reached the provider. A lost database connection while
+ * composing propagates, so the worker hands the job on (database.ts). An
+ * exception from the transport propagates, because the provider may have
+ * accepted the message.
  */
 export async function send<T extends { id: string }>(
   compose: (email: T) => Promise<Message>,
@@ -71,6 +74,7 @@ export async function send<T extends { id: string }>(
     message = await compose(email);
   } catch (error) {
     if (error instanceof Undeliverable) return sendResult(FAILED, { errorCode: error.code });
+    if (connectionLost(error)) throw error;
     logger.error({ err: error, email: email.id }, "email_compose_failed");
     return sendResult(FAILED, { errorCode: "message_unavailable" });
   }

@@ -11,6 +11,7 @@ import {
 } from "@reimbursements/shared/api/admin";
 import { config } from "../../config";
 import { APP_NAME } from "../../constants";
+import { sealingSecretName } from "../../encryption";
 import type { EmailSettingsRow } from "../../db/schema";
 import type { AppEnv } from "../../http/env";
 import { validationError } from "../../http/errors";
@@ -71,7 +72,6 @@ const SECURITY_CHOICES = [
 ];
 /** Django's RegexValidator of the server field. */
 const HOST = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|[0-9A-Fa-f:]+)$/;
-const SECRET_KEY_CHANGED = "AUTH_SECRET changed";
 
 /** Fields the environment sets, with the help text Django showed for them. */
 function lockedFields(): EmailSettingsPage["locked"] {
@@ -96,7 +96,7 @@ function secretStates(saved: EmailSettingsRow): Record<EmailSecretName, EmailSec
     let placeholder = "";
     if (environment) placeholder = "Set in the environment";
     else if (value === null)
-      placeholder = `Saved, but unreadable since ${SECRET_KEY_CHANGED}: enter it again`;
+      placeholder = `Saved, but unreadable since ${sealingSecretName()} changed: enter it again`;
     else if (value) placeholder = "Saved · type a new one to replace it";
     states[name] = {
       saved: isSaved,
@@ -132,7 +132,7 @@ function status(connection: emailConnection.Connection): EmailSettingsPage["stat
       ? "Without a webhook signing secret, only reconcile-deliveries learns whether emails were delivered."
       : "";
   const unreadable = connection.unreadable.length
-    ? `Saved but unreadable since ${SECRET_KEY_CHANGED}: ${connection.unreadable
+    ? `Saved but unreadable since ${sealingSecretName()} changed: ${connection.unreadable
         .map((name) => SECRET_LABELS[name][0].toLowerCase())
         .join(", ")}. Enter it again.`
     : "";

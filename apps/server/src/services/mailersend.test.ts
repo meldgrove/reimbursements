@@ -2,8 +2,10 @@
 // and which leave the outcome unknown (portal/services/mailersend.py: httpx's
 // ConnectError, which includes TLS handshake failures).
 import net from "node:net";
-import { describe, expect, it } from "vitest";
-import { connectionRefused } from "./mailersend";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { json, mockProvider } from "../test/mailersend";
+import { connectionRefused, MailerSendTransport } from "./mailersend";
+import * as emailConnection from "./email-connection";
 
 /** A fetch failure as undici reports it: a TypeError with the socket's error as cause. */
 const fetchFailure = (code: string) =>
@@ -40,4 +42,30 @@ describe("connection failures", () => {
   it.each(["ECONNRESET", "UND_ERR_SOCKET", "ETIMEDOUT"])("%s may have reached MailerSend", (code) =>
     expect(connectionRefused(fetchFailure(code))).toBe(false),
   );
+});
+
+describe("a send", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("uses the token of the connection that chose MailerSend and reads nothing else", async () => {
+    // A send that looked the token up again could lose the database connection
+    // before the request and report an unknown outcome.
+    const lookup = vi.spyOn(emailConnection, "current").mockRejectedValue(new Error("no database"));
+    const authorization: Array<string | null> = [];
+    mockProvider((request) => {
+      authorization.push(request.headers.get("authorization"));
+      return json(202, {}, { "x-message-id": "message-1" });
+    });
+    const result = await new MailerSendTransport("mlsn.connection-token").send({
+      attemptId: "attempt-1",
+      sender: "no-reply@example.invalid",
+      replyTo: "finance@example.invalid",
+      recipient: "finance@example.invalid",
+      subject: "Claim",
+      text: "Text",
+    });
+    expect([result.state, result.messageId]).toEqual(["provider_accepted", "message-1"]);
+    expect(authorization).toEqual(["Bearer mlsn.connection-token"]);
+    expect(lookup).not.toHaveBeenCalled();
+  });
 });
