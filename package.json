@@ -12,6 +12,6 @@
     "static": "mkdir -p portal/static/portal/vendor && cp node_modules/@meldgrove/ui/dist/standalone/meldgrove-updates.js node_modules/@meldgrove/ui/dist/standalone/meldgrove-secret-input.js node_modules/@meldgrove/ui/dist/tokens.css portal/static/portal/vendor/"
   },
   "dependencies": {
-    "@meldgrove/ui": "^0.1.5"
+    "@meldgrove/ui": "^0.1.7"
   }
 }
