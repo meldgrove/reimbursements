@@ -20,10 +20,10 @@ import {
   unlinkSync,
   utimesSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import path from "node:path";
 import { config } from "../config";
+import { writeAll } from "../documents/write-all";
 
 export const HEARTBEAT_KEY = "worker-heartbeat";
 
@@ -128,7 +128,7 @@ export async function saveUpload(
       for await (const chunk of chunks) {
         size += chunk.byteLength;
         if (size > limit) throw new StorageError("file_too_large");
-        writeSync(fd, chunk);
+        writeAll(fd, chunk);
         checksum.update(chunk);
       }
       fsyncSync(fd);

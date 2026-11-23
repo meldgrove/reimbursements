@@ -16,6 +16,12 @@ import {
 
 const env = (name: string) => process.env[name]?.trim() || undefined;
 
+/**
+ * Request paths name forms (/f/<slug>/) and anything a client asks for: spans
+ * keep the matched route pattern (http.route, the span's name) and none of these.
+ */
+const RAW_PATHS = ["url", "url.full", "url.path", "http.url", "http.target"];
+
 /** The deployment, as config.ts decides it (DEPLOYMENT_ENV, DJANGO_DEBUG, NODE_ENV): the reports' environment. */
 function deployment(): string {
   const named = env("DEPLOYMENT_ENV");
@@ -65,8 +71,12 @@ if (dsn && !Sentry.isInitialized()) {
     tracesSampleRate,
     dataCollection: NO_DATA_COLLECTION,
     maxBreadcrumbs: 0,
-    // Page paths are made of page titles: traces keep route patterns only.
-    beforeSendSpan: (span) => scrubSpan(span),
+    // Traces keep route patterns only.
+    beforeSendSpan: (span) => {
+      const scrubbed = scrubSpan(span);
+      for (const key of RAW_PATHS) delete scrubbed.attributes[key];
+      return scrubbed;
+    },
     beforeSendTransaction: (event) => ({
       ...event,
       transaction: event.transaction ? scrubText(event.transaction) : event.transaction,

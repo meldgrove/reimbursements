@@ -15,6 +15,14 @@ describe("clientNetwork", () => {
     ["2001:db8:0:ff::1", "", [], "2001:db8::/48"],
     ["2001:db8:1::1", "", [], "2001:db8:1::/48"],
     ["::ffff:192.0.2.1", "", [], "192.0.2.1/32"],
+    // Both spellings of an IPv4-mapped client count as the IPv4 address (review I12/F6).
+    ["::ffff:c000:201", "", [], "192.0.2.1/32"],
+    ["2001:db8::1", "::ffff:c000:201", ["2001:db8::/32"], "192.0.2.1/32"],
+    // Proxies match within their address family, as Python's ipaddress does.
+    ["::ffff:10.0.0.2", "198.51.100.1", ["::ffff:10.0.0.0/104"], "198.51.100.1/32"],
+    ["::ffff:10.0.0.2", "198.51.100.1", ["::ffff:10.0.0.2/128"], "198.51.100.1/32"],
+    ["::ffff:10.0.0.2", "198.51.100.1", ["10.0.0.0/8"], "10.0.0.2/32"],
+    ["10.0.0.2", "198.51.100.1", ["::ffff:10.0.0.0/104"], "10.0.0.2/32"],
   ])("trusts only the configured proxy chain: %s %s", (peer, forwarded, proxies, expected) => {
     expect(clientNetwork(peer, forwarded, proxies)).toBe(expected);
   });

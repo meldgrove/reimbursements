@@ -1,8 +1,12 @@
 import { Hono, type Context } from "hono";
-import { updateChannelInputSchema, updateInstallSchema } from "@reimbursements/shared/api/updates";
+import {
+  updateChannelInputSchema,
+  updateInstallSchema,
+  type UpdatesResponse,
+} from "@reimbursements/shared/api/updates";
+import { config } from "../config";
 import type { AppEnv } from "../http/env";
 import { isTemplateAdmin } from "../auth/roles";
-import { AppError } from "../http/errors";
 import { askUpdater, type UpdatesAnswer } from "../updates/updater";
 
 /**
@@ -26,6 +30,18 @@ async function adminsOnly(c: Context<AppEnv>, next: () => Promise<void>) {
   await next();
 }
 
+/** A request the routes refuse: 400 with the status envelope the update button reads (Django's `_invalid`). */
+const invalid = (c: Context<AppEnv>, error: string) =>
+  c.json(
+    {
+      app: { version: config().APP_VERSION ?? null },
+      reachable: Boolean(config().UPDATER_URL),
+      updater: null,
+      error,
+    } satisfies UpdatesResponse,
+    400,
+  );
+
 async function body(c: Context<AppEnv>): Promise<unknown> {
   try {
     return await c.req.json();
@@ -40,14 +56,14 @@ router.post("/admin/updates/check", async (c) => answer(c, await askUpdater({ ca
 
 router.post("/admin/updates/install", async (c) => {
   const parsed = updateInstallSchema.safeParse(await body(c));
-  if (!parsed.success) throw new AppError(400, "bad_request", "Name the version to install, such as 0.2.1.");
+  if (!parsed.success) return invalid(c, "Name the version to install, such as 0.2.1.");
   const { version } = parsed.data;
   return answer(c, await askUpdater({ call: "install", version }));
 });
 
 router.post("/admin/updates/channel", async (c) => {
   const parsed = updateChannelInputSchema.safeParse(await body(c));
-  if (!parsed.success) throw new AppError(400, "bad_request", "The channel is stable or preview.");
+  if (!parsed.success) return invalid(c, "The channel is stable or preview.");
   const { channel } = parsed.data;
   const result = await askUpdater({ call: "channel", channel });
   // Saved only when the updater's status names the chosen channel (as in the Django version).

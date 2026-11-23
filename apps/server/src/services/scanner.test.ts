@@ -74,6 +74,30 @@ describe("scanner", () => {
     },
   );
 
+  // Review I3/B1: a connection dropped while the file streams leaves the upload pending.
+  it("a connection reset during the stream is retryable and leaves no unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    const server = net.createServer((connection) => {
+      connection.once("data", () => connection.resetAndDestroy());
+    });
+    const port = await new Promise<number>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve((server.address() as net.AddressInfo).port)),
+    );
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), "scan-")), "large.pdf");
+    writeFileSync(file, Buffer.alloc(8_000_000, 1));
+    try {
+      const error = await failure(new ClamAVScanner("127.0.0.1", port).scan(file));
+      expect([error.code, error.retryable]).toEqual(["scanner_unavailable", true]);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("a ping reports readiness", async () => {
     const clamd = new FakeClamAV(Buffer.from("PONG\0"));
     expect(await new ClamAVScanner("127.0.0.1", await clamd.ready).ready()).toBe(true);

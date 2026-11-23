@@ -19,6 +19,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { overrideConfigForTests } from "../config";
 import { SERVER_ROOT } from "../paths";
 import {
+  builtWorker,
   childEnvironment,
   configuredRunner,
   execute,
@@ -29,8 +30,8 @@ import {
   sandboxCommand,
   sandboxReady,
 } from "../services/documents";
-import { sandboxAddon } from "./sandbox";
-import { prepareSandbox, removeSandboxBuild } from "./sandbox-test-support";
+import { launcherPath, sandboxAddon } from "./sandbox";
+import { prepareSandbox, removeSandboxBuild, workerBuild } from "./sandbox-test-support";
 import { filledFormPdf, imageBytes, writeManifest } from "./test-files";
 
 let directory: string;
@@ -128,6 +129,73 @@ describe("confinement", () => {
     expect(existsSync(path.join(root, "escape"))).toBe(false);
     expect(readFileSync(path.join(workspace, "output.txt"), "utf8")).toBe("bounded output");
   });
+
+  it("filters the threads that run before lockdown too", () => {
+    const workspace = fresh();
+    // A thread started before lockdown() asks for a socket after it (TSYNC).
+    const probe = path.join(path.dirname(workerScript), "thread-probe.mjs");
+    writeFileSync(
+      probe,
+      `
+import { once } from "node:events";
+import { createRequire } from "node:module";
+import { Worker } from "node:worker_threads";
+const addon = createRequire(import.meta.url)(process.env.DOCUMENT_SANDBOX_ADDON);
+const worker = new Worker(
+  'const { parentPort } = require("node:worker_threads");' +
+    'const addon = require(process.env.DOCUMENT_SANDBOX_ADDON);' +
+    'parentPort.on("message", () => parentPort.postMessage(addon.probe("ipv4", 0)));' +
+    'parentPort.postMessage("ready");',
+  { eval: true },
+);
+await once(worker, "message");
+addon.lockdown();
+worker.postMessage("probe");
+const [errno] = await once(worker, "message");
+console.log(JSON.stringify({ errno }));
+process.exit(0);
+`,
+    );
+    const command = sandboxCommand([], workspace, probe);
+    const result = spawnSync(command[0]!, command.slice(1), {
+      env: childEnvironment(workspace),
+      encoding: "utf8",
+      timeout: 20_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ errno: 1 });
+  });
+
+  it("lets the development server from the sources use the built bundle", async () => {
+    const bundle = builtWorker();
+    const created = !existsSync(bundle);
+    if (created) {
+      await (
+        await workerBuild()
+      ).buildFileWorker(path.dirname(bundle), {
+        logLevel: "silent",
+        sourcemap: false,
+      });
+    }
+    const previous = runnerOptions.workerScript;
+    runnerOptions.workerScript = undefined;
+    overrideConfigForTests({ DOCUMENT_SANDBOX_ENABLED: true });
+    try {
+      const root = fresh();
+      const image = path.join(root, "receipt.png");
+      writeFileSync(image, await imageBytes());
+      const workspace = path.join(root, "workspace");
+      mkdirSync(workspace);
+      expect(sandboxCommand([], workspace)).toContain(bundle);
+      expect(await inspectUpload(image, workspace, "receipt")).toMatchObject({ mediaType: "image/jpeg" });
+    } finally {
+      runnerOptions.workerScript = previous;
+      if (created) {
+        rmSync(bundle, { force: true });
+        rmSync(path.join(path.dirname(bundle), "file-worker-chunks"), { recursive: true, force: true });
+      }
+    }
+  }, 60_000);
 
   it("fails closed when the child runs without the launcher's rules", () => {
     const workspace = fresh();
@@ -269,6 +337,8 @@ describe("the runner", () => {
         "process.stdout.write(JSON.stringify({ padding: 'x'.repeat(70000) }))",
         "process.stdout.write('[1, 2]')",
         "process.stdout.write('{}'); process.exitCode = 3",
+        // Only known codes pass: other text may hold file names or document content.
+        "process.stdout.write(JSON.stringify({ error: 'Alex Example /tmp/receipt.pdf' })); process.exitCode = 1",
       ]) {
         runnerOptions.workerScript = script("answer", source);
         await expectCode(
@@ -281,6 +351,40 @@ describe("the runner", () => {
         "process.stdout.write(JSON.stringify({ error: 'pdf_pages' })); process.exitCode = 1",
       );
       await expectCode(execute(["validate"], { readonly: [], workspace: fresh() }), "pdf_pages");
+    } finally {
+      runnerOptions.workerScript = previous;
+    }
+  });
+
+  it("reports a launcher that cannot start the child as sandbox unavailable", async () => {
+    overrideConfigForTests({ DOCUMENT_SANDBOX_ENABLED: false, isDevelopment: true });
+    const previous = runnerOptions.workerScript;
+    // The launcher's own failure: exit 125 before the child answers.
+    runnerOptions.workerScript = script("launcher-failed", "process.exit(125);");
+    try {
+      await expectCode(
+        execute(["validate"], { readonly: [], workspace: fresh() }),
+        "document_sandbox_unavailable",
+      );
+    } finally {
+      runnerOptions.workerScript = previous;
+    }
+  });
+
+  it("keeps the resource limits in development without the sandbox", async () => {
+    overrideConfigForTests({ DOCUMENT_SANDBOX_ENABLED: false, isDevelopment: true });
+    const previous = runnerOptions.workerScript;
+    runnerOptions.workerScript = script(
+      "limits",
+      "import fs from 'node:fs'; process.stdout.write(JSON.stringify({ limits: fs.readFileSync('/proc/self/limits', 'utf8') }))",
+    );
+    try {
+      expect(configuredRunner().command(["validate"], { readonly: [], workspace: fresh() })[0]).toBe(
+        launcherPath(),
+      );
+      const { limits } = await execute(["validate"], { readonly: [], workspace: fresh() });
+      expect(limits).toMatch(/Max open files\s+128\s+128/);
+      expect(limits).toMatch(/Max data size\s+2000000000\s+2000000000/);
     } finally {
       runnerOptions.workerScript = previous;
     }

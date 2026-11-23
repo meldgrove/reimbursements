@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { overrideConfigForTests } from "../../config";
 import { getDb } from "../../db/client";
@@ -8,6 +9,7 @@ import { FORM_EDITOR, TEMPLATE_ADMIN } from "../../auth/roles";
 import { isOpen, withTemplate } from "../../models";
 import { saveSettings } from "../../services/app-settings";
 import { createClaim, createForm, template as testTemplate } from "../../test/fixtures";
+import { TEST_DATABASE_URL } from "../../test/env";
 import { createUser, request, resetDatabase, signInWithTestHeader } from "../../test/helpers";
 
 /**
@@ -520,5 +522,119 @@ describe("access", () => {
     const nobody = await createUser("nobody");
     expect((await request("GET", "/api/v1/admin/forms", { user: nobody })).status).toBe(403);
     expect((await request("GET", "/api/v1/admin/forms")).status).toBe(401);
+  });
+});
+
+/** Runs `statement` in a transaction of another connection and keeps it open until `commit`. */
+async function holdTransaction(statement: string, params: unknown[] = []) {
+  const client = new pg.Client({ connectionString: TEST_DATABASE_URL });
+  await client.connect();
+  await client.query("begin");
+  await client.query(statement, params);
+  return {
+    async commit() {
+      await client.query("commit");
+      await client.end();
+    },
+  };
+}
+
+/** Lets a request run until it waits for a lock the other connection holds. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+describe("saves that race", () => {
+  it("keeps an archiving that commits while an autosave reads the form", async () => {
+    const form = await createForm();
+    await own(form, editor);
+    const archiving = await holdTransaction(
+      `update portal_form set status = 'archived', "primary" = false where id = $1`,
+      [form.id],
+    );
+    const saving = request("PUT", `/api/v1/admin/forms/${form.id}`, {
+      user: editor,
+      body: formSettings(form, { instructions: "Neu", action: "" }),
+    });
+    await settle();
+    await archiving.commit();
+    const response = await saving;
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("archived");
+    const after = await reload(form);
+    expect(after.status).toBe("archived");
+    expect(after.instructions).toBe("Neu");
+  });
+
+  it("keeps a start-page handover that commits while an editor's save reads the form", async () => {
+    const form = await createForm({ primary: true });
+    const other = await createForm({ slug: "other", name: "Other" });
+    await own(form, editor);
+    const handover = await holdTransaction(
+      `update portal_form set "primary" = (id = $2) where id in ($1, $2)`,
+      [form.id, other.id],
+    );
+    const saving = request("PUT", `/api/v1/admin/forms/${form.id}`, {
+      user: editor,
+      body: formSettings(form, { instructions: "Neu" }),
+    });
+    await settle();
+    await handover.commit();
+    expect((await saving).status).toBe(200);
+    expect((await reload(form)).primary).toBe(false);
+    expect((await reload(other)).primary).toBe(true);
+  });
+
+  it("keeps the start page when a template admin's save does not send it", async () => {
+    const form = await createForm({ primary: true });
+    const response = await request("PUT", `/api/v1/admin/forms/${form.id}`, {
+      user: admin,
+      body: formSettings(form, { instructions: "Neu" }),
+    });
+    expect(response.status).toBe(200);
+    expect((await reload(form)).primary).toBe(true);
+  });
+
+  it("finds the form of a first save that commits while its retry runs", async () => {
+    const data = { creationKey: randomUUID(), name: "Werkstatt", slug: "werkstatt" };
+    const answers = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        request("POST", `/api/v1/admin/forms?template=${template.id}`, { user: admin, body: data }),
+      ),
+    );
+    expect(answers.map((answer) => answer.status).sort()).toEqual([...Array(11).fill(200), 201]);
+    expect(new Set(answers.map((answer) => answer.body.id)).size).toBe(1);
+    expect(await formCount()).toBe(1);
+  });
+});
+
+describe("opening times", () => {
+  it("refuses a time the clocks skip or repeat, as Django did", async () => {
+    const form = await createForm();
+    for (const [date, wall] of [
+      ["29.03.2026", "2026-03-29 02:30:00"],
+      ["25.10.2026", "2026-10-25 02:30:00"],
+    ] as const) {
+      const response = await request("PUT", `/api/v1/admin/forms/${form.id}`, {
+        user: admin,
+        body: formSettings(form, { opensAt: { date, time: "02:30" } }),
+      });
+      expect(response.status).toBe(422);
+      expect(response.body.error.fields.opensAt).toBe(
+        `${wall} couldn’t be interpreted in time zone Europe/Berlin; it may be ambiguous or it may not exist.`,
+      );
+    }
+    expect((await reload(form)).opensAt).toBeNull();
+  });
+
+  it("keeps the seconds of a stored opening time through a save of other settings", async () => {
+    const opensAt = new Date("2026-06-01T07:28:15.123Z");
+    const form = await createForm({ opensAt });
+    const page = await request("GET", `/api/v1/admin/forms/${form.id}`, { user: admin });
+    expect(page.body.settings.opensAt).toEqual({ date: "01.06.2026", time: "09:28:15" });
+    const response = await request("PUT", `/api/v1/admin/forms/${form.id}`, {
+      user: admin,
+      body: { ...page.body.settings, instructions: "Neu" },
+    });
+    expect(response.status).toBe(200);
+    expect((await reload(form)).opensAt?.toISOString()).toBe(opensAt.toISOString());
   });
 });

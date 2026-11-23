@@ -72,12 +72,14 @@ function Received({ claimId, initial }: { claimId: string; initial: ReceivedAnsw
     if (initial.final) return;
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
-    const controller = new AbortController();
+    // Each poll has its own controller: one that timed out must not fail the next ones.
+    let controller: AbortController | null = null;
     async function refresh() {
-      const deadline = setTimeout(() => controller.abort(), 15_000);
+      const current = (controller = new AbortController());
+      const deadline = setTimeout(() => current.abort(), 15_000);
       let final = false;
       try {
-        const result = await loadReceived(claimId, controller.signal);
+        const result = await loadReceived(claimId, current.signal);
         if (!result.found) throw new Error("status_unavailable");
         setStatus(messages[result.claim.state] ?? text.processing);
         final = result.claim.final;
@@ -100,7 +102,7 @@ function Received({ claimId, initial }: { claimId: string; initial: ReceivedAnsw
     return () => {
       stopped = true;
       clearTimeout(timer);
-      controller.abort();
+      controller?.abort();
     };
     // The texts follow the language, which does not change on this page.
     // eslint-disable-next-line react-hooks/exhaustive-deps

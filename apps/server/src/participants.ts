@@ -1,4 +1,4 @@
-import { BlockList, isIP } from "node:net";
+import { isIP } from "node:net";
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { config } from "./config";
@@ -34,27 +34,46 @@ export function sessionBinding(token: string): string {
   return saltedHmac("draft-session", token);
 }
 
-function canonical(address: string): { address: string; family: "ipv4" | "ipv6" } | null {
-  const trimmed = address.trim();
+type Address = { family: 4 | 6; bytes: number[] };
+
+/** An address as Python's ip_address reads it: IPv4, or IPv6 (mapped IPv4 stays IPv6). */
+function parseAddress(text: string): Address | null {
+  const trimmed = text.trim();
   const version = isIP(trimmed);
-  if (version === 4) return { address: trimmed, family: "ipv4" };
+  if (version === 4) return { family: 4, bytes: trimmed.split(".").map(Number) };
   if (version !== 6) return null;
-  // IPv4-mapped IPv6 (::ffff:192.0.2.1) counts as the IPv4 address.
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(trimmed);
-  if (mapped && isIP(mapped[1]!) === 4) return { address: mapped[1]!, family: "ipv4" };
-  return { address: trimmed, family: "ipv6" };
+  return { family: 6, bytes: ipv6Groups(trimmed).flatMap((group) => [group >> 8, group & 0xff]) };
 }
 
-function proxyList(cidrs: string[]): BlockList {
-  const list = new BlockList();
-  for (const cidr of cidrs) {
-    const [address, prefix] = cidr.split("/");
-    const parsed = canonical(address ?? "");
-    if (!parsed) continue;
-    if (prefix === undefined) list.addAddress(parsed.address, parsed.family);
-    else list.addSubnet(parsed.address, Number(prefix), parsed.family);
+/** The IPv4 address an IPv4-mapped IPv6 address (::ffff:a.b.c.d, either spelling) stands for. */
+function ipv4Mapped(address: Address): Address | null {
+  if (address.family !== 6) return null;
+  const { bytes } = address;
+  if (bytes.slice(0, 10).some((byte) => byte !== 0) || bytes[10] !== 0xff || bytes[11] !== 0xff) return null;
+  return { family: 4, bytes: bytes.slice(12) };
+}
+
+type Network = Address & { prefix: number };
+
+/** A trusted proxy network (host bits are ignored); null for anything else. */
+function parseNetwork(cidr: string): Network | null {
+  const [text, prefixText] = cidr.split("/");
+  const address = parseAddress(text ?? "");
+  if (!address) return null;
+  const max = address.family === 4 ? 32 : 128;
+  const prefix = prefixText === undefined ? max : Number(prefixText);
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > max) return null;
+  return { ...address, prefix };
+}
+
+/** Membership as Python's `address in network`: only within one address family. */
+function contains(network: Network, address: Address): boolean {
+  if (network.family !== address.family) return false;
+  for (let bit = 0; bit < network.prefix; bit += 1) {
+    const mask = 0x80 >> (bit % 8);
+    if (((network.bytes[bit >> 3] ?? 0) & mask) !== ((address.bytes[bit >> 3] ?? 0) & mask)) return false;
   }
-  return list;
+  return true;
 }
 
 /** Expands an IPv6 address into its eight 16-bit groups. */
@@ -84,22 +103,26 @@ export function clientNetwork(
   forwardedFor: string | undefined,
   trustedProxies: string[] = config().TRUSTED_PROXY_CIDRS,
 ): string {
-  let peer = canonical(remoteAddress ?? "");
+  let peer = parseAddress(remoteAddress ?? "");
   if (!peer) return "unknown";
-  const proxies = proxyList(trustedProxies);
+  const proxies = trustedProxies.map(parseNetwork).filter((network) => network !== null);
+  const trusted = (address: Address) => proxies.some((network) => contains(network, address));
   const forwarded = forwardedFor ?? "";
-  if (proxies.check(peer.address, peer.family) && forwarded.length <= 1024) {
-    const chain = forwarded.split(",").map((value) => canonical(value));
-    if (chain.every((hop) => hop !== null)) {
+  // Hops keep their address family while the chain is walked, as in the Django version.
+  if (trusted(peer) && forwarded.length <= 1024) {
+    const chain = forwarded.split(",").map((value) => parseAddress(value));
+    if (chain.every((hop): hop is Address => hop !== null)) {
       for (const hop of [...chain].reverse()) {
-        if (!proxies.check(peer.address, peer.family)) break;
+        if (!trusted(peer)) break;
         peer = hop;
       }
     }
   }
-  if (peer.family === "ipv4") return `${peer.address}/32`;
-  const groups = [...ipv6Groups(peer.address).slice(0, 3), 0, 0, 0, 0, 0];
-  return `${compressIpv6(groups)}/48`;
+  // An IPv4-mapped IPv6 client (::ffff:192.0.2.1 or ::ffff:c000:201) counts as its IPv4 address.
+  const client = ipv4Mapped(peer) ?? peer;
+  if (client.family === 4) return `${client.bytes.join(".")}/32`;
+  const groups = [0, 2, 4].map((at) => (client.bytes[at]! << 8) | client.bytes[at + 1]!);
+  return `${compressIpv6([...groups, 0, 0, 0, 0, 0])}/48`;
 }
 
 /** Eight groups in the shortest form (RFC 5952), as Python's ipaddress writes them. */
@@ -166,6 +189,6 @@ export class RequestParticipant implements Participant {
       ...session.data,
       drafts: { ...session.data.drafts, [formSlug]: { id: draftId, token } },
     };
-    await saveParticipantData(session.token, session.data);
+    await saveParticipantData(session.token, session.data, this.c);
   }
 }

@@ -207,4 +207,88 @@ describe("the form editor", () => {
     renderApp("/admin/forms/new?template=1");
     expect(await screen.findByRole("checkbox", { name: "Start page" })).toBeDisabled();
   });
+
+  it("asks before a link leaves unsaved changes behind, and stays when asked to", async () => {
+    mockApi({
+      ...meta,
+      "GET /api/v1/admin/forms/7": {
+        body: { ...EDITOR, form: saved(), settings: { ...EDITOR.settings, name: "Werkstatt" } },
+      },
+      "PUT /api/v1/admin/forms/7": { body: saved() },
+    });
+    const user = userEvent.setup();
+    const { router } = renderApp("/admin/forms/7");
+    await user.type(await screen.findByLabelText(/^Name/), " Herbst");
+    await user.click(screen.getByRole("link", { name: "Claims" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Leave without saving?")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/admin/forms/7");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(router.state.location.pathname).toBe("/admin/forms/7");
+    expect(screen.getByLabelText(/^Name/)).toHaveValue("Werkstatt Herbst");
+    // Once everything is saved, the link leaves at once.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("All changes saved."), {
+      timeout: 3000,
+    });
+    await user.click(screen.getByRole("link", { name: "Claims" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/claims"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("reads the form again when it is opened again, so a later save keeps the earlier one", async () => {
+    const base = { ...EDITOR.settings, name: "Werkstatt", slug: "werkstatt" };
+    const { calls } = mockApi({
+      ...meta,
+      // The server's state: the title the first save stored.
+      "GET /api/v1/admin/forms/7": () => ({
+        body: {
+          ...EDITOR,
+          form: saved(),
+          settings: calls.some((call) => call.method === "PUT") ? { ...base, title: "Neu" } : base,
+        },
+      }),
+      "PUT /api/v1/admin/forms/7": { body: saved() },
+      "GET /api/v1/admin/forms": {
+        body: { rows: [], count: 0, page: 1, pages: 1, templates: [], canDelete: true },
+      },
+    });
+    const user = userEvent.setup();
+    const { router } = renderApp("/admin/forms/7");
+    await user.type(await screen.findByLabelText(/^Title/), "Neu");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("All changes saved."), {
+      timeout: 3000,
+    });
+    await router.navigate({ to: "/admin/forms" });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/forms"));
+    await router.navigate({ to: "/admin/forms/$formId", params: { formId: "7" } });
+    expect(await screen.findByLabelText(/^Title/)).toHaveValue("Neu");
+    await user.type(screen.getByLabelText(/^Name/), " Herbst");
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2), {
+      timeout: 3000,
+    });
+    expect(await bodyOf(calls.filter((call) => call.method === "PUT")[1]!)).toMatchObject({
+      name: "Werkstatt Herbst",
+      title: "Neu",
+    });
+  });
+
+  it("sends the start page only when it was changed", async () => {
+    const { calls } = mockApi({
+      ...meta,
+      "GET /api/v1/admin/forms/7": {
+        body: { ...EDITOR, form: saved({ primary: true }), settings: { ...EDITOR.settings, primary: true } },
+      },
+      "PUT /api/v1/admin/forms/7": { body: saved({ primary: true }) },
+    });
+    const user = userEvent.setup();
+    renderApp("/admin/forms/7");
+    await user.type(await screen.findByLabelText(/^Name/), "Werkstatt");
+    await waitFor(() => expect(calls.some((call) => call.method === "PUT")).toBe(true), { timeout: 3000 });
+    expect(await bodyOf(calls.find((call) => call.method === "PUT")!)).not.toHaveProperty("primary");
+    await user.click(screen.getByRole("checkbox", { name: "Start page" }));
+    await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2), {
+      timeout: 3000,
+    });
+    expect(await bodyOf(calls.filter((call) => call.method === "PUT")[1]!)).toMatchObject({ primary: false });
+  });
 });

@@ -142,6 +142,35 @@ describe("sign-in to the admin area", () => {
     expect(await accepted({ exp: "tomorrow" })).toBe(false);
   });
 
+  it("with the Django version's Keycloak settings, uses the realm's endpoints and its exact issuer", async () => {
+    const saved = { OIDC_ISSUER: process.env.OIDC_ISSUER, KEYCLOAK_REALM: process.env.KEYCLOAK_REALM };
+    delete process.env.OIDC_ISSUER;
+    // Django stripped the slash at the end of the base URL.
+    process.env.KEYCLOAK_BASE_URL = "https://sso.example.invalid/";
+    process.env.KEYCLOAK_REALM = "test";
+    resetConfigForTests();
+    resetDiscoveryCache();
+    try {
+      // As in 0.4, sign-in needs no discovery document.
+      provider.discovery = new TypeError("fetch failed");
+      const first = await signIn(provider);
+      expect(first.location).toBe("/admin/");
+      expect(first.session).toBeTruthy();
+      expect(provider.requests.some((url) => url.includes("/.well-known/"))).toBe(false);
+      // A slash at the end of the issuer makes another issuer, as Django compared it.
+      provider.idToken = { claims: { iss: `${DISCOVERY.issuer}/` } };
+      expect((await signIn(provider)).session).toBeFalsy();
+    } finally {
+      delete process.env.KEYCLOAK_BASE_URL;
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      resetConfigForTests();
+      resetDiscoveryCache();
+    }
+  });
+
   it("checks the signature of the ID token", async () => {
     provider.idToken = { key: rsaKey() };
     expect((await signIn(provider)).session).toBeFalsy();

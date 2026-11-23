@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import pg from "pg";
 import sharp from "sharp";
 import { darkAccent } from "@reimbursements/shared/theme";
 import type { User } from "../../db/schema";
 import { FORM_EDITOR, TEMPLATE_ADMIN } from "../../auth/roles";
 import { loadFavicon, loadSettings, saveSettings } from "../../services/app-settings";
+import { TEST_DATABASE_URL } from "../../test/env";
 import { createUser, request, resetDatabase, signInWithTestHeader } from "../../test/helpers";
 import { overrideConfigForTests } from "../../config";
 
@@ -243,5 +245,46 @@ describe("appearance", () => {
       expect((await request("POST", APPEARANCE, { user: admin, body: upload(content) })).status).toBe(200);
       expect((await loadSettings()).faviconType).toBe(type);
     }
+  });
+});
+
+describe("general settings, choices", () => {
+  it("offer and take the timezones Django offered, also names Intl does not list", async () => {
+    const page = await request("GET", GENERAL, { user: admin });
+    const zones = page.body.choices.timezones.map((choice: { value: string }) => choice.value);
+    expect(zones).toContain("Europe/Kyiv");
+    expect(zones).toContain("Europe/Berlin");
+    const saved = await request("PUT", GENERAL, { user: admin, body: general({ timezone: "Europe/Kyiv" }) });
+    expect(saved.status).toBe(200);
+    expect((await loadSettings()).timezone).toBe("Europe/Kyiv");
+  });
+
+  it("refuse a date format that is a property of every object", async () => {
+    for (const dateFormat of ["toString", "constructor", "__proto__", "hasOwnProperty"]) {
+      const response = await request("PUT", GENERAL, { user: admin, body: general({ dateFormat }) });
+      expect(response.status).toBe(422);
+      expect(response.body.error.fields.dateFormat).toBe(
+        `Select a valid choice. ${dateFormat} is not one of the available choices.`,
+      );
+    }
+    expect((await loadSettings()).dateFormat).toBe("d.m.Y");
+  });
+});
+
+describe("settings saved at the same time", () => {
+  it("keep each other's changes: a General save does not undo an accent saved meanwhile", async () => {
+    await saveSettings({ language: "de" });
+    const client = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await client.connect();
+    await client.query("begin");
+    await client.query(`update portal_appsettings set accent_color = '#1d4ed8' where id = 1`);
+    const saving = request("PUT", GENERAL, { user: admin, body: general({ language: "en" }) });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await client.query("commit");
+    await client.end();
+    expect((await saving).status).toBe(200);
+    const after = await loadSettings();
+    expect(after.language).toBe("en");
+    expect(after.accentColor).toBe("#1d4ed8");
   });
 });

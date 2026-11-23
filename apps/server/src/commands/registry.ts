@@ -10,6 +10,18 @@ export type Command = {
   run: (args: string[]) => Promise<number | void>;
 };
 
+/**
+ * A command's refusal, written for the operator without personal data: the CLI
+ * prints its message and exits with 1 (Django's CommandError). Any other error
+ * goes to the log without its message, which can quote stored values.
+ */
+export class CommandError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CommandError";
+  }
+}
+
 export const COMMANDS = new Map<string, Command>();
 
 export function registerCommand(name: string, command: Command) {

@@ -277,6 +277,8 @@ export class SetupCheck {
       end_session_endpoint: settings.OIDC_LOGOUT_ENDPOINT ?? (keycloak ? endpoint("logout") : undefined),
     };
     const where = keycloak ? "Check KEYCLOAK_BASE_URL and KEYCLOAK_REALM." : "Check OIDC_ISSUER.";
+    // ID tokens signed with the client secret (HS256 and the like) need no published key, as at sign-in.
+    const hmac = settings.OIDC_SIGN_ALGO.startsWith("HS");
     let discovery: Record<string, unknown>;
     let keys: unknown;
     let differing: string[];
@@ -295,8 +297,10 @@ export class SetupCheck {
       differing = Object.entries(expected)
         .filter(([key, value]) => value !== undefined && discovery[key] !== value)
         .map(([key]) => key);
-      const jwks = await get(String(expected.jwks_uri ?? discovery.jwks_uri));
-      keys = jwks && typeof jwks === "object" ? (jwks as { keys?: unknown }).keys : undefined;
+      if (!hmac) {
+        const jwks = await get(String(expected.jwks_uri ?? discovery.jwks_uri));
+        keys = jwks && typeof jwks === "object" ? (jwks as { keys?: unknown }).keys : undefined;
+      }
     } catch (error) {
       return this.report(
         FAIL,
@@ -314,8 +318,8 @@ export class SetupCheck {
             : "Set OIDC_ISSUER to the issuer the provider names."),
       );
     }
-    const kty =
-      { RS: "RSA", PS: "RSA", ES: "EC", Ed: "OKP", HS: null }[settings.OIDC_SIGN_ALGO.slice(0, 2)] ?? "RSA";
+    const types: Record<string, string> = { RS: "RSA", PS: "RSA", ES: "EC", Ed: "OKP" };
+    const kty = hmac ? null : (types[settings.OIDC_SIGN_ALGO.slice(0, 2)] ?? "RSA");
     if (
       kty &&
       !(

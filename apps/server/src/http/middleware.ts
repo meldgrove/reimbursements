@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Context, Env, MiddlewareHandler } from "hono";
 import type { z } from "zod";
-import { bodyLimit } from "hono/body-limit";
-import { config } from "../config";
+import { HTTPException } from "hono/http-exception";
+import { config, originAllowed } from "../config";
 import type { User } from "../db/schema";
 import { currentSession } from "../auth/session";
 import { isFormEditor, isTemplateAdmin } from "../auth/roles";
@@ -67,11 +67,35 @@ export function isUploadPath(path: string): boolean {
 /** The Appearance settings, which take a favicon. */
 export const APPEARANCE_PATH = "/api/v1/admin/settings/appearance";
 
+/** A body larger than its limit, found while it is read (413 request_too_large). */
+export class BodyTooLarge extends HTTPException {
+  constructor() {
+    super(413, { message: t("The file or request is too large.") });
+    this.name = "BodyTooLarge";
+  }
+}
+
+/** Passes a body through while counting it; more than `maxSize` bytes fail the read with BodyTooLarge. */
+function counted(body: ReadableStream<Uint8Array>, maxSize: number): ReadableStream<Uint8Array> {
+  let size = 0;
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        size += chunk.byteLength;
+        if (size > maxSize) controller.error(new BodyTooLarge());
+        else controller.enqueue(chunk);
+      },
+    }),
+  );
+}
+
 /**
  * Request size limits (the Django version's RequestLimitsMiddleware): an
  * upload may carry one receipt (MAX_RECEIPT_BYTES) and its form, the
  * Appearance settings a favicon, everything else MAX_REQUEST_BODY_BYTES.
- * Checked on the declared length and on the bytes as they arrive.
+ * Checked on the declared length, and on the bytes as the handler reads them:
+ * nothing here reads or buffers a body, so the API's origin check and the
+ * upload slots come first.
  */
 export const requestLimits: MiddlewareHandler<AppEnv> = async (c, next) => {
   const path = c.req.path;
@@ -82,14 +106,12 @@ export const requestLimits: MiddlewareHandler<AppEnv> = async (c, next) => {
       : config().MAX_REQUEST_BODY_BYTES;
   const declared = c.req.header("content-length");
   if (declared !== undefined && !/^\d+$/.test(declared)) throw badRequest(t("Invalid request."));
-  return bodyLimit({
-    maxSize,
-    onError: (context) =>
-      context.json(
-        { error: { code: "request_too_large", message: t("The file or request is too large.") } },
-        413,
-      ),
-  })(c, next);
+  if (declared !== undefined && Number(declared) > maxSize) throw new BodyTooLarge();
+  const body = c.req.raw.body;
+  if (body && (declared === undefined || c.req.raw.headers.has("transfer-encoding"))) {
+    c.req.raw = new Request(c.req.raw, { body: counted(body, maxSize), duplex: "half" } as RequestInit);
+  }
+  return next();
 };
 
 /** Tests only: replaces how a request finds its signed-in user. */
@@ -106,14 +128,14 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
  * Cross-site request protection for the browser (the Django version's CSRF
- * check): changes need an Origin of the application itself. The MailerSend
+ * check): changes need an Origin of the application itself, or one of
+ * CSRF_TRUSTED_ORIGINS. The MailerSend
  * webhook is exempt; it proves itself with its signature.
  */
 export const sameOrigin: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (SAFE_METHODS.has(c.req.method)) return next();
   const origin = c.req.header("origin");
-  const allowed = new URL(config().APP_URL).origin;
-  if (origin ? origin !== allowed : c.req.header("sec-fetch-site") !== "same-origin") {
+  if (origin ? !originAllowed(origin, config()) : c.req.header("sec-fetch-site") !== "same-origin") {
     throw new AppError(403, "forbidden", "Cross-site request rejected");
   }
   await next();
@@ -150,7 +172,8 @@ export async function jsonBody<T extends z.ZodType, E extends Env>(
   let body: unknown;
   try {
     body = await c.req.json();
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) throw error;
     throw badRequest("The request body must be JSON");
   }
   return parseWith(schema, body);

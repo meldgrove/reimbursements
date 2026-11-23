@@ -120,6 +120,28 @@ describe("validate", () => {
     await expectCode(validateFile(source, path.join(directory, "clean"), "signature"), "empty_signature");
   });
 
+  it("counts ink at the threshold as Pillow rounds it", async () => {
+    // A stroke 31/31/30 below white: Pillow's luminance is 31, above the threshold of 30.
+    const faint = await sharp({
+      create: { width: 300, height: 100, channels: 3, background: "#ffffff" },
+    })
+      .composite([
+        {
+          input: { create: { width: 100, height: 4, channels: 3, background: { r: 224, g: 224, b: 225 } } },
+          left: 100,
+          top: 48,
+        },
+      ])
+      .png()
+      .toBuffer();
+    const result = await validateFile(
+      file("signature.png", faint),
+      path.join(directory, "clean"),
+      "signature",
+    );
+    expect(result).toMatchObject({ mediaType: "image/png" });
+  });
+
   it("accepts a drawn signature as PNG", async () => {
     const source = file("signature.png", await imageBytes({ signature: true }));
     const result = await validateFile(source, path.join(directory, "clean"), "signature");

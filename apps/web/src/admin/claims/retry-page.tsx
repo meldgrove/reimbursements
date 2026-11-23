@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, RefreshCw, TriangleAlert } from "lucide-react";
@@ -33,6 +33,11 @@ export function RetryPage() {
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
   const reference = query.data?.claim.reference;
+  // An acknowledgment belongs to the plan it was given for.
+  const duplicateRisk = Boolean(query.data?.plan?.duplicateRisk);
+  useEffect(() => {
+    if (!duplicateRisk) setAcknowledged(false);
+  }, [duplicateRisk]);
   useRecordName(
     pathname,
     reference ? (reference.length > 12 ? `${reference.slice(0, 11)}…` : reference) : null,
@@ -56,6 +61,9 @@ export function RetryPage() {
     } catch (error) {
       setErrors(fieldErrors(error));
       if (!(error instanceof ApiError && error.status === 422)) setProblem(errorMessage(error));
+      // The claim changed meanwhile (a delivery became uncertain, for example):
+      // show the plan as it is now, with the reason kept.
+      if (error instanceof ApiError && error.status === 409) await query.refetch();
     } finally {
       setBusy(false);
     }

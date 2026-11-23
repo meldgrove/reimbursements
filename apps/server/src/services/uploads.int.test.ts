@@ -2,7 +2,7 @@
  * Upload admission and the participant's upload requests
  * (tests/test_upload_admission.py and the HTTP parts of tests/test_resource_limits.py).
  */
-import { readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -13,7 +13,7 @@ import { blankPdf, imageBytes } from "../documents/test-files";
 import { IntakeError, message } from "../intake";
 import { loadForm } from "../models";
 import { createForm } from "../test/fixtures";
-import { CookieJar, request } from "../test/helpers";
+import { CookieJar, eventually, peer, request, testApp, type TestResponse } from "../test/helpers";
 import {
   TestParticipant,
   freshIntake,
@@ -315,6 +315,110 @@ describe("upload requests", () => {
     const before = sources();
     expect((await uploadFile(current)).status).toBe(503);
     expect(sources()).toEqual(before);
+  });
+
+  /** The multipart body of an upload, split where a test holds it open. */
+  function multipart(
+    current: Prepared,
+    content: Uint8Array,
+  ): { head: Uint8Array; tail: Uint8Array; type: string } {
+    const boundary = "----reimbursements-test";
+    const field = (name: string, value: string) =>
+      `--${boundary}\r\ncontent-disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
+    const head =
+      field("draft_id", current.draft.id) +
+      field("token", current.data.token) +
+      field("expense_id", current.data.expenses[0].id) +
+      field("kind", "receipt") +
+      `--${boundary}\r\ncontent-disposition: form-data; name="file"; filename="receipt.png"\r\n` +
+      "content-type: application/octet-stream\r\n\r\n";
+    const half = Math.floor(content.length / 2);
+    return {
+      head: Buffer.concat([Buffer.from(head), content.subarray(0, half)]),
+      tail: Buffer.concat([content.subarray(half), Buffer.from(`\r\n--${boundary}--\r\n`)]),
+      type: `multipart/form-data; boundary=${boundary}`,
+    };
+  }
+
+  /** An upload whose body (without a declared length) arrives in two parts: the second when `finish` is called. */
+  function heldUpload(current: Prepared, parts: ReturnType<typeof multipart>) {
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(parts.head);
+        await finished;
+        controller.enqueue(parts.tail);
+        controller.close();
+      },
+    });
+    const response = testApp().request(
+      "/api/v1/public/forms/test/uploads",
+      {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:8000",
+          "content-type": parts.type,
+          cookie: current.jar.header() ?? "",
+        },
+        body,
+        duplex: "half",
+      } as RequestInit,
+      peer(),
+    );
+    return { response, finish };
+  }
+
+  const spools = () => {
+    const incoming = path.join(storageDirectory(), "incoming");
+    return existsSync(incoming) ? readdirSync(incoming).filter((name) => name.startsWith("upload-")) : [];
+  };
+
+  // Review I1/F10: a body without a declared length is spooled as it arrives, and
+  // no more bodies are read at once than the reserved headroom covers.
+  it("uploads are read one slot at a time, as they arrive", async () => {
+    intakeSettings({ TOTAL_WEB_WORKERS: 1 });
+    const first = heldUpload(current, multipart(current, await imageBytes()));
+    await eventually(async () => (spools().length === 1 ? true : undefined), 5000);
+    let second: TestResponse | undefined;
+    const waiting = uploadFile(current).then((response) => (second = response));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(second).toBeUndefined();
+    expect(spools()).toHaveLength(1);
+    first.finish();
+    expect((await first.response).status).toBe(202);
+    await waiting;
+    expect(second!.status).toBe(202);
+    expect(spools()).toEqual([]);
+  });
+
+  it("a body without a declared length above the limit is refused while it arrives", async () => {
+    intakeSettings({ MAX_RECEIPT_BYTES: 1000 });
+    const parts = multipart(current, Buffer.alloc(400_000, 1));
+    const held = heldUpload(current, parts);
+    held.finish();
+    const response = await held.response;
+    expect(response.status).toBe(413);
+    expect(spools()).toEqual([]);
+  });
+
+  // Review I2: a temporary file that cannot be written is an invalid request, not a crash.
+  it("a failing temporary file is an invalid request without an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    const incoming = path.join(storageDirectory(), "incoming");
+    mkdirSync(path.join(incoming, ".slots"), { recursive: true });
+    chmodSync(incoming, 0o500);
+    try {
+      const response = await uploadFile(current, { content: Buffer.alloc(300_000, 1) });
+      expect(response.status).toBe(400);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(unhandled).toEqual([]);
+    } finally {
+      chmodSync(incoming, 0o700);
+      process.off("unhandledRejection", record);
+    }
   });
 
   it("a file larger than the receipt limit is refused as too large", async () => {

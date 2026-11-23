@@ -14,7 +14,9 @@ import { ApiError, apiUrl, parseResponse } from "@/lib/api";
  * publication and archiving use the same queue. The first save of a new form
  * sends a creation key, so a retried save never makes a second form. A save
  * that failed keeps the changes and offers to try again; the browser warns
- * before leaving while something is unsaved.
+ * before leaving while something is unsaved (the editor page asks before
+ * in-app navigation too). The start page is sent only when the person changed
+ * it, so a save of other settings keeps a handover made meanwhile.
  */
 
 export type SaveState = "idle" | "pending" | "saving" | "saved" | "error";
@@ -99,6 +101,10 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
   const publication = useRef<Action | null>(null);
   const failedPublication = useRef<Action | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The start page changed since the last save that sent it. */
+  const primaryTouched = useRef(false);
+  /** False once the editor is gone: a save that ends later changes nothing on the page. */
+  const mounted = useRef(true);
   const onCreated = useRef(options.onCreated);
   onCreated.current = options.onCreated;
 
@@ -120,6 +126,8 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
       setSettingsState(sent);
     }
     const startedAt = revision.current;
+    const sendsPrimary = !formRef.current || primaryTouched.current;
+    primaryTouched.current = false;
     saving.current = true;
     setRetryVisible(false);
     show("saving", action ? ACTIONS[action].progress : "Saving …");
@@ -127,12 +135,16 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
     try {
       let result: FormSaved;
       try {
+        const { primary, ...others } = sent;
         result = await send(target, {
-          ...sent,
+          ...others,
+          ...(sendsPrimary ? { primary } : {}),
           action: action ?? "",
           ...(formRef.current ? {} : { creationKey: creationKey.current }),
         });
       } catch (error) {
+        // A start page that did not arrive goes with the next save.
+        if (sendsPrimary && formRef.current) primaryTouched.current = true;
         setErrors(error instanceof ApiError && error.fields ? error.fields : {});
         setSummary(
           error instanceof ApiError && error.status === 422
@@ -153,8 +165,9 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
       const next = { ...current };
       if (current.name === sent.name) next.name = result.name;
       if (current.slug === sent.slug) next.slug = result.slug;
-      // Archiving gives up the start page; a later save must not claim it back.
-      if (current.primary === sent.primary) next.primary = result.primary;
+      // Archiving gives up the start page, and another form may have taken it:
+      // the editor shows what the form has unless the person changed it meanwhile.
+      if (!primaryTouched.current) next.primary = result.primary;
       settingsRef.current = next;
       setSettingsState(next);
       dirty.current = revision.current !== startedAt;
@@ -162,7 +175,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
       else if (dirty.current) show("pending", "Unsaved changes …");
       else show("saved", "All changes saved.");
       setRetryVisible(Boolean(failedPublication.current));
-      if (created) onCreated.current?.(result);
+      if (created && mounted.current) onCreated.current?.(result);
     } catch {
       dirty.current = true;
       if (action) failedPublication.current = action;
@@ -187,6 +200,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
       const next = { ...settingsRef.current, ...changes };
       settingsRef.current = next;
       setSettingsState(next);
+      if ("primary" in changes) primaryTouched.current = true;
       revision.current += 1;
       dirty.current = true;
       show(saving.current ? "saving" : "pending", saving.current ? "Saving …" : "Unsaved changes …");
@@ -237,6 +251,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
         event.returnValue = "";
       }
     };
+    mounted.current = true;
     document.addEventListener("keydown", keys);
     document.addEventListener("visibilitychange", hidden);
     window.addEventListener("beforeunload", leaving);
@@ -245,12 +260,16 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("beforeunload", leaving);
       clearTimeout(timer.current);
+      mounted.current = false;
     };
   }, [save]);
 
   /** Whether leaving now would lose something. */
-  const unsaved = () =>
-    dirty.current || saving.current || Boolean(publication.current) || Boolean(failedPublication.current);
+  const unsaved = useCallback(
+    () =>
+      dirty.current || saving.current || Boolean(publication.current) || Boolean(failedPublication.current),
+    [],
+  );
 
   return {
     settings,

@@ -31,7 +31,8 @@ import { config } from "../config";
 import { claims, drafts, forms } from "../db/schema";
 import { q } from "../db/tx";
 import type { AppEnv } from "../http/env";
-import { applied, formatDate, formatDateTime, language, t, zoneName } from "../i18n";
+import { BodyTooLarge } from "../http/middleware";
+import { applied, formatDateTime, formatInstantDate, language, t, zoneName } from "../i18n";
 import * as intake from "../intake";
 import { IntakeError } from "../intake";
 import { currentPrivacyNotice, displayDescription, displayTitle, isOpen, loadForm } from "../models";
@@ -43,6 +44,7 @@ import { storageRoot } from "../services/storage";
 import { submitClaim } from "../services/submissions";
 import * as terms from "../services/terms";
 import * as uploads from "../services/uploads";
+import { UploadAborted, withUploadSlot } from "../services/upload-slots";
 
 const router = new Hono<AppEnv>();
 
@@ -56,14 +58,24 @@ function intakeResponse(c: Context<AppEnv>, error: IntakeError) {
 
 const invalidRequest = () => new IntakeError(t("Invalid request."));
 
-/** Every text of a JSON value is well-formed Unicode (no lone surrogate), as Python's encode() requires. */
-function wellFormed(value: unknown): boolean {
+/**
+ * How deeply a request's JSON may nest. Python's json module stops at its
+ * recursion limit (RecursionError: an invalid request in the Django version);
+ * a claim needs four levels.
+ */
+const MAX_JSON_DEPTH = 64;
+
+/**
+ * Every text of a JSON value is well-formed Unicode (no lone surrogate), as
+ * Python's encode() requires, and it nests at most MAX_JSON_DEPTH levels.
+ */
+function wellFormed(value: unknown, depth = 0): boolean {
   if (typeof value === "string") return value.isWellFormed();
-  if (Array.isArray(value)) return value.every(wellFormed);
-  if (typeof value === "object" && value !== null)
-    return Object.entries(value).every(([key, item]) => key.isWellFormed() && wellFormed(item));
   if (typeof value === "number") return Number.isFinite(value);
-  return true;
+  if (typeof value !== "object" || value === null) return true;
+  if (depth >= MAX_JSON_DEPTH) return false;
+  if (Array.isArray(value)) return value.every((item) => wellFormed(item, depth + 1));
+  return Object.entries(value).every(([key, item]) => key.isWellFormed() && wellFormed(item, depth + 1));
 }
 
 /**
@@ -74,7 +86,8 @@ async function claimJson(c: Context<AppEnv>): Promise<unknown> {
   let data: unknown;
   try {
     data = JSON.parse(await c.req.text());
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) throw error;
     throw invalidRequest();
   }
   if (!wellFormed(data)) throw invalidRequest();
@@ -118,7 +131,7 @@ router.get("/public/privacy", async (c) => {
           text: notice.text,
           version: notice.version,
           createdAt: notice.createdAt.toISOString(),
-          date: formatDate(notice.createdAt.toISOString().slice(0, 10)),
+          date: formatInstantDate(notice.createdAt),
         }
       : null,
   };
@@ -206,7 +219,8 @@ type Received = {
 /**
  * Reads a multipart upload: its fields, and its one file streamed into a
  * private temporary file. A file larger than the receipt limit is stopped
- * there and reported as `truncated`, as the Django version's upload handler did.
+ * there and reported as `truncated`, as the Django version's upload handler
+ * did. The caller removes the file and holds an upload slot meanwhile.
  */
 async function receiveUpload(c: Context<AppEnv>): Promise<Received> {
   const type = c.req.header("content-type") ?? "";
@@ -220,6 +234,7 @@ async function receiveUpload(c: Context<AppEnv>): Promise<Received> {
   let truncated = false;
   let files = 0;
   const writes: Promise<void>[] = [];
+  const parts: Readable[] = [];
   let parser: InstanceType<typeof Busboy>;
   try {
     parser = new Busboy({
@@ -229,6 +244,7 @@ async function receiveUpload(c: Context<AppEnv>): Promise<Received> {
   } catch {
     throw invalidRequest();
   }
+  const source = Readable.fromWeb(body as WebReadableStream);
   parser.on("field", (name: string, value: string) => {
     if (!(name in fields)) fields[name] = value;
   });
@@ -241,17 +257,30 @@ async function receiveUpload(c: Context<AppEnv>): Promise<Received> {
     const target = path.join(directory, `upload-${randomUUID()}`);
     const received: uploads.ReceivedFile = { name: filename ?? "", size: 0, path: target };
     file = received;
+    parts.push(stream);
     stream.on("data", (chunk: Buffer) => (received.size += chunk.length));
     stream.on("limit", () => (truncated = true));
-    writes.push(pipeline(stream, createWriteStream(target, { mode: 0o600 })));
+    const write = pipeline(stream, createWriteStream(target, { mode: 0o600 }));
+    // Observed from the start: a failed write stops the request instead of
+    // becoming an unhandled rejection while the request is still being read.
+    write.catch((error: unknown) => {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      // The parser waits for the file stream the failure destroyed: stop both ends.
+      parser.destroy(failure);
+      source.destroy(failure);
+    });
+    writes.push(write);
   });
   try {
-    await pipeline(Readable.fromWeb(body as WebReadableStream), parser);
+    await pipeline(source, parser);
     await Promise.all(writes);
   } catch (error) {
+    // The file stream is closed before its path is removed.
+    for (const part of parts) part.destroy();
+    await Promise.allSettled(writes);
     const pending = file as uploads.ReceivedFile | null;
     if (pending) rmSync(pending.path, { force: true });
-    if (error instanceof Error && /too large|limit/i.test(error.message))
+    if (error instanceof BodyTooLarge || (error instanceof Error && /too large|limit/i.test(error.message)))
       throw new IntakeError(intake.message("request_too_large")!, { status: 413 });
     throw invalidRequest();
   }
@@ -266,28 +295,36 @@ async function receiveUpload(c: Context<AppEnv>): Promise<Received> {
 
 router.post(
   "/public/forms/:slug/uploads",
-  handle(async (c) => {
-    const received = await receiveUpload(c);
-    try {
-      const item = await uploads.accept(new RequestParticipant(c), param(c, "slug"), {
-        file: received.file,
-        truncated: received.truncated,
-        kind: received.fields.kind ?? "receipt",
-        expenseId: received.fields.expense_id,
-        draftId: received.fields.draft_id,
-        token: received.fields.token,
-      });
-      const body: UploadAccepted = {
-        id: item.id,
-        state: item.state,
-        name: item.originalName,
-        size: item.size,
-      };
-      return c.json(body, 202);
-    } finally {
-      if (received.file) rmSync(received.file.path, { force: true });
-    }
-  }),
+  handle((c) =>
+    // The body is read only with a slot: the storage kept free for spooled
+    // uploads covers TOTAL_WEB_WORKERS of them (UPLOAD_TEMP_HEADROOM_BYTES).
+    withUploadSlot(c.req.raw.signal, async () => {
+      const received = await receiveUpload(c);
+      try {
+        const item = await uploads.accept(new RequestParticipant(c), param(c, "slug"), {
+          file: received.file,
+          truncated: received.truncated,
+          kind: received.fields.kind ?? "receipt",
+          expenseId: received.fields.expense_id,
+          draftId: received.fields.draft_id,
+          token: received.fields.token,
+        });
+        const body: UploadAccepted = {
+          id: item.id,
+          state: item.state,
+          name: item.originalName,
+          size: item.size,
+        };
+        return c.json(body, 202);
+      } finally {
+        if (received.file) rmSync(received.file.path, { force: true });
+      }
+    }).catch((error: unknown) => {
+      // Nobody is left to answer: the client went away while waiting.
+      if (error instanceof UploadAborted) throw invalidRequest();
+      throw error;
+    }),
+  ),
 );
 
 router.get(

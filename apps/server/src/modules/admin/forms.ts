@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { and, asc, count, desc, eq, ilike, inArray, ne, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { FORM_DESCRIPTION, FORM_TITLE } from "@reimbursements/shared/constants";
 import { dateFormat } from "@reimbursements/shared/dates";
 import { translate } from "@reimbursements/shared/i18n";
@@ -22,7 +22,7 @@ import {
   type TemplateField,
   type User,
 } from "../../db/schema";
-import { atomic, isUniqueViolation, q } from "../../db/tx";
+import { atomic, q } from "../../db/tx";
 import type { AppEnv } from "../../http/env";
 import { AppError, forbidden, notFound, validationError } from "../../http/errors";
 import { idParam, requireEditor, requireTemplateAdmin } from "../../http/middleware";
@@ -243,39 +243,48 @@ router.get("/admin/forms/:id", async (c) => {
 /**
  * Saves a form's settings, with a publication change (`action`) or none.
  * Errors answer 422 with a message per setting (`values.<key>` for internal
- * values); the form keeps what it had.
+ * values); the form keeps what it had. An existing form is read again under
+ * a row lock, so the status and the start page follow what it has now: a
+ * save that raced an archiving or a handover does not undo them.
  */
 async function saveForm(
   user: User,
   input: FormSaveInput,
   target: { form: Form } | { templateId: number; creationKey: string | null },
 ): Promise<FormSaved> {
-  const existing = "form" in target ? target.form : null;
-  let status: FormStatus;
-  try {
-    status = publication.statusAfter(existing, typeof input.action === "string" ? input.action : "");
-  } catch (error) {
-    if (error instanceof publication.Refused) throw new AppError(400, "refused", error.message);
-    throw error;
-  }
-  const templateId = existing ? existing.templateId : (target as { templateId: number }).templateId;
-  const template = { fields: await templateFieldsOf(templateId) };
-  const validation = await publication.validateSettings(template, status, input, {
-    existing,
-    canChoosePrimary: await isTemplateAdmin(user),
+  return atomic(async () => {
+    const existing = "form" in target ? await managedForm(user, target.form.id, { forUpdate: true }) : null;
+    let status: FormStatus;
+    try {
+      status = publication.statusAfter(existing, typeof input.action === "string" ? input.action : "");
+    } catch (error) {
+      if (error instanceof publication.Refused) throw new AppError(400, "refused", error.message);
+      throw error;
+    }
+    const templateId = existing ? existing.templateId : (target as { templateId: number }).templateId;
+    const template = { fields: await templateFieldsOf(templateId) };
+    const validation = await publication.validateSettings(template, status, input, {
+      existing,
+      canChoosePrimary: await isTemplateAdmin(user),
+    });
+    if (!validation.ok) throw validationError(validation.errors, "Please correct the marked fields.");
+    const form = await publication.save(validation.settings, user, {
+      existing,
+      templateId,
+      creationKey: existing ? null : (target as { creationKey: string | null }).creationKey,
+    });
+    return state(user, form);
   });
-  if (!validation.ok) throw validationError(validation.errors, "Please correct the marked fields.");
-  const form = await publication.save(validation.settings, user, {
-    existing,
-    templateId,
-    creationKey: existing ? null : (target as { creationKey: string | null }).creationKey,
-  });
-  return state(user, form);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The first save of a new form; a retry with the same creation key updates the form it made. */
+/**
+ * The first save of a new form; a retry with the same creation key updates
+ * the form it made. Saves with the same key wait for each other (an advisory
+ * lock until the transaction ends), so a retry that overtakes its timed-out
+ * first save finds that form instead of reporting its link as taken.
+ */
 router.post("/admin/forms", async (c) => {
   const user = await requireEditor(c);
   const input = (await body(c)) as FormSaveInput;
@@ -284,18 +293,14 @@ router.post("/admin/forms", async (c) => {
   if (key !== undefined && (typeof key !== "string" || !UUID.test(key)))
     throw new AppError(400, "bad_request", "Invalid request. Please reload the page.");
   const creationKey = key ? key.toLowerCase() : null;
-  const earlier = creationKey ? await publication.created(user, creationKey) : null;
-  if (earlier) return c.json(await saveForm(user, input, { form: earlier }));
-  await templateOf(templateId);
-  try {
+  return atomic(async () => {
+    if (creationKey)
+      await q().execute(sql`select pg_advisory_xact_lock(hashtext(${`form-creation:${creationKey}`}))`);
+    const earlier = creationKey ? await publication.created(user, creationKey) : null;
+    if (earlier) return c.json(await saveForm(user, input, { form: earlier }));
+    await templateOf(templateId);
     return c.json(await saveForm(user, input, { templateId, creationKey }), 201);
-  } catch (error) {
-    // A timed-out first save may still finish while its retry is being processed.
-    if (!creationKey || !isUniqueViolation(error)) throw error;
-    const made = await publication.created(user, creationKey);
-    if (!made) throw error;
-    return c.json(await saveForm(user, input, { form: made }));
-  }
+  });
 });
 
 router.put("/admin/forms/:id", async (c) => {

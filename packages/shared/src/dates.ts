@@ -37,7 +37,7 @@ export const DATE_FORMATS: Readonly<Record<DateFormatCode, DateFormat>> = Object
 ) as Record<DateFormatCode, DateFormat>;
 
 export function isDateFormat(value: unknown): value is DateFormatCode {
-  return typeof value === "string" && value in PATTERNS;
+  return typeof value === "string" && Object.hasOwn(PATTERNS, value);
 }
 
 /** The format `code`, or the default for an unknown one (as `dates.use` did). */
@@ -185,9 +185,36 @@ export function parseDate(input: string, code: string): string | null {
 }
 
 /**
+ * Every instant that shows the wall-clock time `date` `time` in `timezone`:
+ * one as a rule, none in the hour the clocks skip, two in the hour they
+ * repeat. Null when the date or time is malformed.
+ */
+export function zonedInstants(date: string, time: string, timezone: string): Date[] | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const t = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(time.trim());
+  if (!d || !t) return null;
+  const [hour, minute, second] = [Number(t[1]), Number(t[2]), Number(t[3] ?? 0)];
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const wall = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), hour, minute, second);
+  const offsetAt = (instant: number) => {
+    const parts = zonedParts(new Date(instant), timezone);
+    return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - instant;
+  };
+  // The offsets a day before and a day after cover both sides of any transition.
+  const offsets = new Set([offsetAt(wall - 86_400_000), offsetAt(wall), offsetAt(wall + 86_400_000)]);
+  const found = new Set<number>();
+  for (const offset of offsets) {
+    const instant = wall - offset;
+    if (offsetAt(instant) === offset) found.add(instant);
+  }
+  return [...found].sort((a, b) => a - b).map((instant) => new Date(instant));
+}
+
+/**
  * The instant of a wall-clock time in `timezone` (an admin enters opening
  * times in the app timezone). For a time that does not exist (the hour the
- * clocks skip) or exists twice, the earlier offset wins.
+ * clocks skip) or exists twice, the earlier offset wins; `zonedInstants`
+ * tells those cases apart.
  */
 export function zonedInstant(date: string, time: string, timezone: string): Date | null {
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -211,10 +238,31 @@ export const TIMEZONE_REGIONS = new Set(
   "Africa America Antarctica Arctic Asia Atlantic Australia Europe Indian Pacific".split(" "),
 );
 
+/**
+ * Names Python's tzdata knows and Intl does not list (aliases and newer
+ * names, such as Europe/Kyiv): Django offered them, and Intl accepts them.
+ */
+const TZDATA_NAMES = (
+  "Africa/Asmara Africa/Timbuktu America/Argentina/Buenos_Aires America/Argentina/Catamarca " +
+  "America/Argentina/Cordoba America/Argentina/Jujuy America/Argentina/Mendoza America/Atikokan " +
+  "America/Atka America/Ensenada America/Indiana/Indianapolis America/Kentucky/Louisville " +
+  "America/Montreal America/Nipigon America/Nuuk America/Pangnirtung America/Porto_Acre " +
+  "America/Rainy_River America/Santa_Isabel America/Shiprock America/Thunder_Bay America/Virgin " +
+  "America/Yellowknife Asia/Chongqing Asia/Harbin Asia/Ho_Chi_Minh Asia/Istanbul Asia/Kashgar " +
+  "Asia/Kathmandu Asia/Kolkata Asia/Tel_Aviv Asia/Yangon Atlantic/Faroe Atlantic/Jan_Mayen " +
+  "Australia/Canberra Australia/Currie Australia/Yancowinna Europe/Belfast Europe/Kyiv " +
+  "Europe/Nicosia Europe/Tiraspol Pacific/Chuuk Pacific/Johnston Pacific/Kanton Pacific/Pohnpei " +
+  "Pacific/Samoa Pacific/Yap"
+).split(" ");
+
+/** The choices of the General settings, as Django's: Intl's names and tzdata's other ones it accepts. */
 export function timezoneNames(): string[] {
   const all =
     (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
-  return [...new Set(["UTC", ...all.filter((name) => TIMEZONE_REGIONS.has(name.split("/")[0]!))])].sort();
+  const known = [...all, ...TZDATA_NAMES].filter(
+    (name) => TIMEZONE_REGIONS.has(name.split("/")[0]!) && isTimezone(name),
+  );
+  return [...new Set(["UTC", ...known])].sort();
 }
 
 export function isTimezone(value: string): boolean {

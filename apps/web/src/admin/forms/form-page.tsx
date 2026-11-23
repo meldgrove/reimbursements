@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useBlocker, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -76,16 +76,32 @@ function Editor({ editor, editorKey: key }: { editor: FormEditor; editorKey: str
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  /** Navigation the editor itself starts (its new address, after deleting): never asked about. */
+  const ownNavigation = useRef(false);
+  const own = (go: () => Promise<void>) => {
+    ownNavigation.current = true;
+    return go().finally(() => {
+      ownNavigation.current = false;
+    });
+  };
   const autosave = useFormAutosave(editor, {
     onCreated: (form) => {
       keepEditor(form.id, key);
-      void navigate({
-        to: "/admin/forms/$formId",
-        params: { formId: String(form.id) },
-        search: {},
-        replace: true,
-      });
+      void own(() =>
+        navigate({
+          to: "/admin/forms/$formId",
+          params: { formId: String(form.id) },
+          search: {},
+          replace: true,
+        }),
+      );
     },
+  });
+  // Links, shortcuts and Back stay in the page: ask before they drop unsaved changes.
+  const blocker = useBlocker({
+    shouldBlockFn: () => !ownNavigation.current && autosave.unsaved(),
+    enableBeforeUnload: false,
+    withResolver: true,
   });
   const { settings, form, errors, update } = autosave;
   const [deleting, setDeleting] = useState(false);
@@ -105,7 +121,7 @@ function Editor({ editor, editorKey: key }: { editor: FormEditor; editorKey: str
       await api.delete(`/admin/forms/${form!.id}`);
       toast.success(`The ${archived ? "archived form" : "draft"} “${form!.name}” was deleted.`);
       await queryClient.invalidateQueries({ queryKey: ["admin"] });
-      await navigate({ to: "/admin/forms" });
+      await own(() => navigate({ to: "/admin/forms" }));
     } catch (error) {
       toast.error(errorMessage(error));
       throw error;
@@ -486,6 +502,17 @@ function Editor({ editor, editorKey: key }: { editor: FormEditor; editorKey: str
         confirmLabel={`Delete ${archived ? "archived form" : "draft"} for good`}
         destructive
         onConfirm={remove}
+      />
+      <ConfirmDialog
+        open={blocker.status === "blocked"}
+        onOpenChange={(open) => {
+          if (!open) blocker.reset?.();
+        }}
+        title="Leave without saving?"
+        description="Your latest changes are not saved yet. If you leave this page now, they are lost."
+        confirmLabel="Leave without saving"
+        destructive
+        onConfirm={() => blocker.proceed?.()}
       />
     </Page>
   );

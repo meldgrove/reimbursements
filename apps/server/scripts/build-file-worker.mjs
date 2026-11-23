@@ -16,8 +16,9 @@ const PARSERS = ["sharp", "pdf-lib", "@embedpdf/pdfium", "pdfmake"];
 export async function buildFileWorker(outdir, options = {}) {
   const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   const external = Object.keys(pkg.dependencies).filter((name) => !name.startsWith("@reimbursements/"));
+  const entryPoint = options.entry ?? path.join(root, "src/documents/file-worker.ts");
   const result = await build({
-    entryPoints: { "file-worker": path.join(root, "src/documents/file-worker.ts") },
+    entryPoints: { "file-worker": entryPoint },
     outdir,
     outExtension: { ".js": ".mjs" },
     splitting: true,
@@ -35,13 +36,16 @@ export async function buildFileWorker(outdir, options = {}) {
       js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
     },
   });
-  const entry = Object.entries(result.metafile.outputs).find(([, output]) =>
-    output.entryPoint?.endsWith("src/documents/file-worker.ts"),
+  const entry = Object.entries(result.metafile.outputs).find(
+    ([, output]) =>
+      // Metafile paths are relative to the working directory.
+      output.entryPoint && path.resolve(output.entryPoint) === path.resolve(entryPoint),
   );
   const early = new Set();
   const visit = (file) => {
     for (const imported of result.metafile.outputs[file]?.imports ?? []) {
-      if (imported.kind !== "import-statement") continue;
+      // Every kind loads at once (import, require) except the dynamic import after lockdown().
+      if (imported.kind === "dynamic-import") continue;
       if (imported.external) {
         if (PARSERS.some((name) => imported.path === name || imported.path.startsWith(`${name}/`)))
           early.add(imported.path);
@@ -50,7 +54,8 @@ export async function buildFileWorker(outdir, options = {}) {
       }
     }
   };
-  if (entry) visit(entry[0]);
+  if (!entry) throw new Error("The document child's entry is missing from its build.");
+  visit(entry[0]);
   if (early.size > 0) {
     throw new Error(`The document child would load parsers before its lockdown: ${[...early].join(", ")}`);
   }

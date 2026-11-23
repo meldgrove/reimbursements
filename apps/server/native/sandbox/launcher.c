@@ -11,12 +11,15 @@
  *
  *   launcher [--limit NAME=VALUE]... [--read PATH]... [--read-file PATH]...
  *            [--exec PATH]... --write DIR -- PROGRAM [ARGUMENT]...
+ *   launcher [--limit NAME=VALUE]... --limits-only -- PROGRAM [ARGUMENT]...
  *
  * --limit    a resource limit: as, data, cpu, fsize or nofile (soft and hard)
  * --read     read a directory tree or a file (runtime: libraries, node_modules)
  * --read-file  read one file (an input of this execution)
  * --exec     read and execute (the node binary and the ELF interpreter)
  * --write    the execution's workspace: create, write, remove inside it
+ * --limits-only  only the resource limits, no Landlock: development without
+ *            the sandbox (DOCUMENT_SANDBOX_ENABLED=0) keeps 0.4's limits
  *
  * The process is also the first the kernel's OOM killer picks (oom_score_adj
  * 1000), so memory pressure in the worker container ends the parser, not the
@@ -112,12 +115,16 @@ static void add_rule(int ruleset, const struct rule *rule) {
 
 int main(int argc, char **argv) {
   static struct rule rules[MAX_RULES];
-  int count = 0, index = 1, workspace = 0;
+  int count = 0, index = 1, workspace = 0, limits_only = 0;
   for (; index < argc; index++) {
     const char *option = argv[index];
     if (!strcmp(option, "--")) {
       index++;
       break;
+    }
+    if (!strcmp(option, "--limits-only")) {
+      limits_only = 1;
+      continue;
     }
     if (index + 1 >= argc) usage("option without value");
     const char *value = argv[++index];
@@ -135,7 +142,8 @@ int main(int argc, char **argv) {
     } else usage("unknown option");
   }
   if (index >= argc) usage("no program");
-  if (!workspace) usage("--write is required");
+  if (limits_only && count) usage("--limits-only takes no paths");
+  if (!limits_only && !workspace) usage("--write is required");
   rules[count++] = (struct rule){"/dev/null", READ_FILE | WRITE_FILE};
 
   int oom = open("/proc/self/oom_score_adj", O_WRONLY | O_CLOEXEC);
@@ -143,6 +151,11 @@ int main(int argc, char **argv) {
     /* Best effort: raising one's own score needs no privilege, a missing /proc is no reason to stop. */
     if (write(oom, "1000", 4) != 4) errno = 0;
     close(oom);
+  }
+
+  if (limits_only) {
+    execv(argv[index], &argv[index]);
+    fail("execv");
   }
 
   int abi = (int)syscall(__NR_landlock_create_ruleset, NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);

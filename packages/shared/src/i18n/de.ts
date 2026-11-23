@@ -371,4 +371,7 @@ export const DE: Readonly<Record<string, string>> = {
     "Bitte sicherstellen, dass der Wert aus höchstens {limit_value} Zeichen besteht. (Er besteht aus {show_value} Zeichen.)",
   // The received page of a claim this browser did not submit (a 404 page in the Django version).
   "The claim was not found.": "Die Erstattung wurde nicht gefunden.",
+  // Following a link inside the app with entries in the form (the browser's own warning in the Django version).
+  "Leave this page? Your entries and receipts will be lost.":
+    "Seite verlassen? Deine Angaben und Belege gehen verloren.",
 };

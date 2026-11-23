@@ -6,6 +6,7 @@ import type { AppEnv } from "./env";
 import { AppError, zodFieldErrors } from "./errors";
 import { applySettings, authenticate, requestId, requestLimits, requestLog, sameOrigin } from "./middleware";
 import { compression } from "./compression";
+import { httpsRedirect } from "./https";
 import { webApp } from "./static";
 import { config } from "../config";
 import { API_MODULES, ROOT_MODULES } from "../modules";
@@ -66,6 +67,7 @@ export function createApp() {
   const tracing = tracingMiddleware(app);
   if (tracing) app.use("*", tracing);
   app.use("*", requestId, requestLog, compression());
+  app.use("*", httpsRedirect);
   // A route may set a stricter policy (the favicon); it wins over the app's below.
   app.use("*", async (c, next) => {
     await next();

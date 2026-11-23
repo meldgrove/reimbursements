@@ -149,12 +149,20 @@ export async function startParticipantSession(c: Context): Promise<{ token: stri
   return { token, data: {} };
 }
 
-/** Saves a participant session's data. */
-export async function saveParticipantData(token: string, data: SessionData): Promise<void> {
-  await getDb()
+/**
+ * Saves a participant session's data. Like Django's sessions, a change gives
+ * the session (and, with the request, its cookie) its full 7 days again: a
+ * draft opened on the session's last day stays reachable for its own 24
+ * hours. Admin sessions never move their end (`startSession`).
+ */
+export async function saveParticipantData(token: string, data: SessionData, c?: Context): Promise<void> {
+  const expiresAt = new Date(Date.now() + config().PARTICIPANT_SESSION_SECONDS * 1000);
+  const updated = await getDb()
     .update(sessions)
-    .set({ data })
-    .where(and(eq(sessions.id, tokenHash(token)), eq(sessions.kind, "participant")));
+    .set({ data, expiresAt })
+    .where(and(eq(sessions.id, tokenHash(token)), eq(sessions.kind, "participant")))
+    .returning({ id: sessions.id });
+  if (c && updated.length > 0) writeCookie(c, participantCookie(), token, expiresAt);
 }
 
 /** Removes expired sessions of both kinds (the worker's cleanup). */
@@ -197,4 +205,15 @@ export function unsign<T>(signed: string | undefined): T | null {
 /** A keyed digest for values that must not be stored as they are (draft bindings, network keys). */
 export function saltedHmac(salt: string, value: string): string {
   return createHmac("sha256", `${salt}:${config().AUTH_SECRET}`).update(value).digest("hex");
+}
+
+/**
+ * Django's `salted_hmac(salt, value).hexdigest()` with the same secret
+ * (DJANGO_SECRET_KEY, or AUTH_SECRET in its place): HMAC-SHA1 keyed with
+ * SHA1(salt + secret). For keys the Django version stored and this version
+ * must find again, such as the network budgets (`portal_draftadmission`).
+ */
+export function djangoSaltedHmac(salt: string, value: string): string {
+  const key = createHash("sha1").update(`${salt}${config().AUTH_SECRET}`).digest();
+  return createHmac("sha1", key).update(value).digest("hex");
 }

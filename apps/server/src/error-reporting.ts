@@ -71,6 +71,11 @@ export function withErrorReportingSettings(indexHtml: string): string {
   );
 }
 
+/** Tags reports with the process's role; an operator command's name for the CLI (0.4's `process` tag). */
+export function tagRole(role: string): void {
+  if (Sentry.isInitialized()) Sentry.getGlobalScope().setTag("role", role);
+}
+
 /** Reports an unexpected error to Sentry, when it is on. */
 export function reportError(error: unknown): void {
   if (Sentry.isInitialized()) Sentry.captureException(error);

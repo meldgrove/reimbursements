@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -228,6 +229,56 @@ describe("taking over the database of the Django version", () => {
       client.query("select to_regclass('drizzle.__drizzle_migrations') is not null as present"),
     );
     expect(journal.rows[0].present).toBe(false);
+  });
+
+  it("changes nothing when a step after the takeover fails", async () => {
+    await loadFixture();
+    // The migrations of this version, plus one that fails after them.
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "reimbursements-migrations-"));
+    fs.cpSync(MIGRATIONS, folder, { recursive: true });
+    const journal = JSON.parse(fs.readFileSync(path.join(folder, "meta/_journal.json"), "utf8"));
+    const last = journal.entries.at(-1);
+    journal.entries.push({ ...last, idx: last.idx + 1, when: last.when + 1, tag: "9999_fails" });
+    fs.writeFileSync(path.join(folder, "meta/_journal.json"), JSON.stringify(journal));
+    fs.writeFileSync(path.join(folder, "9999_fails.sql"), "select 1 / 0;");
+    const before = { catalog: await catalog(DJANGO), counts: await counts(DJANGO) };
+    try {
+      await expect(withClient(DJANGO, (client) => migrateWith(client, folder))).rejects.toThrow(
+        /division by zero/,
+      );
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+    expect(await catalog(DJANGO)).toEqual(before.catalog);
+    expect(await counts(DJANGO)).toEqual(before.counts);
+    const left = await withClient(DJANGO, async (client) => ({
+      journal: (
+        await client.query("select to_regclass('drizzle.__drizzle_migrations') is not null as present")
+      ).rows[0].present,
+      sessions: Number((await client.query("select count(*) from django_session")).rows[0].count),
+      table: (await client.query("select to_regclass('public.portal_session') is not null as present"))
+        .rows[0].present,
+    }));
+    expect(left).toEqual({ journal: false, sessions: 1, table: false });
+    // And the next attempt, with the right migrations, takes it over.
+    expect(await upgrade(DJANGO)).toBe(true);
+  });
+
+  it("keeps Django's foreign keys deferred, as Django loads rows before their parents", async () => {
+    await loadFixture();
+    await upgrade(DJANGO);
+    await withClient(DJANGO, async (client) => {
+      await client.query("begin");
+      const form = (await client.query("select id from portal_form order by id limit 1")).rows[0].id;
+      await client.query("insert into portal_form_owners (form_id, user_id) values ($1, 999999)", [form]);
+      await client.query(`
+        insert into auth_user (id, password, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined)
+        values (999999, '!', false, 'later-parent', '', '', '', true, true, now())
+      `);
+      await client.query("commit");
+      const { rows } = await client.query("select count(*) from portal_form_owners where user_id = 999999");
+      expect(Number(rows[0].count)).toBe(1);
+    });
   });
 
   it("refuses tables without Django's migration records", async () => {

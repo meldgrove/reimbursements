@@ -25,13 +25,7 @@ import { config } from "../../config";
 import type { AppEnv } from "../../http/env";
 import { badRequest, validationError } from "../../http/errors";
 import { requireTemplateAdmin } from "../../http/middleware";
-import {
-  faviconType,
-  loadSettings,
-  MAX_FAVICON_BYTES,
-  saveSettings,
-  setFavicon,
-} from "../../services/app-settings";
+import { faviconType, loadSettings, MAX_FAVICON_BYTES, saveSettings } from "../../services/app-settings";
 import { body } from "./common";
 
 /**
@@ -41,6 +35,11 @@ import { body } from "./common";
  * accent color and the favicon. Both are parts of the one settings row.
  */
 const router = new Hono<AppEnv>();
+
+/** The timezones of the General page: Django's list, and the stored one also when the list lacks it. */
+function timezoneChoices(current: string): string[] {
+  return [...new Set([...timezoneNames(), current])].filter((name) => isTimezone(name)).sort();
+}
 
 function generalPage(settings: GeneralSettings): GeneralSettingsPage {
   return {
@@ -52,7 +51,10 @@ function generalPage(settings: GeneralSettings): GeneralSettingsPage {
     },
     choices: {
       languages: LANGUAGES.map(([value, label]) => ({ value, label })),
-      timezones: timezoneNames().map((name) => ({ value: name, label: name.replaceAll("_", " ") })),
+      timezones: timezoneChoices(settings.timezone).map((name) => ({
+        value: name,
+        label: name.replaceAll("_", " "),
+      })),
       dateFormats: Object.values(DATE_FORMATS).map((format) => ({ value: format.code, label: format.label })),
       numberFormats: Object.values(NUMBER_FORMATS).map((format) => ({
         value: format.code,
@@ -76,11 +78,8 @@ router.put("/admin/settings/general", async (c) => {
   const input = (await body(c)) as Partial<GeneralSettingsForm>;
   const errors: Record<string, string> = {};
   if (!isLanguage(input.language)) errors.language = choiceError(input.language);
-  if (
-    typeof input.timezone !== "string" ||
-    !timezoneNames().includes(input.timezone) ||
-    !isTimezone(input.timezone)
-  )
+  const current = await loadSettings();
+  if (typeof input.timezone !== "string" || !timezoneChoices(current.timezone).includes(input.timezone))
     errors.timezone = choiceError(input.timezone);
   if (!isDateFormat(input.dateFormat)) errors.dateFormat = choiceError(input.dateFormat);
   if (!isNumberFormat(input.numberFormat)) errors.numberFormat = choiceError(input.numberFormat);
@@ -162,9 +161,11 @@ router.post("/admin/settings/appearance", async (c) => {
     }
   }
   if (Object.keys(errors).length > 0) throw validationError(errors, "Please correct the errors below.");
-  let saved = await saveSettings({ accentColor: accent });
-  if (favicon) saved = await setFavicon(favicon.content, favicon.type);
-  else if (input.removeFavicon) saved = await setFavicon(Buffer.alloc(0));
+  // Accent and favicon in one statement: both change, or neither.
+  const saved = await saveSettings(
+    { accentColor: accent },
+    favicon ?? (input.removeFavicon ? { content: Buffer.alloc(0) } : undefined),
+  );
   const warning =
     accent && hardToRead(accent)
       ? `Links in ${accent} are hard to read on white. A darker color reads better.`

@@ -8,10 +8,18 @@ import { SERVER_ROOT } from "../paths";
 import { withErrorReportingSettings } from "../error-reporting";
 
 /**
- * The built web app (apps/web/dist): hashed assets, and index.html for every
- * page of both areas (participant pages and /admin/). Text assets go out as
- * their brotli or gzip copies from the build (scripts/compress-assets.mjs)
- * when the browser accepts them.
+ * The pages of the web app: index.html answers them whatever the request
+ * accepts, as the Django version's pages did (a link checker or curl asks
+ * for any type). Other paths get index.html only when a browser asks for a
+ * page (the app then shows "Not found").
+ */
+const PAGES = /^\/(?:|datenschutz\/?|f\/[^/]+\/?|received\/[^/]+\/?|admin(?:\/.*)?)$/;
+
+/**
+ * The built web app (apps/web/dist): hashed assets, the theme script, and
+ * index.html for every page of both areas (participant pages and /admin/).
+ * Text assets go out as their brotli or gzip copies from the build
+ * (scripts/compress-assets.mjs) when the browser accepts them.
  */
 export function webApp() {
   const root = config().WEB_DIST_DIR ?? path.resolve(SERVER_ROOT, "../web/dist");
@@ -28,9 +36,23 @@ export function webApp() {
     }),
   );
   app.use("/favicon.svg", serveStatic({ root: relativeRoot, precompressed: true }));
+  // Sets the person's Appearance before the page shows (index.html). Not
+  // hashed: the browser checks it each time (no-cache, which the app keeps).
+  let themeScript: Buffer | undefined;
+  app.get("/theme.js", async (c) => {
+    try {
+      themeScript ??= await readFile(path.join(root, "theme.js"));
+    } catch {
+      return c.notFound();
+    }
+    return c.body(new Uint8Array(themeScript), 200, {
+      "content-type": "text/javascript; charset=utf-8",
+      "cache-control": "no-cache",
+    });
+  });
   let indexHtml: string | undefined;
   app.get("*", async (c) => {
-    if (!c.req.header("accept")?.includes("text/html")) return c.notFound();
+    if (!PAGES.test(c.req.path) && !c.req.header("accept")?.includes("text/html")) return c.notFound();
     try {
       indexHtml ??= withErrorReportingSettings(await readFile(path.join(root, "index.html"), "utf8"));
     } catch {

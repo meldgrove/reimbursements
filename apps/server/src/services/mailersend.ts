@@ -76,6 +76,17 @@ const BEFORE_TRANSMISSION = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
   "UND_ERR_SOCKET_CONNECT",
   "ConnectError",
+  // The TLS handshake refused the server's certificate: no request was sent (httpx's ConnectError).
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "CERT_REVOKED",
+  "CERT_UNTRUSTED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
 ]);
 
 /** Whether `error` from fetch is a connection failure known to precede acceptance. */
