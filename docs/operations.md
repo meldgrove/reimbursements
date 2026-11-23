@@ -274,6 +274,17 @@ A validation or render that finds too little storage or workspace waits a minute
 runs again. Waiting does not count as an attempt, so a long capacity shortage does not
 use up the retries for a scanner outage or an interrupted worker.
 
+The worker keeps running while PostgreSQL restarts, for example during an update.
+While the database does not answer, it logs a `database_unavailable` warning and tries
+again after 1 second, then after twice as long each time, at most every 30 seconds. A job
+that was running at that moment is handed on as if its worker had died, as soon as the
+database is back: a validation or render runs again, a send becomes unknown. After five
+minutes without the database, the worker logs the error `database_unreachable`, once
+for each outage; Sentry receives it. Any other database error still stops the worker.
+The web server and the worker keep connections for up to a minute and check a kept
+connection before they use it again, so the first request after a restart reconnects
+instead of failing.
+
 Queue age measures waiting time since `run_after` for runnable/running jobs.
 Scheduled backoffs do not fail readiness; a newly due retry gets a fresh waiting
 interval. `claim_status` uses the same measure. Transient sandbox probe failures
