@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { updateChannelInputSchema, updateInstallSchema } from "@reimbursements/shared/api/updates";
 import type { AppEnv } from "../http/env";
 import { isTemplateAdmin } from "../auth/roles";
-import { parseWith } from "../http/errors";
+import { AppError } from "../http/errors";
 import { askUpdater, type UpdatesAnswer } from "../updates/updater";
 
 /**
@@ -39,12 +39,16 @@ router.get("/admin/updates", async (c) => answer(c, await askUpdater({ call: "st
 router.post("/admin/updates/check", async (c) => answer(c, await askUpdater({ call: "check" })));
 
 router.post("/admin/updates/install", async (c) => {
-  const { version } = parseWith(updateInstallSchema, await body(c));
+  const parsed = updateInstallSchema.safeParse(await body(c));
+  if (!parsed.success) throw new AppError(400, "bad_request", "Name the version to install, such as 0.2.1.");
+  const { version } = parsed.data;
   return answer(c, await askUpdater({ call: "install", version }));
 });
 
 router.post("/admin/updates/channel", async (c) => {
-  const { channel } = parseWith(updateChannelInputSchema, await body(c));
+  const parsed = updateChannelInputSchema.safeParse(await body(c));
+  if (!parsed.success) throw new AppError(400, "bad_request", "The channel is stable or preview.");
+  const { channel } = parsed.data;
   const result = await askUpdater({ call: "channel", channel });
   // Saved only when the updater's status names the chosen channel (as in the Django version).
   if (

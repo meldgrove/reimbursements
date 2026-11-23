@@ -83,7 +83,10 @@ export function AdminLayout() {
         settingsHref={SETTINGS_PATH}
         onSignOut={() => void signOut()}
         breadcrumbs={breadcrumbs}
-        search={{ find: findRecords }}
+        search={{
+          find: findRecords,
+          allResultsHref: (query) => `/admin/search?q=${encodeURIComponent(query)}`,
+        }}
         // The sign-in provider's account page is on the person's settings page, not here.
         headerEnd={meta.updatesButton ? <UpdateButton /> : null}
       >

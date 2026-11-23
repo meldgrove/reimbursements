@@ -12,9 +12,13 @@ import { applied, loadSettings, requestLanguage } from "../services/app-settings
 import type { AppEnv } from "./env";
 import { AppError, badRequest, parseWith, unauthorized } from "./errors";
 
+/**
+ * Each request gets an ID of its own for the logs and the X-Request-ID header,
+ * as in the Django version: a client's X-Request-ID is not taken, since logs
+ * must not carry what a client chose to send.
+ */
 export const requestId: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const incoming = c.req.header("x-request-id");
-  const id = incoming && /^[\w-]{8,64}$/.test(incoming) ? incoming : randomUUID();
+  const id = randomUUID();
   c.set("requestId", id);
   c.header("x-request-id", id);
   await next();

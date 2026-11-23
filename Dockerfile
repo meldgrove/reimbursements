@@ -45,7 +45,10 @@ COPY apps/server/native/sandbox apps/server/native/sandbox
 RUN node apps/server/native/sandbox/build.mjs
 
 FROM base AS prod-deps
-RUN npm ci --omit=dev --workspace @reimbursements/server --include-workspace-root=false --no-audit --no-fund
+# npm keeps a package under apps/server/node_modules when the lock file puts it
+# there; the folder exists either way, for the copy below.
+RUN npm ci --omit=dev --workspace @reimbursements/server --include-workspace-root=false --no-audit --no-fund \
+    && mkdir -p apps/server/node_modules
 
 FROM node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS runtime
 # libseccomp2 for the document sandbox (the claim PDF's font comes with the
@@ -65,6 +68,7 @@ ENV NODE_ENV=production \
     PRIVATE_STORAGE_ROOT=/app/var/private
 WORKDIR /app
 COPY --from=prod-deps --chown=portal:portal /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=portal:portal /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build --chown=portal:portal /app/package.json ./package.json
 COPY --from=build --chown=portal:portal /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build --chown=portal:portal /app/apps/server/dist ./apps/server/dist

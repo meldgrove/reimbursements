@@ -165,7 +165,7 @@ fs.mkdirSync(output, { recursive: true });
         "Review overflows",
       );
       await page.locator("#submit-button").click();
-      await page.waitForURL(/\/received\/[0-9a-f-]+\//, { timeout: 60000 });
+      await page.waitForURL(/\/received\/[0-9a-f-]{36}\/?$/, { timeout: 60000 });
       const reference = await page.locator("#claim-reference").innerText();
       references.push(reference);
       assert.match(reference, /^Erst\/\d{4}-\d{2}-\d{2}\/[^/]+\/beispiel\/\d{6}$/);
@@ -186,8 +186,10 @@ fs.mkdirSync(output, { recursive: true });
       );
       await page.reload();
       assert.equal(await page.locator("#claim-reference").innerText(), reference);
+      // Another browser cannot read the claim (the page asks the participant API).
+      const claimId = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1);
       const anonymous = await browser.newContext();
-      const response = await anonymous.request.get(page.url());
+      const response = await anonymous.request.get(`${base}/api/v1/public/received/${claimId}`);
       assert.equal(response.status(), 404);
       await anonymous.close();
       await page.screenshot({

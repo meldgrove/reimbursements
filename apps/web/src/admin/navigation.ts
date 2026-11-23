@@ -40,7 +40,11 @@ export function navigationFor(me: Pick<MeUser, "isTemplateAdmin">): NavGroup[] {
 export type Crumb = { label: string; href?: string };
 
 /** Labels of the pages below a sidebar item. */
-const SUB_PAGES: Record<string, string> = { new: "New" };
+const SUB_PAGES: Record<string, string> = { new: "New", delete: "Delete" };
+/** Labels of the pages below a record, e.g. Claims › R-2026-0001 › Process again. */
+const RECORD_PAGES: Record<string, string> = { retry: "Process again" };
+/** The search's page with every result. */
+export const SEARCH_PATH = "/admin/search";
 
 /**
  * Where a page sits: the sidebar item it belongs to, then the record by its
@@ -52,13 +56,17 @@ export function breadcrumbsFor(
 ): Crumb[] {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
   if (path === SETTINGS_PATH) return [{ label: "Settings" }];
+  if (path === SEARCH_PATH) return [{ label: "Search" }];
   const item = options.items
     .filter((candidate) => path === candidate.href || path.startsWith(`${candidate.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0];
   if (!item) return [];
   if (path === item.href) return [{ label: item.label }];
   const parent = { label: item.label, href: item.href };
-  const [first] = path.slice(item.href.length + 1).split("/");
+  const [first, second] = path.slice(item.href.length + 1).split("/");
   if (first && SUB_PAGES[first]) return [parent, { label: SUB_PAGES[first]! }];
-  return [parent, { label: options.record ?? "Details" }];
+  const record = { label: options.record ?? "Details" };
+  if (second && RECORD_PAGES[second])
+    return [parent, { ...record, href: `${item.href}/${first}` }, { label: RECORD_PAGES[second]! }];
+  return [parent, record];
 }

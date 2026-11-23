@@ -73,20 +73,32 @@ async function send(base: string, request: UpdaterRequest): Promise<Outcome> {
       kind: "unreachable",
       timedOut,
       error: timedOut
-        ? `The update service did not answer within ${timeoutMs / 1000} seconds.`
-        : "The update service is not reachable.",
+        ? `The update service did not answer within ${timeoutMs / 1000} s.`
+        : `No update service answers at ${base}.`,
     };
   }
   if (!response.ok) {
     const message = (data as { error?: unknown } | null)?.error;
     logger.warn({ call: request.call, status: response.status }, "update service refused");
+    if (typeof message === "string" && message.trim()) {
+      return {
+        kind: "refused",
+        httpStatus: response.status,
+        error: message.trim().slice(0, MAX_ERROR_LENGTH),
+      };
+    }
+    // An installation's server error may have started it; any other error page is no updater.
+    if (request.call === "install" && response.status >= 500) {
+      return {
+        kind: "refused",
+        httpStatus: response.status,
+        error: `The update service answered with HTTP ${response.status}.`,
+      };
+    }
     return {
-      kind: "refused",
-      httpStatus: response.status,
-      error:
-        typeof message === "string" && message.trim()
-          ? message.trim().slice(0, MAX_ERROR_LENGTH)
-          : `The update service refused (HTTP ${response.status}).`,
+      kind: "unreachable",
+      timedOut: false,
+      error: `The service at ${base} is not the update service.`,
     };
   }
   const parsed = updaterStatusSchema.safeParse(data);
@@ -99,7 +111,7 @@ async function send(base: string, request: UpdaterRequest): Promise<Outcome> {
       return {
         kind: "unreachable",
         timedOut: false,
-        error: "UPDATER_URL answers, but not as an update service.",
+        error: `The service at ${base} is not the update service.`,
       };
     }
     return {
@@ -141,7 +153,11 @@ export async function askUpdater(request: UpdaterRequest): Promise<UpdatesAnswer
     return { status: 202, body: { app, reachable: true, updater, error: null } };
   }
   if (outcome.kind === "refused") {
-    const status = outcome.httpStatus >= 500 ? (outcome.httpStatus as ServerErrorStatusCode) : 409;
+    // The button takes a 409 as a refusal; an installation's 5xx stays one, since it may have started.
+    const status =
+      request.call === "install" && outcome.httpStatus >= 500
+        ? (outcome.httpStatus as ServerErrorStatusCode)
+        : 409;
     return { status, body: { app, reachable: true, updater, error: outcome.error } };
   }
   return { status: 200, body: { app, reachable: updater !== null, updater, error: outcome.error } };

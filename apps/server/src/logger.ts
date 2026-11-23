@@ -1,4 +1,4 @@
-import { pino, stdSerializers } from "pino";
+import { pino } from "pino";
 
 type FailedQuery = Error & { query: string; params: unknown[] };
 
@@ -11,22 +11,31 @@ const isFailedQuery = (error: unknown): error is FailedQuery =>
   typeof (error as Partial<FailedQuery>).query === "string" &&
   Array.isArray((error as Partial<FailedQuery>).params);
 
+/** The stack's frames without its first lines, which repeat the message. */
+function frames(error: Error): string | undefined {
+  const lines = (error.stack ?? "").split("\n");
+  const first = lines.findIndex((line) => /^\s+at /.test(line));
+  return first === -1 ? undefined : lines.slice(first).join("\n");
+}
+
 /**
- * A failed database query quotes its values, such as message texts, in its
- * message, stack and `params`. Its log entry keeps the query (placeholders
- * only), the database's error code and the code location.
+ * Errors are logged without their values (portal/logging.py of the Django
+ * version): a message can quote what failed, such as an IBAN, a receipt's
+ * text, a file name or, for a failed database query, the query's values. The
+ * entry keeps the error's type, its code (`code`, such as a processing
+ * error's or the database's) and the code locations. The log line's own
+ * message says what happened, with identifiers only.
  */
 export function serializeError(error: unknown) {
-  if (!isFailedQuery(error)) return stdSerializers.err(error as Error);
-  const code = (error.cause as { code?: unknown } | undefined)?.code;
-  // The stack starts with the message; only the frames after it stay.
-  const stack = error.stack ?? "";
-  const start = stack.indexOf(error.message);
+  if (!(error instanceof Error)) return { type: typeof error };
+  const own = (error as { code?: unknown }).code;
+  const cause = (error.cause as { code?: unknown } | undefined)?.code;
+  const code = typeof own === "string" ? own : typeof cause === "string" ? cause : undefined;
   return {
-    type: error.constructor.name,
-    query: error.query,
-    code: typeof code === "string" ? code : undefined,
-    stack: start === -1 ? undefined : stack.slice(start + error.message.length).replace(/^\n/, ""),
+    type: error.name && error.name !== "Error" ? error.name : error.constructor.name,
+    ...(isFailedQuery(error) ? { query: error.query } : {}),
+    code,
+    stack: frames(error),
   };
 }
 

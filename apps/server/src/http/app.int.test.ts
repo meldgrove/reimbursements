@@ -25,8 +25,11 @@ describe("health checks", () => {
     const ready = await request("GET", "/-/readyz", {
       headers: { "x-health-token": "test-health-token", "x-forwarded-proto": "https" },
     });
-    expect(ready.status).toBe(200);
-    expect(ready.body).toMatchObject({ status: "OK", oldest_job_age_seconds: 0 });
+    // Outside development readiness needs the sandbox, ClamAV and the tmpfs
+    // workspace, which tests do not have (services/readiness.int.test.ts):
+    // the token gets an answer, unavailable.
+    expect(ready.status).toBe(503);
+    expect(ready.body.status).toBe("unavailable");
     expect(ready.headers.get("cache-control")).toBe("no-store, private");
   });
 

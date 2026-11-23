@@ -360,4 +360,15 @@ export const DE: Readonly<Record<string, string>> = {
   Signature: "Unterschrift",
   "Declaration {version} confirmed. Privacy notice version {privacy} acknowledged.":
     "Erklärung {version} bestätigt. Datenschutzhinweis Version {privacy} zur Kenntnis genommen.",
+  // Django's own form messages, in its German translation (the participant's claim details).
+  "This field is required.": "Dieses Feld ist zwingend erforderlich.",
+  "Enter a valid email address.": "Bitte gültige E-Mail-Adresse eingeben.",
+  "Select a valid choice. {value} is not one of the available choices.":
+    "Bitte eine gültige Auswahl treffen. {value} ist keine gültige Auswahl.",
+  "Enter a valid date.": "Bitte ein gültiges Datum eingeben.",
+  "Null characters are not allowed.": "Nullzeichen sind nicht erlaubt.",
+  "Ensure this value has at most {limit_value} characters (it has {show_value}).":
+    "Bitte sicherstellen, dass der Wert aus höchstens {limit_value} Zeichen besteht. (Er besteht aus {show_value} Zeichen.)",
+  // The received page of a claim this browser did not submit (a 404 page in the Django version).
+  "The claim was not found.": "Die Erstattung wurde nicht gefunden.",
 };

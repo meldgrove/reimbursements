@@ -1,5 +1,5 @@
 // Delayed field feedback and stale-response regression checks. No uploads or mail.
-// Run against the demo form. FORM_HTML optionally supplies an offline rendered page.
+// Run against the demo form; the participant API's validation is answered here.
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 
@@ -13,8 +13,7 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
   let requests = 0,
     holdNext = false,
     heldRoute;
-  await require("./offline.cjs")(page, base);
-  await page.route("**/f/demo/validate/", async (route) => {
+  await page.route("**/api/v1/public/forms/demo/validate", async (route) => {
     requests++;
     if (holdNext) {
       holdNext = false;
@@ -60,8 +59,8 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
 
     holdNext = true;
     await input("#id_iban", "invalid");
-    await page.waitForRequest("**/f/demo/validate/");
-    const corrected = page.waitForResponse("**/f/demo/validate/");
+    await page.waitForRequest("**/api/v1/public/forms/demo/validate");
+    const corrected = page.waitForResponse("**/api/v1/public/forms/demo/validate");
     await input("#id_iban", "DE89370400440532013000");
     await corrected;
     await heldRoute.fulfill({ json: { fields: { iban: [{ message: "Obsolete error" }] } } });

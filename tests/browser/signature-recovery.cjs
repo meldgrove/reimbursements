@@ -22,7 +22,6 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
       original(fn, delay >= 2000 && delay < 15000 ? 0 : delay, ...args);
   });
   const page = await context.newPage();
-  await require("./offline.cjs")(page, base);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const uploads = new Map();
@@ -33,7 +32,10 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
     submitted;
   const signatures = () => [...uploads.values()].filter((item) => item.kind === "signature");
   const json = (route, status, value) => route.fulfill({ status, json: value });
-  await page.route("**/f/demo/uploads/**", async (route) => {
+  // Error answers of the participant API: { error: { code, message } }.
+  const failure = (route, status, message) =>
+    json(route, status, { error: { code: "intake_error", message } });
+  await page.route("**/api/v1/public/forms/demo/uploads**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     if (request.method() === "POST") {
@@ -42,7 +44,7 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
         : "receipt";
       if (kind === "signature" && signatures().length >= 3) {
         quotaRejections++;
-        return json(route, 400, { error: "Synthetic three-signature limit" });
+        return failure(route, 400, "Synthetic three-signature limit");
       }
       const id = randomUUID();
       const item = {
@@ -51,28 +53,25 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
         mode: kind === "signature" ? mode : "ready",
         name: `${kind}.png`,
         state: "pending",
+        size: 100,
         pages: 1,
-        status_url: `/f/demo/uploads/${id}/status/`,
-        delete_url: `/f/demo/uploads/${id}/`,
       };
       uploads.set(id, item);
       if (kind === "signature") signatureCount++;
       return json(route, 202, item);
     }
-    const id = pathname.split("/")[4];
+    const id = pathname.split("/").filter(Boolean).at(-1);
     const item = uploads.get(id);
-    if (!item) return json(route, 404, { error: "Missing synthetic upload" });
+    if (!item) return failure(route, 404, "Missing synthetic upload");
     if (request.method() === "DELETE") {
       if (rejectDelete) {
         rejectDelete = false;
-        return json(route, 409, {
-          error: "Synthetic validation still running",
-        });
+        return failure(route, 409, "Synthetic validation still running");
       }
       uploads.delete(id);
       return json(route, 200, { removed: true });
     }
-    if (item.mode === "network") return json(route, 503, { error: "Synthetic polling failure" });
+    if (item.mode === "network") return failure(route, 503, "Synthetic polling failure");
     return json(route, 200, {
       id,
       pages: 1,
@@ -80,10 +79,10 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
       message: item.mode === "failed" ? "Synthetic invalid signature" : "",
     });
   });
-  await page.route("**/f/demo/submit/", async (route) => {
+  await page.route("**/api/v1/public/forms/demo/submit", async (route) => {
     submitted = route.request().postDataJSON();
     assert.equal(uploads.get(submitted.signature)?.mode, "ready");
-    return json(route, 400, { error: "Synthetic submission captured" });
+    return failure(route, 400, "Synthetic submission captured");
   });
   try {
     await page.goto(`${base}/f/demo/`);
@@ -115,7 +114,7 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
     async function uploadSignature(nextMode) {
       mode = nextMode;
       const response = page.waitForResponse(
-        (result) => result.request().method() === "POST" && result.url().endsWith("/uploads/"),
+        (result) => result.request().method() === "POST" && result.url().endsWith("/uploads"),
       );
       await page.locator("#signature-file").setInputFiles(path.join(fixtures, "signature.png"));
       await response;
@@ -175,7 +174,7 @@ if (!fixtures) throw new Error("Set FIXTURES_DIR to synthetic browser fixtures."
       }
       mode = failure;
       const response = page.waitForResponse(
-        (result) => result.request().method() === "POST" && result.url().endsWith("/uploads/"),
+        (result) => result.request().method() === "POST" && result.url().endsWith("/uploads"),
       );
       await page.locator("#submit-button").click();
       await response;

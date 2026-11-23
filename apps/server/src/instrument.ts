@@ -16,6 +16,17 @@ import {
 
 const env = (name: string) => process.env[name]?.trim() || undefined;
 
+/** The deployment, as config.ts decides it (DEPLOYMENT_ENV, DJANGO_DEBUG, NODE_ENV): the reports' environment. */
+function deployment(): string {
+  const named = env("DEPLOYMENT_ENV");
+  if (named) return named;
+  const debug = env("DJANGO_DEBUG");
+  if (debug === "1") return "development";
+  if (debug === "0") return "production";
+  const node = env("NODE_ENV");
+  return node === "development" || node === "test" ? "development" : "production";
+}
+
 function sampleRate(): number {
   const value = Number(env("SENTRY_TRACES_SAMPLE_RATE") ?? 0);
   return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
@@ -27,7 +38,7 @@ if (dsn && !Sentry.isInitialized()) {
   const version = env("APP_VERSION");
   Sentry.init({
     dsn,
-    environment: env("SENTRY_ENVIRONMENT") ?? env("NODE_ENV") ?? "development",
+    environment: env("SENTRY_ENVIRONMENT") ?? deployment(),
     release: env("SENTRY_RELEASE") ?? (version ? `reimbursements@${version}` : undefined),
     defaultIntegrations: false,
     integrations: [

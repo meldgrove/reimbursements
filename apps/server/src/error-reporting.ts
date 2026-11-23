@@ -61,7 +61,7 @@ export function withErrorReportingSettings(indexHtml: string): string {
   if (!settings.SENTRY_DSN) return indexHtml;
   const content = JSON.stringify({
     dsn: publicDsn(settings.SENTRY_DSN),
-    environment: settings.SENTRY_ENVIRONMENT ?? settings.NODE_ENV,
+    environment: settings.SENTRY_ENVIRONMENT ?? settings.DEPLOYMENT_ENV,
     release: errorReportRelease(settings),
     tracesSampleRate: settings.SENTRY_TRACES_SAMPLE_RATE,
   }).replace(/[&"<>]/g, (character) => ATTRIBUTE_ESCAPES[character]!);
