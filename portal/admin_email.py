@@ -52,9 +52,11 @@ class SecretInput(forms.PasswordInput):
         return format_html('<meldgrove-secret-input locale="en">{}</meldgrove-secret-input>', field)
 
 
-def _secret_field(name):
+def _secret_field(name, *, strip=True):
     label, _ = SECRET_LABELS[name]
-    return forms.CharField(label=label, required=False, max_length=1000, widget=SecretInput)
+    return forms.CharField(
+        label=label, required=False, max_length=1000, strip=strip, widget=SecretInput
+    )
 
 
 def _delete_field(name):
@@ -79,7 +81,8 @@ class BaseEmailSettingsForm(forms.ModelForm):
     delete_mailersend_token = _delete_field("mailersend_token")
     webhook_secret = _secret_field("webhook_secret")
     delete_webhook_secret = _delete_field("webhook_secret")
-    smtp_password = _secret_field("smtp_password")
+    # A password may begin or end with a space.
+    smtp_password = _secret_field("smtp_password", strip=False)
     delete_smtp_password = _delete_field("smtp_password")
 
     class Meta:

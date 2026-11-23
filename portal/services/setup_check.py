@@ -130,8 +130,8 @@ class SetupCheck:
     def __init__(self, *, finance, participant, timeout, report):
         self.finance, self.participant = finance, participant
         self.timeout, self._report = timeout, report
-        self.connection = email_connection.current()
-        self.local = self.connection.provider == email_connection.LOCAL
+        # Read once the database answers (`email`).
+        self.connection, self.local = None, False
         self.failures, self.deadline, self.claim_id = 0, 0.0, None
 
     def report(self, status, title, detail=""):
@@ -151,7 +151,8 @@ class SetupCheck:
         return not self.failures
 
     def email(self):
-        connection = self.connection
+        self.connection = connection = email_connection.current()
+        self.local = connection.provider == email_connection.LOCAL
         if not connection.ready:
             missing = ", ".join(connection.missing)
             return self.report(

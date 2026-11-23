@@ -441,6 +441,13 @@ class EmailSettingsAdmin(SettingsTabAdmin):
                 f"Forms take no claims until email is set up. Missing: "
                 f"{', '.join(connection.missing)}."
             )
+        warning = ""
+        if connection.provider == email_connection.MAILERSEND and not connection.webhook_secret:
+            warning = format_html(
+                '<span class="text-muted-foreground">Without a webhook signing secret, only '
+                "<code>{}</code> learns whether emails were delivered.</span>",
+                "reconcile_deliveries",
+            )
         unreadable = ""
         if connection.unreadable:
             names = ", ".join(
@@ -452,9 +459,10 @@ class EmailSettingsAdmin(SettingsTabAdmin):
                 names,
             )
         return format_html(
-            '<span class="flex flex-col items-start gap-2">{}<span>{}</span>{}</span>',
+            '<span class="flex flex-col items-start gap-2">{}<span>{}</span>{}{}</span>',
             badge,
             text,
+            warning,
             unreadable,
         )
 

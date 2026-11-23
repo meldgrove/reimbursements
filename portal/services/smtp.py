@@ -10,6 +10,7 @@ the outcome unknown, because the server may have accepted the message.
 """
 
 import contextlib
+import re
 import smtplib
 import ssl
 from email import policy
@@ -115,13 +116,19 @@ class SmtpTransport:
                 if code >= 500:
                     return SendResult(FAILED, error_code="recipient_rejected")
                 return _refusal(code)
+            server.putcmd("data")
+            code, _ = server.getreply()
         except OSError:
             return SendResult(PENDING, error_code="smtp_connection", retry_after=60)
+        if code != 354:
+            return _refusal(code)
+        # As smtplib's data(), whose failures cannot tell whether content was sent.
+        content = re.sub(rb"(?m)^\.", b"..", content)
+        if not content.endswith(b"\r\n"):
+            content += b"\r\n"
         try:
-            code, _ = server.data(content)
-        except smtplib.SMTPDataError as exc:
-            # The server refused DATA itself, before the content was sent.
-            return _refusal(exc.smtp_code)
+            server.send(content + b".\r\n")
+            code, _ = server.getreply()
         except OSError:
             return SendResult(UNKNOWN, error_code="provider_outcome_unknown")
         if code != 250:

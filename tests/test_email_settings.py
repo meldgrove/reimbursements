@@ -4,9 +4,11 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import re
-import smtplib
 import socketserver
+import subprocess
+import sys
 import threading
 import uuid
 from email import message_from_bytes, policy
@@ -216,6 +218,35 @@ def test_the_chosen_provider_needs_its_settings(unset, admin_client, data, field
     assert not EmailSettings.objects.exists()
 
 
+def test_an_smtp_password_keeps_its_spaces(unset, admin_client):
+    admin_client.post(URL, smtp_form(smtp_username="kim", smtp_password=" s3cret "))
+    assert EmailSettings.load().secret("smtp_password") == " s3cret "
+
+
+def test_mailersend_without_a_signing_secret_says_what_it_misses(unset, admin_client):
+    admin_client.post(URL, mailersend_form(mailersend_token="mlsn.synthetic-token"))
+    page = admin_client.get(URL).content.decode()
+    assert "Ready" in page and "Without a webhook signing secret" in page
+    admin_client.post(URL, mailersend_form(webhook_secret="whsec"))
+    assert "Without a webhook signing secret" not in admin_client.get(URL).content.decode()
+
+
+@pytest.mark.parametrize(("mode", "sender"), [("local", "no-reply@example.invalid"), ("send", "")])
+def test_placeholder_addresses_are_only_for_the_local_outbox(tmp_path, mode, sender):
+    environment = {
+        "PATH": os.defpath,
+        "PRIVATE_STORAGE_ROOT": str(tmp_path / "private"),
+        "DJANGO_DEBUG": "1",
+        "MAIL_DELIVERY_MODE": mode,
+    }
+    script = "import config.settings as s; print((s.MAIL_FROM_ADDRESS, s.MAIL_REPLY_TO_ADDRESS))"
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=environment, capture_output=True, text=True
+    )
+    expected = (sender, "finance@example.invalid" if sender else "")
+    assert result.stdout.strip() == repr(expected), result.stderr
+
+
 def test_entering_and_deleting_a_secret_at_once_is_refused(unset, admin_client):
     admin_client.post(URL, smtp_form(smtp_username="kim", smtp_password="first"))
     response = admin_client.post(
@@ -346,11 +377,15 @@ class SmtpHandler(socketserver.StreamRequestHandler):
                 server.envelope["to"] = command
                 self.reply(server.rcpt_reply)
             elif verb == "DATA":
+                if server.drop == "data":
+                    return
                 self.reply("354 Go ahead")
                 content = b""
                 while (chunk := self.rfile.readline()) != b".\r\n":
                     content += chunk
                 server.received.append(content)
+                if server.drop == "content":
+                    return
                 self.reply(server.data_reply)
             elif verb == "QUIT":
                 self.reply("221 Bye")
@@ -364,7 +399,7 @@ def smtp_server():
     server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), SmtpHandler)
     server.daemon_threads = True
     server.commands, server.received, server.envelope = [], [], {}
-    server.credentials = None
+    server.credentials, server.drop = None, ""
     server.rcpt_reply, server.data_reply = "250 OK", "250 Queued"
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -458,13 +493,21 @@ def test_smtp_connection_failures_happen_before_anything_is_sent(smtp_server):
     assert not smtp_server.received
 
 
-def test_a_connection_lost_during_the_content_leaves_the_outcome_unknown(smtp_server, monkeypatch):
-    def lost(self, content):
-        raise smtplib.SMTPServerDisconnected("synthetic")
-
-    monkeypatch.setattr(smtplib.SMTP, "data", lost)
+@pytest.mark.parametrize(
+    ("drop", "state", "code"),
+    [
+        # Before the content: nothing was sent, so it is retried.
+        ("data", PENDING, "smtp_connection"),
+        # After the content: the server may have accepted it.
+        ("content", UNKNOWN, "provider_outcome_unknown"),
+    ],
+)
+def test_a_lost_connection_is_unknown_only_once_the_content_was_sent(
+    smtp_server, drop, state, code
+):
+    smtp_server.drop = drop
     result = smtp.SmtpTransport(account(smtp_server)).send(message())
-    assert (result.state, result.error_code) == (UNKNOWN, "provider_outcome_unknown")
+    assert (result.state, result.error_code) == (state, code)
 
 
 def test_claims_go_to_finance_and_participants_through_smtp(delivery, unset, smtp_server):

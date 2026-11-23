@@ -207,9 +207,13 @@ if MAIL_DELIVERY_MODE not in {"local", "send", "mailersend"}:
 MAILERSEND_API_TOKEN = os.getenv("MAILERSEND_API_TOKEN", "")
 MAILERSEND_WEBHOOK_SIGNING_SECRET = os.getenv("MAILERSEND_WEBHOOK_SIGNING_SECRET", "")
 # Shared by all forms; with MailerSend, verify the sender domain there.
-MAIL_FROM_ADDRESS = os.getenv("MAIL_FROM_ADDRESS", "no-reply@example.invalid" if DEBUG else "")
+# Placeholders only for the local outbox: they would lock the admin's fields otherwise.
+_LOCAL_MAIL = DEBUG and MAIL_DELIVERY_MODE == "local"
+MAIL_FROM_ADDRESS = os.getenv(
+    "MAIL_FROM_ADDRESS", "no-reply@example.invalid" if _LOCAL_MAIL else ""
+)
 MAIL_REPLY_TO_ADDRESS = os.getenv(
-    "MAIL_REPLY_TO_ADDRESS", "finance@example.invalid" if DEBUG else ""
+    "MAIL_REPLY_TO_ADDRESS", "finance@example.invalid" if _LOCAL_MAIL else ""
 )
 APPROVED_DELIVERY_RECIPIENTS = list(
     filter(
