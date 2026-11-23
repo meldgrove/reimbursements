@@ -20,12 +20,10 @@ fs.mkdirSync(output, { recursive: true });
   });
   const fixtures =
     process.env.FIXTURES_DIR ||
-    (await createFixtures(browser, path.join(output, "fixtures")).catch(
-      async (error) => {
-        await browser.close();
-        throw error;
-      },
-    ));
+    (await createFixtures(browser, path.join(output, "fixtures")).catch(async (error) => {
+      await browser.close();
+      throw error;
+    }));
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
   });
@@ -37,22 +35,14 @@ fs.mkdirSync(output, { recursive: true });
     for (const signatureMode of ["draw", "upload", "mileage"]) {
       await page.goto(`${base}/f/${formSlug}/`);
       await page.locator("#id_full_name").fill("Alex Beispiel");
-      assert.equal(
-        await page.locator("#id_account_holder").inputValue(),
-        "Alex Beispiel",
-      );
+      assert.equal(await page.locator("#id_account_holder").inputValue(), "Alex Beispiel");
       await page.locator("#id_street").fill("Teststraße 1");
       await page.locator("#id_postal_code").fill("12345");
       await page.locator("#id_city").fill("Berlin");
       await page.locator("#id_email").fill("participant@example.invalid");
       await page.locator("#id_iban").fill("DE89370400440532013000");
-      if (await page.locator("#id_purpose_0").count())
-        await page.locator("#id_purpose_0").check();
-      else
-        assert.equal(
-          await page.locator('#id_purpose[type="hidden"]').count(),
-          1,
-        );
+      if (await page.locator("#id_purpose_0").count()) await page.locator("#id_purpose_0").check();
+      else assert.equal(await page.locator('#id_purpose[type="hidden"]').count(), 1);
       assert.equal(await page.locator(".expense-card").count(), 0);
       await page.locator("#review-button").click();
       assert.equal(await page.locator("#review-panel").isVisible(), false);
@@ -92,13 +82,9 @@ fs.mkdirSync(output, { recursive: true });
           if (index) await page.locator("#add-expense").click();
           const row = page.locator(".expense-card").nth(index);
           await row.locator('[data-field="merchant"]').fill(merchant);
-          await row
-            .locator('[data-field="receipt_reference"]')
-            .fill(`TEST-${index + 1}`);
+          await row.locator('[data-field="receipt_reference"]').fill(`TEST-${index + 1}`);
           await row.locator('[data-field="amount"]').fill(amount);
-          await row
-            .locator("input[type=file]")
-            .setInputFiles(path.join(fixtures, file));
+          await row.locator("input[type=file]").setInputFiles(path.join(fixtures, file));
           await row
             .locator(".file-status")
             .filter({ hasText: /^Geprüft$/ })
@@ -111,19 +97,11 @@ fs.mkdirSync(output, { recursive: true });
           .getByRole("button", { name: "Position nach oben verschieben" })
           .click();
         assert.equal(
-          await page
-            .locator(".expense-card")
-            .first()
-            .locator('[data-field="merchant"]')
-            .inputValue(),
+          await page.locator(".expense-card").first().locator('[data-field="merchant"]').inputValue(),
           "Test Hotel",
         );
         assert.match(
-          await page
-            .locator(".expense-card")
-            .first()
-            .locator(".file-list")
-            .innerText(),
+          await page.locator(".expense-card").first().locator(".file-list").innerText(),
           /hotel.pdf/,
         );
       }
@@ -134,9 +112,7 @@ fs.mkdirSync(output, { recursive: true });
         });
         await page.setViewportSize({ width: 390, height: 844 });
         assert.ok(
-          await page.evaluate(
-            () => document.documentElement.scrollWidth <= innerWidth,
-          ),
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
           "Mobile form overflows",
         );
         await page.screenshot({
@@ -155,10 +131,7 @@ fs.mkdirSync(output, { recursive: true });
         assert.match(text, /B-AB 123/);
         assert.match(text, /21.10.2026/);
       }
-      assert.match(
-        await page.locator("#review-content").innerText(),
-        /Alex Beispiel/,
-      );
+      assert.match(await page.locator("#review-content").innerText(), /Alex Beispiel/);
       if (signatureMode === "draw") {
         await page.locator("#declaration").check();
         await page.locator("#edit-button").click();
@@ -166,10 +139,7 @@ fs.mkdirSync(output, { recursive: true });
         assert.equal(await page.locator("#declaration").isChecked(), false);
         await page.locator("#signature-canvas").scrollIntoViewIfNeeded();
         const bounds = await page.locator("#signature-canvas").boundingBox();
-        await page.mouse.move(
-          bounds.x + bounds.width * 0.1,
-          bounds.y + bounds.height * 0.7,
-        );
+        await page.mouse.move(bounds.x + bounds.width * 0.1, bounds.y + bounds.height * 0.7);
         await page.mouse.down();
         for (const [x, y] of [
           [0.2, 0.2],
@@ -177,24 +147,13 @@ fs.mkdirSync(output, { recursive: true });
           [0.6, 0.3],
           [0.8, 0.7],
         ])
-          await page.mouse.move(
-            bounds.x + bounds.width * x,
-            bounds.y + bounds.height * y,
-          );
+          await page.mouse.move(bounds.x + bounds.width * x, bounds.y + bounds.height * y);
         await page.mouse.up();
-        assert.match(
-          await page.locator("#signature-status").innerText(),
-          /gezeichnet/,
-        );
+        assert.match(await page.locator("#signature-status").innerText(), /gezeichnet/);
       } else {
-        await page
-          .locator("#signature-file")
-          .setInputFiles(path.join(fixtures, "signature.png"));
+        await page.locator("#signature-file").setInputFiles(path.join(fixtures, "signature.png"));
         await page.waitForFunction(
-          () =>
-            document
-              .getElementById("signature-status")
-              .textContent.includes("Unterschrift geprüft"),
+          () => document.getElementById("signature-status").textContent.includes("Unterschrift geprüft"),
           null,
           { timeout: 60000 },
         );
@@ -202,29 +161,19 @@ fs.mkdirSync(output, { recursive: true });
       await page.locator("#declaration").check();
       await page.locator("#privacy_acknowledged").check();
       assert.ok(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         "Review overflows",
       );
       await page.locator("#submit-button").click();
       await page.waitForURL(/\/received\/[0-9a-f-]+\//, { timeout: 60000 });
       const reference = await page.locator("#claim-reference").innerText();
       references.push(reference);
-      assert.match(
-        reference,
-        /^Erst\/\d{4}-\d{2}-\d{2}\/[^/]+\/beispiel\/\d{6}$/,
-      );
+      assert.match(reference, /^Erst\/\d{4}-\d{2}-\d{2}\/[^/]+\/beispiel\/\d{6}$/);
       assert.equal(reference.split("/")[2], formSlug);
-      assert.match(
-        await page.locator("body").innerText(),
-        /Kontaktadresse im Formular/,
-      );
+      assert.match(await page.locator("body").innerText(), /Kontaktadresse im Formular/);
       await page.waitForFunction(
         () =>
-          document
-            .getElementById("processing-status")
-            .textContent.includes("wurde an Finance übermittelt"),
+          document.getElementById("processing-status").textContent.includes("wurde an Finance übermittelt"),
         null,
         { timeout: 60000 },
       );
@@ -236,10 +185,7 @@ fs.mkdirSync(output, { recursive: true });
         false,
       );
       await page.reload();
-      assert.equal(
-        await page.locator("#claim-reference").innerText(),
-        reference,
-      );
+      assert.equal(await page.locator("#claim-reference").innerText(), reference);
       const anonymous = await browser.newContext();
       const response = await anonymous.request.get(page.url());
       assert.equal(response.status(), 404);

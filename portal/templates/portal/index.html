@@ -1,7 +1,0 @@
-{% extends 'portal/base.html' %}{% load portal_text ui %}{% block content %}
-<div class="flex flex-col items-start gap-4 py-8">
-  {% component "badge" variant="outline" %}{{ app_name }}{% endcomponent %}
-  <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">{% t "Submit expenses" %}</h1>
-  <p class="max-w-2xl text-lg text-muted-foreground">{% t "Here you can claim reimbursement of costs you paid out of your own pocket. Please open the link to your form that you received from your team." %}</p>
-</div>
-{% endblock %}

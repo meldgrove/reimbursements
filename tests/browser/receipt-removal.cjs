@@ -12,9 +12,16 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const handles = new Set();
-    let releaseUpload, uploadStarted, rejectDeletion = false, deletions = 0;
-    const started = new Promise((resolve) => { uploadStarted = resolve; });
-    const held = new Promise((resolve) => { releaseUpload = resolve; });
+    let releaseUpload,
+      uploadStarted,
+      rejectDeletion = false,
+      deletions = 0;
+    const started = new Promise((resolve) => {
+      uploadStarted = resolve;
+    });
+    const held = new Promise((resolve) => {
+      releaseUpload = resolve;
+    });
     await page.route("**/f/demo/uploads/**", async (route) => {
       const request = route.request();
       if (request.method() === "POST") {
@@ -24,11 +31,16 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
         }
         const id = randomUUID();
         handles.add(id);
-        return route.fulfill({ status: 202, json: {
-          id, state: "pending", pages: 1,
-          status_url: `/f/demo/uploads/${id}/status/`,
-          delete_url: `/f/demo/uploads/${id}/`,
-        } });
+        return route.fulfill({
+          status: 202,
+          json: {
+            id,
+            state: "pending",
+            pages: 1,
+            status_url: `/f/demo/uploads/${id}/status/`,
+            delete_url: `/f/demo/uploads/${id}/`,
+          },
+        });
       }
       if (request.method() === "DELETE") {
         deletions++;
@@ -73,8 +85,13 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
     await remove.click();
     await page.waitForFunction(() => !document.querySelector(".expense-card"));
     assert.deepEqual(errors, []);
-    console.log("Passed active-upload protection, partial deletion failure, retry, replacement and missing-file cleanup.");
+    console.log(
+      "Passed active-upload protection, partial deletion failure, retry, replacement and missing-file cleanup.",
+    );
   } finally {
     await browser.close();
   }
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

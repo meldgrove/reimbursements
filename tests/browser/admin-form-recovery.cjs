@@ -35,37 +35,39 @@ if (!editorUrl || !storageState)
     let failure = null;
     let delayNextSave = null;
 
-    const field = (body, name) =>
-      body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r\\n]*)`))?.[1] || "";
-    await page.route((url) => url.pathname === pathname, async (route) => {
-      if (route.request().method() !== "POST") return route.continue();
-      const body = route.request().postDataBuffer().toString();
-      const action = field(body, "_publication") || null;
-      actions.push(action);
-      const fail = failure;
-      failure = null;
-      const delay = delayNextSave;
-      delayNextSave = null;
-      if (delay) await delay;
-      if (fail === "network") return route.abort("failed");
-      if (fail === "http")
-        return route.fulfill({ status: 503, json: { error: "Synthetic server failure" } });
-      if (action) serverStatus = statusAfter[action];
-      if (fail === "response-lost") return route.abort("failed");
-      return route.fulfill({
-        json: {
-          url: pathname,
-          name: field(body, "name"),
-          slug,
-          status: serverStatus,
-          status_label: labels[serverStatus],
-          primary: false,
-          link: `/f/${slug}/`,
-          delete_url: pathname.replace(/change\/$/, "delete/"),
-          can_delete: serverStatus !== "published",
-        },
-      });
-    });
+    const field = (body, name) => body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r\\n]*)`))?.[1] || "";
+    await page.route(
+      (url) => url.pathname === pathname,
+      async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        const body = route.request().postDataBuffer().toString();
+        const action = field(body, "_publication") || null;
+        actions.push(action);
+        const fail = failure;
+        failure = null;
+        const delay = delayNextSave;
+        delayNextSave = null;
+        if (delay) await delay;
+        if (fail === "network") return route.abort("failed");
+        if (fail === "http")
+          return route.fulfill({ status: 503, json: { error: "Synthetic server failure" } });
+        if (action) serverStatus = statusAfter[action];
+        if (fail === "response-lost") return route.abort("failed");
+        return route.fulfill({
+          json: {
+            url: pathname,
+            name: field(body, "name"),
+            slug,
+            status: serverStatus,
+            status_label: labels[serverStatus],
+            primary: false,
+            link: `/f/${slug}/`,
+            delete_url: pathname.replace(/change\/$/, "delete/"),
+            can_delete: serverStatus !== "published",
+          },
+        });
+      },
+    );
 
     async function saved() {
       await page.getByText("All changes saved.", { exact: true }).waitFor();
@@ -78,8 +80,10 @@ if (!editorUrl || !storageState)
       // An archived form is unarchived as a draft before it can be published again.
       assert.equal(await toggle.isVisible(), serverStatus !== "archived");
       assert.equal(await archiveToggle.isVisible(), true);
-      assert.equal((await archiveToggle.textContent()).trim(),
-        serverStatus === "archived" ? "Unarchive" : "Archive");
+      assert.equal(
+        (await archiveToggle.textContent()).trim(),
+        serverStatus === "archived" ? "Unarchive" : "Archive",
+      );
     }
 
     async function failedThenRetry(action, mode, editWhileFailed = false) {
@@ -94,8 +98,10 @@ if (!editorUrl || !storageState)
       assert.equal(actions.length, before + 1, "Failures must wait for an explicit retry.");
       if (editWhileFailed) {
         const unchangedStatus = serverStatus;
-        const response = page.waitForResponse((response) =>
-          response.request().method() === "POST" && new URL(response.url()).pathname === pathname);
+        const response = page.waitForResponse(
+          (response) =>
+            response.request().method() === "POST" && new URL(response.url()).pathname === pathname,
+        );
         await page.locator("#id_instructions").fill(`Synthetic edit after failed ${action}`);
         await response;
         if (mode === "response-lost") {
@@ -162,9 +168,12 @@ if (!editorUrl || !storageState)
     }
     if (scenario === "all") {
       let finishSave;
-      delayNextSave = new Promise((resolve) => { finishSave = resolve; });
-      const requested = page.waitForRequest((request) =>
-        request.method() === "POST" && new URL(request.url()).pathname === pathname);
+      delayNextSave = new Promise((resolve) => {
+        finishSave = resolve;
+      });
+      const requested = page.waitForRequest(
+        (request) => request.method() === "POST" && new URL(request.url()).pathname === pathname,
+      );
       await page.locator("#id_instructions").fill("Synthetic save indicator check");
       await requested;
       assert.equal(await indicator.getAttribute("data-save-state"), "saving");
@@ -182,10 +191,15 @@ if (!editorUrl || !storageState)
       assert.ok(controls.every((box) => box && Math.abs(box.y - controls[0].y) < 1));
       await deleteLink.click();
       await page.getByRole("heading", { name: "Delete draft?", exact: true }).waitFor();
-      assert.equal(await page.getByRole("button", { name: "Delete draft for good", exact: true }).isVisible(), true);
+      assert.equal(
+        await page.getByRole("button", { name: "Delete draft for good", exact: true }).isVisible(),
+        true,
+      );
       await page.getByRole("link", { name: "Cancel", exact: true }).click();
       await page.locator("[data-publication-toggle]").waitFor();
-      console.log("Passed save indicators, toolbar alignment, draft deletion visibility, and confirmation cancellation.");
+      console.log(
+        "Passed save indicators, toolbar alignment, draft deletion visibility, and confirmation cancellation.",
+      );
     }
     assert.deepEqual(errors, []);
   } finally {

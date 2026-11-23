@@ -25,7 +25,8 @@ on:
     paths:
       - Dockerfile
       - .dockerignore
-      - scripts/start-web.sh
+      - docker-entrypoint.sh
+      - docker-django-compat.sh
       - .github/workflows/release.yaml
 
 permissions:
