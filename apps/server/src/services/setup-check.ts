@@ -4,10 +4,11 @@
  *
  * `cli verify-setup` runs it after a deployment, an upgrade or a credential
  * change. It checks the database, private storage, the worker, the document
- * sandbox, the malware scanner and the sign-in provider. Then it submits a
- * claim the way a participant does: receipt and signature uploads, scanning
- * and normalization, the PDF, the Finance email, the participant confirmation
- * and, with MailerSend, the signed delivery webhook.
+ * sandbox, the malware scanner, the sign-in provider and that email is set up.
+ * Then it submits a claim the way a participant does: receipt and signature
+ * uploads, scanning and normalization, the PDF, the Finance email, the
+ * participant confirmation unless it is turned off and, with MailerSend, the
+ * signed delivery webhook.
  *
  * The claim goes through a temporary form and template. It takes no
  * bookkeeping reference, so Finance's numbering has no gap, and it is deleted
@@ -45,8 +46,10 @@ import type { Participant } from "../participants";
 import { applied, loadSettings } from "./app-settings";
 import { storageAvailable } from "./capacity";
 import { CLAIM_STATES } from "./claim-status";
+import { enabled as confirmationsEnabled } from "./confirmations";
 import { sandboxReady } from "./documents";
 import { openDraft } from "./drafts";
+import * as emailConnection from "./email-connection";
 import * as operations from "./operations";
 import { queueAgeSeconds } from "./readiness";
 import * as retention from "./retention";
@@ -68,13 +71,6 @@ export const EICAR = Buffer.concat([
   Buffer.from("X5O!P%@AP[4\\PZX54(P^)7CC)7}$", "latin1"),
   Buffer.from("EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*", "latin1"),
 ]);
-const SEND_PROBLEMS: Record<string, string> = {
-  provider_rejected:
-    "MailerSend refused the email. Check MAILERSEND_API_TOKEN and that MAIL_FROM_ADDRESS is on a verified MailerSend domain.",
-  recipient_suppressed: "MailerSend suppresses this recipient after an earlier bounce.",
-  test_recipient_blocked: "TEST_RECIPIENT_ALLOWLIST does not include the recipient.",
-  unapproved_recipient: "APPROVED_DELIVERY_RECIPIENTS does not include the recipient.",
-};
 
 /**
  * What the check waits with and asks. Tests replace `pause` and `clock` to
@@ -143,16 +139,16 @@ export class SetupCheck {
   private readonly participant: string;
   private readonly timeout: number;
   private readonly reportTo: Report;
+  /** The email connection, read once the database answers (`email`). */
+  private connection: emailConnection.Connection | null = null;
   /** Email stays in the local outbox (development), so no webhook is expected. */
-  private readonly local: boolean;
+  private local = false;
 
   constructor(options: { finance: string; participant: string; timeout: number; report: Report }) {
     this.finance = options.finance;
     this.participant = options.participant;
     this.timeout = options.timeout;
     this.reportTo = options.report;
-    const settings = config();
-    this.local = settings.MAIL_DELIVERY_MODE === "local" && settings.isDevelopment;
   }
 
   report(status: Status, title: string, detail = ""): boolean {
@@ -163,11 +159,29 @@ export class SetupCheck {
 
   async run(): Promise<boolean> {
     if (!(await this.database())) return false;
-    const ready = [await this.storage(), await this.worker(), await this.sandbox(), await this.scanner()];
+    const ready = [
+      await this.storage(),
+      await this.worker(),
+      await this.sandbox(),
+      await this.scanner(),
+      await this.email(),
+    ];
     await this.keycloak();
     if (ready.every(Boolean)) await this.claim();
     else this.report(SKIP, "Test claim", "Fix the problems above first.");
     return !this.failures;
+  }
+
+  async email(): Promise<boolean> {
+    const connection = await emailConnection.current();
+    this.connection = connection;
+    this.local = connection.provider === emailConnection.LOCAL;
+    if (!connection.ready) {
+      const missing = connection.missing.join(", ");
+      return this.report(FAIL, "Email", `Not set up: missing ${missing}. Set it up under Admin > Email.`);
+    }
+    if (this.local) return this.report(OK, "Email kept in the local outbox");
+    return this.report(OK, `Email sent with ${connection.name} from ${connection.sender}`);
   }
 
   async database(): Promise<boolean> {
@@ -533,11 +547,20 @@ export class SetupCheck {
 
   private sendProblem(title: string, record: { state: string; errorCode: string } | null): boolean {
     if (record === null) return this.report(FAIL, title, `Not sent within ${this.timeout} s.`);
+    const connection = this.connection!;
     let detail: string;
     if (record.state === PAUSED) detail = "MailerSend paused sending for this account; see its dashboard.";
-    else if (record.state === UNKNOWN) detail = `MailerSend gave no clear answer (${record.errorCode}).`;
-    else detail = SEND_PROBLEMS[record.errorCode] ?? `Sending failed: ${record.errorCode}.`;
+    else if (record.state === UNKNOWN)
+      detail = `${connection.name} gave no clear answer (${record.errorCode}).`;
+    else detail = emailConnection.problem(record.errorCode, connection.provider);
     return this.report(FAIL, title, detail);
+  }
+
+  /** Who has an email the provider accepted. */
+  private acceptedBy(): string {
+    if (this.local) return "kept in the local outbox";
+    if (this.connection!.provider === emailConnection.SMTP) return "accepted by the SMTP server";
+    return "accepted by MailerSend";
   }
 
   private async financeEmail(claim: Claim): Promise<boolean> {
@@ -551,14 +574,24 @@ export class SetupCheck {
     if (delivery === null || ![ACCEPTED, DELIVERED].includes(delivery.state)) {
       return this.sendProblem("Finance email", delivery);
     }
-    if (this.local) return this.report(OK, `Finance email to ${this.finance} kept in the local outbox`);
-    this.report(OK, `MailerSend accepted the Finance email to ${this.finance}`);
+    this.report(OK, `Finance email to ${this.finance} ${this.acceptedBy()}`);
+    if (this.local) return true;
+    if (this.connection!.provider === emailConnection.SMTP) {
+      return this.report(SKIP, "Finance inbox", "SMTP reports no deliveries. Check that the email arrived.");
+    }
+    if (!this.connection!.webhookSecret) {
+      return this.report(
+        SKIP,
+        "MailerSend webhook",
+        "No signing secret is set, so only reconcile-deliveries learns whether the email arrived.",
+      );
+    }
     if (!(await this.until(() => this.webhookReceived(claim)))) {
       const origin = config().APP_URL || "https://<your host>";
       return this.report(
         FAIL,
         "MailerSend webhook",
-        `No signed delivery event within ${this.timeout} s. Check that the webhook URL is ${origin}/webhooks/mailersend/ and that MAILERSEND_WEBHOOK_SIGNING_SECRET is its signing secret.`,
+        `No signed delivery event within ${this.timeout} s. Check that the webhook URL is ${origin}/webhooks/mailersend/ and that its signing secret is the one under Admin > Email.`,
       );
     }
     this.report(OK, "MailerSend webhook received, signature verified");
@@ -602,6 +635,13 @@ export class SetupCheck {
   }
 
   private async confirmation(claim: Claim): Promise<boolean> {
+    const [scheduled] = await q()
+      .select({ id: confirmations.id })
+      .from(confirmations)
+      .where(eq(confirmations.claimId, claim.id));
+    if (!scheduled && !(await confirmationsEnabled())) {
+      return this.report(SKIP, "Participant confirmation", "Turned off under Admin > Email.");
+    }
     const confirmation = await this.until(async () => {
       const [row] = await q()
         .select()
@@ -612,8 +652,7 @@ export class SetupCheck {
     if (confirmation === null || ![ACCEPTED, DELIVERED].includes(confirmation.state)) {
       return this.sendProblem("Participant confirmation", confirmation);
     }
-    const where = this.local ? "kept in the local outbox" : "accepted by MailerSend";
-    return this.report(OK, `Participant confirmation to ${this.participant} ${where}`);
+    return this.report(OK, `Participant confirmation to ${this.participant} ${this.acceptedBy()}`);
   }
 
   private async remove(form: Form, template: FormTemplate): Promise<boolean> {

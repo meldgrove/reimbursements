@@ -141,6 +141,42 @@ export const appSettings = pgTable("portal_appsettings", {
   numberFormat: varchar("number_format", { length: 8 }).notNull(),
 });
 
+/**
+ * Admin > Email: the provider that sends the app's email, its credentials and the
+ * participant confirmation; one row (id 1) for the whole app (EmailSettings of the Django
+ * version, its migration 0020; services/email-connection.ts). Secrets are stored sealed
+ * (src/encryption.ts) and never shown again. The migration creates the table only where
+ * 0.4 had not (drizzle/0002_email_settings.sql).
+ */
+export const emailSettings = pgTable(
+  "portal_emailsettings",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+    /** "", "mailersend" or "smtp". */
+    provider: varchar("provider", { length: 12 }).notNull(),
+    fromAddress: varchar("from_address", { length: 254 }).notNull(),
+    replyToAddress: varchar("reply_to_address", { length: 254 }).notNull(),
+    mailersendTokenSealed: text("mailersend_token_sealed").notNull(),
+    webhookSecretSealed: text("webhook_secret_sealed").notNull(),
+    smtpHost: varchar("smtp_host", { length: 253 }).notNull(),
+    smtpPort: integer("smtp_port").notNull(),
+    /** "starttls", "tls" or "none". */
+    smtpSecurity: varchar("smtp_security", { length: 8 }).notNull(),
+    smtpUsername: varchar("smtp_username", { length: 254 }).notNull(),
+    smtpPasswordSealed: text("smtp_password_sealed").notNull(),
+    confirmationEnabled: boolean("confirmation_enabled").notNull(),
+    /** Admins' own subject and text per language: {"de": {"subject": …, "body": …}}; missing: the standard text. */
+    confirmationTexts: jsonb("confirmation_texts").$type<ConfirmationTexts>().notNull(),
+    /** When the last signed MailerSend webhook arrived. */
+    webhookReceivedAt: timestamptz("webhook_received_at"),
+    updatedAt: timestamptz("updated_at").notNull().$defaultFn(now).$onUpdateFn(now),
+  },
+  (table) => [check("portal_emailsettings_smtp_port_check", sql`${table.smtpPort} >= 0`)],
+);
+
+/** Admins' own confirmation texts per language code. */
+export type ConfirmationTexts = Partial<Record<string, { subject?: string; body?: string }>>;
+
 /** The app's one privacy notice. Every change is a new version; claims keep theirs. */
 export const privacyNotices = pgTable(
   "portal_privacynotice",
@@ -915,6 +951,7 @@ export type SessionData = { drafts?: Record<string, { id: string; token: string 
 export type User = typeof users.$inferSelect;
 export type Group = typeof groups.$inferSelect;
 export type AppSettingsRow = typeof appSettings.$inferSelect;
+export type EmailSettingsRow = typeof emailSettings.$inferSelect;
 export type PrivacyNotice = typeof privacyNotices.$inferSelect;
 export type FormTemplate = typeof formTemplates.$inferSelect;
 export type TemplateField = typeof templateFields.$inferSelect;

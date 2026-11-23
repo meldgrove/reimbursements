@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { language } from "../i18n";
 import { currentPrivacyNotice, internalValues, isOpen, type FormWithTemplate } from "../models";
 import type { PrivacyNotice } from "../db/schema";
+import * as emailConnection from "./email-connection";
 import { recipientApproved } from "./outbound";
 
 /** Part of every revision. Raising it sends every open draft back. */
@@ -22,7 +23,9 @@ export const INTAKE_VERSION = 2;
 export const CLOSED = "closed";
 export const UNAPPROVED_RECIPIENT = "unapproved_recipient";
 export const NO_PRIVACY_NOTICE = "no_privacy_notice";
-export type Refusal = "" | typeof CLOSED | typeof UNAPPROVED_RECIPIENT | typeof NO_PRIVACY_NOTICE;
+export const EMAIL_NOT_SET_UP = "email_not_set_up";
+export type Refusal =
+  "" | typeof CLOSED | typeof UNAPPROVED_RECIPIENT | typeof NO_PRIVACY_NOTICE | typeof EMAIL_NOT_SET_UP;
 
 export type Travel = "off" | "optional" | "required";
 
@@ -125,26 +128,30 @@ export async function of(form: FormWithTemplate, privacyNotice?: PrivacyNotice |
 
 /**
  * Why `form` takes no new claims now, or "" while it does. `privacyNotice` is the
- * current one (`currentPrivacyNotice()`, or the one `of(form)` offers).
+ * current one (`currentPrivacyNotice()`, or the one `of(form)` offers); `emailReady`
+ * whether the email connection is ready (`emailConnection.ready()`).
  *
  * A form takes claims while it is open (`isOpen`) and available: its inbox is an
- * approved Finance inbox and a privacy notice exists for participants to acknowledge.
- * The Draft gate, the start page and the admin's Open now follow this one rule.
+ * approved Finance inbox, a privacy notice exists for participants to acknowledge, and
+ * the app can send email. The Draft gate, the start page and the admin's Open now
+ * follow this one rule.
  */
 export function refusal(
   form: FormWithTemplate,
   privacyNotice: PrivacyNotice | null,
+  emailReady: boolean,
   now: Date = new Date(),
 ): Refusal {
   if (!isOpen(form, now)) return CLOSED;
   if (!recipientApproved(form.recipient)) return UNAPPROVED_RECIPIENT;
   if (privacyNotice === null) return NO_PRIVACY_NOTICE;
+  if (!emailReady) return EMAIL_NOT_SET_UP;
   return "";
 }
 
 /** Whether `form` takes new claims now. */
 export async function accepting(form: FormWithTemplate): Promise<boolean> {
-  return !refusal(form, await currentPrivacyNotice());
+  return !refusal(form, await currentPrivacyNotice(), await emailConnection.ready());
 }
 
 /** The claim's record of `form` and the `terms` its participant accepted. */

@@ -6,8 +6,8 @@
  * event and status names and the attempt tag format stay in this module.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { config } from "../config";
 import { APP_NAME } from "../constants";
+import * as emailConnection from "./email-connection";
 import {
   ACCEPTED,
   DELIVERED,
@@ -53,11 +53,13 @@ export const provider = {
   fetch: (url: string, init: RequestInit): Promise<Response> => fetch(url, init),
 };
 
-function call(path: string, init: RequestInit = {}): Promise<Response> {
+/** A call to the MailerSend API with the API token from the environment or Admin > Email. */
+async function call(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = (await emailConnection.current()).mailersendToken;
   return provider.fetch(new URL(path, API_URL).toString(), {
     ...init,
     headers: {
-      Authorization: `Bearer ${config().MAILERSEND_API_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       Accept: "application/json",
       ...(init.body ? { "Content-Type": "application/json" } : {}),
     },
@@ -183,12 +185,13 @@ export class MailerSendTransport implements Transport {
 /** MailerSend's fixed secret for the test ping of a webhook's setup page. */
 export const WEBHOOK_TEST_SECRET = "test_Am3L1GuOIc4blLUuHqAPxxwkZaJyEk8G";
 
-export function verifyWebhook(
+/** Whether `signature` signs `raw` with the signing secret from the environment or Admin > Email. */
+export async function verifyWebhook(
   raw: Uint8Array | string,
   signature: string | undefined | null,
   options: { test?: boolean } = {},
-): boolean {
-  const secret = options.test ? WEBHOOK_TEST_SECRET : config().MAILERSEND_WEBHOOK_SIGNING_SECRET;
+): Promise<boolean> {
+  const secret = options.test ? WEBHOOK_TEST_SECRET : (await emailConnection.current()).webhookSecret;
   if (!secret || typeof signature !== "string") return false;
   const expected = Buffer.from(createHmac("sha256", secret).update(raw).digest("hex"));
   const given = Buffer.from(signature);

@@ -38,6 +38,7 @@ import { IntakeError } from "../intake";
 import { currentPrivacyNotice, displayDescription, displayTitle, isOpen, loadForm } from "../models";
 import { RequestParticipant } from "../participants";
 import * as claimStatus from "../services/claim-status";
+import * as confirmations from "../services/confirmations";
 import { review } from "../services/claim-validation";
 import { REVIEW, gate, openDraft } from "../services/drafts";
 import { storageRoot } from "../services/storage";
@@ -206,6 +207,7 @@ router.get("/public/forms/:slug", async (c) => {
     },
     countries: countries(language()).map(([code, name]) => [code, name]),
     development: config().isDevelopment,
+    confirmation: await confirmations.enabled(),
   };
   return c.json(body);
 });

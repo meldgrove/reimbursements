@@ -3,6 +3,7 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 import { config } from "../config";
 import { logger } from "../logger";
+import { markConnectionError } from "../database";
 
 export type Schema = typeof schema;
 export type Db = NodePgDatabase<Schema>;
@@ -146,11 +147,17 @@ export function withTlsFallback(pool: pg.Pool): pg.Pool {
       return connect();
     }
   };
+  // A connect that failed is an error of the database's connection (database.ts).
+  const marked = (): Promise<pg.PoolClient> =>
+    attempt().catch((error: unknown) => {
+      markConnectionError(error);
+      throw error;
+    });
   type Callback = (error: Error | undefined, client: pg.PoolClient | undefined, done: () => void) => void;
   // pg-pool's own query() calls connect with a callback; everyone else awaits it.
   pool.connect = ((callback?: Callback) => {
-    if (!callback) return attempt();
-    attempt().then(
+    if (!callback) return marked();
+    marked().then(
       (client) => callback(undefined, client, () => client.release()),
       (error: Error) => callback(error, undefined, () => undefined),
     );
@@ -171,10 +178,17 @@ export function getPool(): pg.Pool {
         idle_in_transaction_session_timeout: 60_000,
       }),
     );
-    // An idle client can lose its connection (database restart); the pool replaces it.
+    // An idle client can lose its connection (database restart); the pool
+    // drops it, so the next query connects again. Without these listeners the
+    // error would end the process.
     pool.on("error", (error) => logger.warn({ err: error }, "idle database client error"));
     pool.on("connect", (client) => {
-      client.on("error", (error) => logger.warn({ err: error }, "database client error"));
+      client.on("error", (error) => {
+        // The socket broke or the server ended the session: the client's
+        // queries fail with this error too (database.ts, connectionLost).
+        markConnectionError(error);
+        logger.warn({ err: error }, "database client error");
+      });
     });
   }
   return pool;

@@ -128,10 +128,20 @@ const schema = z
     UPLOAD_SCANNER: optional(z.enum(["clamav", "disabled"])),
     CLAMAV_HOST: withDefault(z.string(), "scanner"),
     CLAMAV_PORT: withDefault(z.coerce.number().int().min(1).max(65535), 3310),
-    MAIL_DELIVERY_MODE: optional(z.enum(["mailersend", "local"])),
+    /**
+     * "local" keeps every email as a private file (development only); "send" sends it
+     * with the provider set up under Admin > Email. "mailersend" is the former name of "send".
+     */
+    MAIL_DELIVERY_MODE: optional(
+      z.enum(["local", "send", "mailersend"], { message: "MAIL_DELIVERY_MODE must be local or send." }),
+    ),
+    /**
+     * Optional: each value set here wins over its field under Admin > Email, and the API
+     * token chooses MailerSend (services/email-connection.ts).
+     */
     MAILERSEND_API_TOKEN: withDefault(z.string(), ""),
     MAILERSEND_WEBHOOK_SIGNING_SECRET: withDefault(z.string(), ""),
-    /** Shared by all forms; verify the sender domain in MailerSend. */
+    /** Shared by all forms; with MailerSend, verify the sender domain there. */
     MAIL_FROM_ADDRESS: optional(z.string()),
     MAIL_REPLY_TO_ADDRESS: optional(z.string()),
     /** The accounting inboxes forms may send claims to, comma-separated. */
@@ -254,7 +264,8 @@ export type Config = Omit<Parsed, Derived> & {
   DOCUMENT_SANDBOX_ENABLED: boolean;
   REQUIRE_WORKER_HEARTBEAT: boolean;
   UPLOAD_SCANNER: "clamav" | "disabled";
-  MAIL_DELIVERY_MODE: "mailersend" | "local";
+  /** "send" (or its former name "mailersend") sends; "local" keeps every email as a file. */
+  MAIL_DELIVERY_MODE: "local" | "send" | "mailersend";
   MAIL_FROM_ADDRESS: string;
   MAIL_REPLY_TO_ADDRESS: string;
   /** Lower case. */
@@ -374,7 +385,9 @@ export function config(): Config {
   const requireHeartbeat = value.REQUIRE_WORKER_HEARTBEAT ?? !isDevelopment;
   const sandbox = value.DOCUMENT_SANDBOX_ENABLED ?? true;
   const scanner = value.UPLOAD_SCANNER ?? (isDevelopment ? "disabled" : "clamav");
-  const mailMode = value.MAIL_DELIVERY_MODE ?? (isDevelopment ? "local" : "mailersend");
+  const mailMode = value.MAIL_DELIVERY_MODE ?? (isDevelopment ? "local" : "send");
+  // Placeholders only for the local outbox: they would lock the admin's fields otherwise.
+  const localMail = isDevelopment && mailMode === "local";
   const trustedProxies = splitList(value.TRUSTED_PROXY_CIDRS);
   const trustProxyHeaders = value.TRUST_PROXY_HEADERS ?? false;
   const approved = splitList(
@@ -392,19 +405,15 @@ export function config(): Config {
     const required: [string, unknown][] = [
       ["DATABASE_URL", value.DATABASE_URL],
       ["HEALTHCHECK_TOKEN", value.HEALTHCHECK_TOKEN],
-      ["MAILERSEND_API_TOKEN", value.MAILERSEND_API_TOKEN],
-      ["MAILERSEND_WEBHOOK_SIGNING_SECRET", value.MAILERSEND_WEBHOOK_SIGNING_SECRET],
       ["APPROVED_DELIVERY_RECIPIENTS", approved.length > 0],
       ["OIDC_CLIENT_ID", value.OIDC_CLIENT_ID],
       ["OIDC_CLIENT_SECRET", value.OIDC_CLIENT_SECRET],
       ["KEYCLOAK_BASE_URL and KEYCLOAK_REALM (or OIDC_ISSUER)", oidcIssuer],
-      ["MAIL_FROM_ADDRESS", value.MAIL_FROM_ADDRESS],
-      ["MAIL_REPLY_TO_ADDRESS", value.MAIL_REPLY_TO_ADDRESS],
     ];
     const missing = required.filter(([, given]) => !given).map(([name]) => name);
     if (missing.length > 0) problems.push(`Missing production configuration: ${missing.join(", ")}`);
-    if (scanner !== "clamav" || mailMode !== "mailersend") {
-      problems.push("UPLOAD_SCANNER, MAIL_DELIVERY_MODE: Production requires ClamAV and MailerSend");
+    if (scanner !== "clamav" || mailMode === "local") {
+      problems.push("UPLOAD_SCANNER, MAIL_DELIVERY_MODE: Production requires ClamAV and sending email");
     }
     if (!sandbox) problems.push("DOCUMENT_SANDBOX_ENABLED: Production requires the document sandbox");
     if (trustProxyHeaders && trustedProxies.length === 0) {
@@ -441,8 +450,8 @@ export function config(): Config {
     REQUIRE_WORKER_HEARTBEAT: requireHeartbeat,
     UPLOAD_SCANNER: scanner,
     MAIL_DELIVERY_MODE: mailMode,
-    MAIL_FROM_ADDRESS: value.MAIL_FROM_ADDRESS ?? (isDevelopment ? "no-reply@example.invalid" : ""),
-    MAIL_REPLY_TO_ADDRESS: value.MAIL_REPLY_TO_ADDRESS ?? (isDevelopment ? "finance@example.invalid" : ""),
+    MAIL_FROM_ADDRESS: value.MAIL_FROM_ADDRESS ?? (localMail ? "no-reply@example.invalid" : ""),
+    MAIL_REPLY_TO_ADDRESS: value.MAIL_REPLY_TO_ADDRESS ?? (localMail ? "finance@example.invalid" : ""),
     APPROVED_DELIVERY_RECIPIENTS: approved,
     TEST_RECIPIENT_ALLOWLIST: testRecipients,
     isDevelopment,

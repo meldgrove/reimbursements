@@ -27,6 +27,7 @@ import { t } from "../i18n";
 import { forClaim } from "./app-settings";
 import { CLAIM_STATES } from "./claim-status";
 import { claimReference } from "./documents";
+import * as emailConnection from "./email-connection";
 import * as outbound from "./outbound";
 import { Undeliverable } from "./outbound";
 import * as queue from "./queue";
@@ -152,11 +153,11 @@ export async function compose(attempt: Pick<DeliveryAttempt, "id" | "deliveryId"
       values,
     ),
   }));
-  const settings = config();
+  const connection = await emailConnection.current();
   return {
     attemptId: attempt.id,
-    sender: settings.MAIL_FROM_ADDRESS,
-    replyTo: settings.MAIL_REPLY_TO_ADDRESS,
+    sender: connection.sender,
+    replyTo: connection.replyTo,
     recipient: delivery.recipient,
     subject,
     text,

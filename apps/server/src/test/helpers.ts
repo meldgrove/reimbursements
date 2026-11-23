@@ -33,6 +33,7 @@ const TABLES = [
   "portal_formtemplate",
   "portal_privacynotice",
   "portal_appsettings",
+  "portal_emailsettings",
   "auth_user_groups",
   "auth_group",
   "auth_user",

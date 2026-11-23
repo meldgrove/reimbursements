@@ -2,8 +2,9 @@
  * The transport seam for outbound email (portal/services/transport.py of the
  * Django version).
  *
- * Adapters: `LocalOutbox` (development, captures .eml files) and
- * `MailerSendTransport` (services/mailersend.ts). An adapter returns a
+ * Adapters: `LocalOutbox` (development, captures .eml files),
+ * `MailerSendTransport` (services/mailersend.ts) and `SmtpTransport`
+ * (services/smtp.ts); services/outbound.ts chooses one. An adapter returns a
  * `SendResult`; an exception from `send` means the outcome is unknown.
  */
 import { randomBytes } from "node:crypto";
@@ -121,5 +122,12 @@ export class LocalOutbox implements Transport {
   async send(message: Message): Promise<SendResult> {
     await writeBytes(outboxKey(message.attemptId), buildEml(message));
     return sendResult(DELIVERED, { messageId: `local-${message.attemptId}` });
+  }
+}
+
+/** No provider is set up: nothing is sent, and the email waits for one. */
+export class NotSetUp implements Transport {
+  async send(): Promise<SendResult> {
+    return sendResult(PENDING, { errorCode: "email_not_set_up", retryAfter: 900 });
   }
 }

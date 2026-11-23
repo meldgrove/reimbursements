@@ -1,9 +1,10 @@
 /**
  * The admin area's API (/api/v1/admin/...): claims, forms, templates, the
- * privacy notice, the General and Appearance settings and the search. The
+ * privacy notice, the General, Email and Appearance settings and the search. The
  * admin area is always English; dates and amounts arrive already formatted
  * in the app's date and number format.
  */
+import { z } from "zod";
 
 /** A badge: its text and tone (a Badge variant of @meldgrove/ui, e.g. success). */
 export type Badge = { label: string; tone: string };
@@ -229,6 +230,98 @@ export type AppearancePage = {
   /** A warning after saving, e.g. that links in a light color are hard to read. */
   warning?: string;
 };
+
+// -- Email (Admin > Email) ---------------------------------------------------------
+
+export type EmailProvider = "" | "mailersend" | "smtp";
+export type SmtpSecurity = "starttls" | "tls" | "none";
+export type EmailSecretName = "mailersendToken" | "webhookSecret" | "smtpPassword";
+
+const formText = z.string().default("");
+
+/**
+ * PUT /api/v1/admin/settings/email. A secret field left empty keeps the saved secret, a
+ * new value replaces it, `delete…` removes it. A confirmation subject or text left empty,
+ * or equal to the standard one, follows the standard text. Field errors (422) are keyed
+ * by these names, the confirmation's as `confirmation.<code>.subject` and `….body`.
+ */
+export const emailSettingsFormSchema = z.object({
+  provider: formText,
+  fromAddress: formText,
+  replyToAddress: formText,
+  smtpHost: formText,
+  smtpPort: z.union([z.string(), z.number()]).default(""),
+  smtpSecurity: formText,
+  smtpUsername: formText,
+  confirmationEnabled: z.boolean(),
+  /** Per language code (de, en). */
+  confirmation: z.record(z.string(), z.object({ subject: formText, body: formText })).default({}),
+  mailersendToken: formText,
+  webhookSecret: formText,
+  smtpPassword: formText,
+  deleteMailersendToken: z.boolean().default(false),
+  deleteWebhookSecret: z.boolean().default(false),
+  deleteSmtpPassword: z.boolean().default(false),
+});
+export type EmailSettingsForm = z.input<typeof emailSettingsFormSchema>;
+
+/** A secret's field: never its value. */
+export type EmailSecretState = {
+  /** A value is saved, readable or not. */
+  saved: boolean;
+  /** Saved, but the app's secret no longer opens it: it counts as missing until entered again. */
+  unreadable: boolean;
+  /** Set in the environment: the field cannot change it. */
+  environment: boolean;
+  /** Deleting is offered: saved, and the environment does not replace it. */
+  deletable: boolean;
+  /** The field's placeholder, e.g. "Saved · type a new one to replace it"; "" when nothing is saved. */
+  placeholder: string;
+};
+
+/** GET /api/v1/admin/settings/email (also the answer of a save, with `message`). */
+export type EmailSettingsPage = {
+  settings: {
+    provider: EmailProvider;
+    fromAddress: string;
+    replyToAddress: string;
+    smtpHost: string;
+    smtpPort: number;
+    smtpSecurity: SmtpSecurity;
+    smtpUsername: string;
+    confirmationEnabled: boolean;
+    /** The subject and text per language: the admins' own, or the standard ones. */
+    confirmation: Record<string, { subject: string; body: string }>;
+  };
+  secrets: Record<EmailSecretName, EmailSecretState>;
+  /** Fields the environment sets, with the help text that says so; they cannot be changed here. */
+  locked: Partial<Record<"provider" | "fromAddress" | "replyToAddress" | EmailSecretName, string>>;
+  /** The Status block. */
+  status: {
+    state: "local" | "ready" | "not_set_up";
+    /** "Local outbox", "Ready" or "Not set up". */
+    label: string;
+    text: string;
+    /** MailerSend without a webhook signing secret; "" otherwise. */
+    warning: string;
+    /** Saved secrets that no longer open; "" otherwise. */
+    unreadable: string;
+  };
+  /** The MailerSend section's webhook line. */
+  webhook: { url: string; receivedAt: string | null; text: string };
+  choices: { providers: FilterOption[]; securities: FilterOption[]; languages: FilterOption[] };
+  /** What admins may write in braces in the confirmation. */
+  placeholders: Array<{ name: string; description: string }>;
+  /** The signed-in admin's address, the test email's first recipient. */
+  testRecipient: string;
+  /** After a save: "The email settings were saved." */
+  message?: string;
+};
+
+/** POST /api/v1/admin/settings/email/test: one test email with the saved settings. */
+export type EmailTestRequest = { to: string };
+/** Whether the email reached the provider, and what to tell the admin. */
+export type EmailTestAnswer = { reached: boolean; message: string };
 
 // -- Claims ---------------------------------------------------------------------------
 

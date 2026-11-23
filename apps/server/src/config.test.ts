@@ -67,11 +67,30 @@ describe("production settings", () => {
     [{ DJANGO_SECRET_KEY: "development-secret" }],
     [{ KEYCLOAK_BASE_URL: "" }],
     [{ KEYCLOAK_REALM: "" }],
-    [{ MAIL_FROM_ADDRESS: "" }],
-    [{ MAIL_REPLY_TO_ADDRESS: "" }],
+    [{ MAIL_DELIVERY_MODE: "postcard" }],
     [{}],
+    // Admins can set up email under Admin > Email instead.
+    [
+      {
+        MAILERSEND_API_TOKEN: "",
+        MAILERSEND_WEBHOOK_SIGNING_SECRET: "",
+        MAIL_FROM_ADDRESS: "",
+        MAIL_REPLY_TO_ADDRESS: "",
+      },
+    ],
   ])("unsafe production settings refuse to start (%o)", (override) => {
-    expect(starts({ ...BASE, ...override })).toBe(Object.keys(override).length === 0);
+    const accepted = Object.keys(override).length === 0 || "MAILERSEND_API_TOKEN" in override;
+    expect(starts({ ...BASE, ...override })).toBe(accepted);
+  });
+
+  it.each([
+    ["local", "no-reply@example.invalid", "finance@example.invalid"],
+    ["send", "", ""],
+  ])("placeholder addresses are only for the local outbox (%s)", (mode, sender, replyTo) => {
+    expect(
+      starts({ PRIVATE_STORAGE_ROOT: "/tmp/private", DJANGO_DEBUG: "1", MAIL_DELIVERY_MODE: mode }),
+    ).toBe(true);
+    expect([config().MAIL_FROM_ADDRESS, config().MAIL_REPLY_TO_ADDRESS]).toEqual([sender, replyTo]);
   });
 });
 

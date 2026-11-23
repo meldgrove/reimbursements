@@ -21,11 +21,13 @@ import { providerFetch } from "../auth/oidc";
 import { freshState, localSettings } from "../test/back-office";
 import { request } from "../test/helpers";
 import { mockProvider } from "../test/mailersend";
+import { defaultEmailSettings, saveEmailSettings } from "./email-connection";
 import { runOne } from "./jobs";
 import * as outbound from "./outbound";
 import { EICAR, FORM_NAME, SetupCheck, seams } from "./setup-check";
+import { SmtpTransport } from "./smtp";
 import { pathFor, writeHeartbeat } from "./storage";
-import { LocalOutbox, type Message } from "./transport";
+import { DELIVERED, LocalOutbox, sendResult, type Message } from "./transport";
 
 beforeEach(async () => {
   await freshState();
@@ -230,7 +232,8 @@ describe("the setup check with MailerSend", () => {
     const [output, error] = await verify(["--to", "finance@example.invalid"]);
     expect(error, output).toBeNull();
     for (const step of [
-      "ok    MailerSend accepted the Finance email to finance@example.invalid",
+      "ok    Email sent with MailerSend from no-reply@example.invalid",
+      "ok    Finance email to finance@example.invalid accepted by MailerSend",
       "ok    MailerSend webhook received, signature verified",
       "ok    Finance inbox received the email",
       "ok    Participant confirmation to finance@example.invalid accepted by MailerSend",
@@ -251,6 +254,16 @@ describe("the setup check with MailerSend", () => {
     expect(await nothingLeft()).toBe(true);
   }, 120_000);
 
+  it("skips the webhook without a signing secret", async () => {
+    new Worker();
+    useMailerSend();
+    localSettings({ MAIL_DELIVERY_MODE: "mailersend", MAILERSEND_WEBHOOK_SIGNING_SECRET: "" });
+    const [output, error] = await verify(["--to", "finance@example.invalid", "--timeout", "30"]);
+    expect(error, output).toBeNull();
+    expect(output).toContain("skip  MailerSend webhook\n        No signing secret is set");
+    expect(await nothingLeft()).toBe(true);
+  }, 120_000);
+
   it("fails on a bounce the webhook reports", async () => {
     const worker = new Worker();
     useMailerSend();
@@ -264,6 +277,64 @@ describe("the setup check with MailerSend", () => {
     const [output, error] = await verify(["--to", "finance@example.invalid"]);
     expect(error).toBe("Setup check failed: 1 problem.");
     expect(output).toContain("FAIL  Finance inbox\n        MailerSend reports provider_hard_bounced.");
+    expect(await nothingLeft()).toBe(true);
+  }, 120_000);
+});
+
+describe("the setup check and Admin > Email", () => {
+  it("submits no claim without email", async () => {
+    new Worker();
+    localSettings({ MAIL_DELIVERY_MODE: "send", MAILERSEND_API_TOKEN: "" });
+    const [output, error] = await verify(["--to", "finance@example.invalid"]);
+    expect(error).toBe("Setup check failed: 1 problem.");
+    expect(output).toContain(
+      "FAIL  Email\n        Not set up: missing a provider. Set it up under Admin > Email.",
+    );
+    expect(output).toContain("skip  Test claim");
+    expect(await nothingLeft()).toBe(true);
+  });
+
+  it("has both emails accepted by an SMTP server", async () => {
+    new Worker();
+    localSettings({ MAIL_DELIVERY_MODE: "send", MAILERSEND_API_TOKEN: "" });
+    await saveEmailSettings({
+      ...defaultEmailSettings(),
+      provider: "smtp",
+      smtpHost: "smtp.example.invalid",
+    });
+    const sent: Message[] = [];
+    vi.spyOn(SmtpTransport.prototype, "send").mockImplementation(async (message) => {
+      sent.push(message);
+      return sendResult(DELIVERED, { messageId: `smtp-${message.attemptId}` });
+    });
+    const [output, error] = await verify([
+      "--to",
+      "finance@example.invalid",
+      "--confirmation-to",
+      "kim@example.invalid",
+    ]);
+    expect(error, output).toBeNull();
+    expect(output).toContain("Setup check (development, email by SMTP server)");
+    for (const step of [
+      "ok    Email sent with SMTP server from no-reply@example.invalid",
+      "ok    Finance email to finance@example.invalid accepted by the SMTP server",
+      "skip  Finance inbox\n        SMTP reports no deliveries. Check that the email arrived.",
+      "ok    Participant confirmation to kim@example.invalid accepted by the SMTP server",
+    ]) {
+      expect(output).toContain(step);
+    }
+    expect(sent).toHaveLength(2);
+    expect(await nothingLeft()).toBe(true);
+  }, 120_000);
+
+  it("skips a turned-off confirmation", async () => {
+    new Worker();
+    const sent = recordSent();
+    await saveEmailSettings({ ...defaultEmailSettings(), confirmationEnabled: false });
+    const [output, error] = await verify(["--to", "finance@example.invalid"]);
+    expect(error, output).toBeNull();
+    expect(output).toContain("skip  Participant confirmation\n        Turned off under Admin > Email.");
+    expect(sent).toHaveLength(1);
     expect(await nothingLeft()).toBe(true);
   }, 120_000);
 });

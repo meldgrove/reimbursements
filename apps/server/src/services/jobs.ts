@@ -6,16 +6,21 @@
  * owns leases, capacity waits and the one retry policy. Every lease counts as
  * an attempt, except one that ends waiting for capacity: only processing uses
  * up retries.
+ *
+ * A job whose database connection drops is handed on like one whose worker
+ * died (`interrupt`): as soon as the database is back, or when its lease
+ * expires if the connection dropped while the lease itself was committed.
  */
 import { randomInt, randomUUID } from "node:crypto";
 import { and, asc, eq, gt, lt, lte, sql } from "drizzle-orm";
 import { config } from "../config";
+import { connectionLost } from "../database";
 import { jobs, type Job } from "../db/schema";
 import { atomic, q } from "../db/tx";
 import { logger } from "../logger";
 import { reportError } from "../error-reporting";
 import { CapacityError } from "./capacity";
-import { KINDS, type JobLease } from "./job-kinds";
+import { KINDS, type JobKind, type JobLease } from "./job-kinds";
 import { CANCELLED, DONE, FAILED, PENDING, RUNNING } from "./queue";
 
 export const BACKOFF = [60, 300, 900, 3600];
@@ -90,6 +95,37 @@ export class Lease implements JobLease {
     await this.finish(PENDING, errorCode, backoff(this.job, options.minimumDelay ?? 0));
     return true;
   }
+
+  /**
+   * The worker lost this job with its database connection. Hands it on as
+   * `reclaimStaleJobs` would once the lease expired, without waiting for that.
+   */
+  async abandon(): Promise<void> {
+    const token = this.token;
+    if (!token) return;
+    await atomic(async () => {
+      const [job] = await q()
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, this.job.id), eq(jobs.state, RUNNING), eq(jobs.leaseToken, token)))
+        .for("update");
+      if (job) await interrupt(job);
+    });
+  }
+}
+
+/**
+ * The database connection dropped while a job ran. Its lease still holds the
+ * job: call `lease.abandon()` once the database is back.
+ */
+export class Interrupted extends Error {
+  constructor(
+    readonly lease: Lease,
+    options: { cause: unknown },
+  ) {
+    super(`job=${lease.job.id}`, options);
+    this.name = "Interrupted";
+  }
 }
 
 /** The next job that is due, leased to this worker; null when none is. */
@@ -119,7 +155,26 @@ export function acquireJob(): Promise<Job | null> {
   });
 }
 
-/** Expired leases mean a dead worker. Resumable kinds keep their place in the queue. */
+/**
+ * In a transaction, on a locked running job whose worker stopped. Resumable
+ * kinds keep their place in the queue.
+ */
+async function interrupt(job: Job): Promise<void> {
+  const kind = KINDS[job.kind]!;
+  let state: string;
+  let errorCode: string;
+  if (kind.resumable && canRetry(job)) {
+    [state, errorCode] = [PENDING, "worker_interrupted"];
+  } else {
+    [state, errorCode] = [FAILED, await kind.interrupted(job)];
+  }
+  await q()
+    .update(jobs)
+    .set({ state, errorCode, leaseToken: null, leaseUntil: null })
+    .where(eq(jobs.id, job.id));
+}
+
+/** Expired leases mean a dead worker. */
 export function reclaimStaleJobs(): Promise<void> {
   return atomic(async () => {
     const stale = await q()
@@ -127,38 +182,39 @@ export function reclaimStaleJobs(): Promise<void> {
       .from(jobs)
       .where(and(eq(jobs.state, RUNNING), lt(jobs.leaseUntil, new Date())))
       .for("update");
-    for (const job of stale) {
-      const kind = KINDS[job.kind]!;
-      let state: string;
-      let errorCode: string;
-      if (kind.resumable && canRetry(job)) {
-        [state, errorCode] = [PENDING, "worker_interrupted"];
-      } else {
-        [state, errorCode] = [FAILED, await kind.interrupted(job)];
-      }
-      await q()
-        .update(jobs)
-        .set({ state, errorCode, leaseToken: null, leaseUntil: null })
-        .where(eq(jobs.id, job.id));
-    }
+    for (const job of stale) await interrupt(job);
   });
 }
 
-/** Leases and runs one due job. False when none was due. */
+/**
+ * Leases and runs one due job. False when none was due. Throws `Interrupted`
+ * when the database connection drops during the job.
+ */
 export async function runOne(): Promise<boolean> {
   const job = await acquireJob();
   if (!job) return false;
-  const kind = KINDS[job.kind]!;
   const lease = new Lease(job);
+  try {
+    await run(KINDS[job.kind]!, job, lease);
+  } catch (error) {
+    if (connectionLost(error)) throw new Interrupted(lease, { cause: error });
+    throw error;
+  }
+  return true;
+}
+
+async function run(kind: JobKind, job: Job, lease: Lease): Promise<void> {
   try {
     await kind.run(job, lease);
   } catch (error) {
+    // Not the job's failure: nothing about it could be recorded now.
+    if (connectionLost(error)) throw error;
     if (error instanceof CapacityError) {
       await atomic(async () => {
         if (await lease.live()) await lease.waitForCapacity();
       });
       logger.warn({ job: job.id }, "document_capacity_wait");
-      return true;
+      return;
     }
     const failure = kind.failure(error);
     await atomic(async () => {
@@ -177,5 +233,4 @@ export async function runOne(): Promise<boolean> {
       reportError(error);
     }
   }
-  return true;
 }

@@ -26,6 +26,7 @@ import { t } from "../i18n";
 import { IntakeError } from "../intake";
 import { loadForm, type FormWithTemplate } from "../models";
 import type { Participant } from "../participants";
+import * as emailConnection from "./email-connection";
 import { chargeDraft } from "./network-budget";
 import * as terms from "./terms";
 import { normalizeUuid } from "./claim-validation";
@@ -87,7 +88,7 @@ export function constantTimeEquals(a: string, b: string): boolean {
  */
 async function ensureAccepting(form: FormWithTemplate, revision: string | null): Promise<terms.Terms> {
   const current = await terms.of(form);
-  const refused = terms.refusal(form, current.privacyNotice);
+  const refused = terms.refusal(form, current.privacyNotice, await emailConnection.ready());
   if (refused === terms.CLOSED)
     throw new IntakeError(t("This form is closed for new claims."), { status: 409 });
   if (refused) throw new IntakeError(t("The form is currently unavailable."), { status: 503 });

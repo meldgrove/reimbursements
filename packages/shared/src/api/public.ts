@@ -80,6 +80,8 @@ export type FormPage = {
   countries: Array<[string, string]>;
   /** The test environment banner. */
   development: boolean;
+  /** Whether participants receive a confirmation of receipt (Admin > Email): the email field's hint. */
+  confirmation: boolean;
 };
 
 /** GET /api/v1/public/forms/<slug> when the form takes no claims (HTTP 403, 404, 409, 429 or 503). */

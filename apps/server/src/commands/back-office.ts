@@ -22,6 +22,7 @@ import {
 } from "../services/claim-status";
 import { reconcile } from "../services/evidence";
 import { claimReference } from "../services/documents";
+import * as emailConnection from "../services/email-connection";
 import { ActionRefused, retry } from "../services/operations";
 import * as queue from "../services/queue";
 import { queueAgeSeconds } from "../services/readiness";
@@ -334,7 +335,14 @@ registerCommand("verify-setup", {
     const raw = option(args, "--timeout") ?? "300";
     const timeout = /^-?\d+$/.test(raw) ? Number(raw) : Number.NaN;
     if (!(timeout >= 1)) throw new CommandError("--timeout must be at least 1 second.");
-    out(`Setup check (${config().DEPLOYMENT_ENV}, email by ${config().MAIL_DELIVERY_MODE})`);
+    let provider: string;
+    try {
+      provider = (await emailConnection.current()).name || "nothing set up";
+    } catch {
+      // The check reports the database.
+      provider = "unknown";
+    }
+    out(`Setup check (${config().DEPLOYMENT_ENV}, email by ${provider})`);
     const check = new SetupCheck({
       finance,
       participant,

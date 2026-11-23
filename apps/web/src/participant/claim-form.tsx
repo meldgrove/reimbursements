@@ -992,7 +992,9 @@ export function ClaimForm({ page, slug }: { page: FormPage; slug: string }) {
                 type: "email",
                 autoComplete: "email",
                 maxLength: 254,
-                hint: t("For the confirmation of receipt and questions about your claim."),
+                hint: page.confirmation
+                  ? t("For the confirmation of receipt and questions about your claim.")
+                  : t("For questions about your claim."),
               })}
               {field("street", t("Street and house number"), {
                 wide: true,

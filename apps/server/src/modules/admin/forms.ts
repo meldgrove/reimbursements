@@ -31,7 +31,8 @@ import { isTemplateAdmin, managedForms } from "../../auth/roles";
 import { currentPrivacyNotice, fieldOptions, internalValueErrors, templateFieldsOf } from "../../models";
 import { loadSettings } from "../../services/app-settings";
 import * as publication from "../../services/publication";
-import { NO_PRIVACY_NOTICE, refusal, UNAPPROVED_RECIPIENT } from "../../services/terms";
+import * as emailConnection from "../../services/email-connection";
+import { EMAIL_NOT_SET_UP, NO_PRIVACY_NOTICE, refusal, UNAPPROVED_RECIPIENT } from "../../services/terms";
 import { absolute, archivingMessage, body, contains, idsOf, pageOf, pagesOf, PAGE_SIZE } from "./common";
 
 /**
@@ -47,6 +48,7 @@ const router = new Hono<AppEnv>();
 const UNAVAILABLE: Record<string, string> = {
   [UNAPPROVED_RECIPIENT]: "Receiving inbox not approved",
   [NO_PRIVACY_NOTICE]: "No privacy notice",
+  [EMAIL_NOT_SET_UP]: "Email not set up",
 };
 
 const STATUSES: ReadonlySet<string> = new Set(["draft", "published", "archived"]);
@@ -90,12 +92,13 @@ router.get("/admin/forms", async (c) => {
     .limit(PAGE_SIZE)
     .offset(offset);
   const fields = await fieldsByTemplate([...new Set(rows.map((row) => row.template.id))]);
-  // The privacy notice decides every row's Open now: read once per page.
+  // The privacy notice and the email connection decide every row's Open now: read once per page.
   const notice = await currentPrivacyNotice();
+  const emailReady = await emailConnection.ready();
   const now = new Date();
   const result: FormRow[] = rows.map(({ form, template: formTemplate }) => {
     const full = { ...form, template: formTemplate, fields: fields.get(formTemplate.id) ?? [] };
-    const refused = refusal(full, notice, now);
+    const refused = refusal(full, notice, emailReady, now);
     return {
       id: form.id,
       name: form.name,

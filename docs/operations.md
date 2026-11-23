@@ -312,10 +312,11 @@ again after 1 second, then after twice as long each time, at most every 30 secon
 that was running at that moment is handed on as if its worker had died, as soon as the
 database is back: a validation or render runs again, a send becomes unknown. After five
 minutes without the database, the worker logs the error `database_unreachable`, once
-for each outage; Sentry receives it. Any other database error still stops the worker.
-The web server and the worker keep connections for up to a minute and check a kept
-connection before they use it again, so the first request after a restart reconnects
-instead of failing.
+for each outage; Sentry receives it. Any other error is logged as `worker_loop_failed`,
+goes to Sentry, and the worker tries again after 5 seconds; with `cli run-jobs --once`
+or `--drain` it ends the command instead. The web server and the worker keep an idle
+connection for up to 10 seconds and drop one as soon as PostgreSQL ends it, so the
+first request after a restart connects again instead of failing.
 
 Queue age measures waiting time since `run_after` for runnable/running jobs.
 Scheduled backoffs do not fail readiness; a newly due retry gets a fresh waiting

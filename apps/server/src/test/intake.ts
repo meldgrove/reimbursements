@@ -56,6 +56,9 @@ export function intakeSettings(values: Partial<Config> = {}) {
     TEST_RECIPIENT_ALLOWLIST: [],
     MAIL_FROM_ADDRESS: "no-reply@example.invalid",
     MAIL_REPLY_TO_ADDRESS: "finance@example.invalid",
+    // As set in the environment; tests that send with "mailersend" mode use it. Tests of
+    // Admin > Email clear it.
+    MAILERSEND_API_TOKEN: "synthetic-test-token",
     ...values,
   });
 }

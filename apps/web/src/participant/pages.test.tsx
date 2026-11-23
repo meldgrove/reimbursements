@@ -68,6 +68,7 @@ function formPage(overrides: Partial<FormPage> = {}): FormPage {
       ["AT", "Österreich"],
     ],
     development: false,
+    confirmation: true,
     ...overrides,
   };
 }

@@ -2,7 +2,8 @@
  * Outbound email: who may receive it, how one message is sent, and what is
  * left of it (portal/services/outbound.py of the Django version).
  *
- * Finance deliveries and participant confirmations both send through `send`.
+ * Finance deliveries and participant confirmations both send through `send`,
+ * with the provider of the email connection (services/email-connection.ts).
  * While a test allowlist is configured, nobody else receives email. In local
  * development `LocalOutbox` keeps a private copy of each message instead of
  * sending it. `forget` removes the copies and the provider's evidence of sent
@@ -13,9 +14,19 @@ import { config } from "../config";
 import { deliveryEvents } from "../db/schema";
 import { q } from "../db/tx";
 import { logger } from "../logger";
+import * as emailConnection from "./email-connection";
 import { MailerSendTransport } from "./mailersend";
+import { SmtpTransport } from "./smtp";
 import { outboxKey, removeKeys } from "./storage";
-import { FAILED, LocalOutbox, sendResult, type Message, type SendResult, type Transport } from "./transport";
+import {
+  FAILED,
+  LocalOutbox,
+  NotSetUp,
+  sendResult,
+  type Message,
+  type SendResult,
+  type Transport,
+} from "./transport";
 
 /** The message cannot be composed, so nothing was transmitted. `code` is the error code. */
 export class Undeliverable extends Error {
@@ -33,10 +44,13 @@ export function recipientApproved(address: string): boolean {
 /** Tests may set a transport of their own; null: the configured one. */
 export const transportOverride: { current: Transport | null } = { current: null };
 
-export function configuredTransport(): Transport {
+/** The adapter that sends with `connection`, by default the current one. */
+export async function configuredTransport(connection?: emailConnection.Connection): Promise<Transport> {
   if (transportOverride.current) return transportOverride.current;
-  const settings = config();
-  if (settings.MAIL_DELIVERY_MODE === "local" && settings.isDevelopment) return new LocalOutbox();
+  const using = connection ?? (await emailConnection.current());
+  if (using.provider === emailConnection.LOCAL) return new LocalOutbox();
+  if (!using.ready) return new NotSetUp();
+  if (using.provider === emailConnection.SMTP) return new SmtpTransport(using.smtp);
   return new MailerSendTransport();
 }
 
@@ -64,7 +78,7 @@ export async function send<T extends { id: string }>(
   if (allowlist.length && !allowlist.includes(message.recipient.toLowerCase())) {
     return sendResult(FAILED, { errorCode: "test_recipient_blocked" });
   }
-  return configuredTransport().send(message);
+  return (await configuredTransport()).send(message);
 }
 
 /** Deletes any local copies of these messages, by their `Message.attemptId`. */
