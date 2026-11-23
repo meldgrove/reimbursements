@@ -11,3 +11,5 @@ test-results/
 tests/upgrade/compose.django.yaml
 # Answers recorded from the updater: kept byte for byte.
 tests/fixtures/
+# Answers recorded from the updater: kept byte for byte.
+apps/server/src/test/fixtures/
