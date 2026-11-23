@@ -57,8 +57,10 @@ The supplied image requires Linux x86_64/aarch64, Landlock ABI 3 or newer and
 libseccomp. Readiness and the setup check run a real confinement probe. Document children
 can read only their selected inputs and trusted runtime/font files, can write only
 their own workspace, and cannot open network sockets. Keep the private 700 MB
-tmpfs mount at `PRIVATE_STORAGE_ROOT/work` on both web and worker. Readiness fails
-with a missing, shared or unbounded workspace in production. This mount is separate
+tmpfs mount at `PRIVATE_STORAGE_ROOT/work` on web, worker and migrate. Outside
+development, web, worker and migrate refuse to start without a working sandbox or with
+a missing, shared or unbounded workspace (more than 750 MB), and readiness keeps
+checking both while the app runs. This mount is separate
 from persistent source/PDF storage; publishing copies files atomically between them.
 Workspace reservations charge the tmpfs allowance there and reserve only the
 bounded normalized/final output on persistent storage. Local setups sharing one
@@ -262,7 +264,8 @@ the logs: exception type, code locations, the URL pattern and the application's
 own log message, without exception values, request data, users, local variables
 or breadcrumbs. Reports omit raw request paths when there is no matched route.
 Outgoing requests and document processes get no tracing headers or variables. The `role` tag
-is the process: `web`, `worker`, `migrate` or `all`. `SENTRY_ENVIRONMENT`
+is the process: `web`, `worker`, `migrate` or `all`, or the command's name for `cli`
+commands. `SENTRY_ENVIRONMENT`
 defaults to `DEPLOYMENT_ENV`. `SENTRY_RELEASE` names the deployed version and
 defaults to `reimbursements@<version>` in [release images](releases.md).
 

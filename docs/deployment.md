@@ -81,7 +81,8 @@ your actual hostname. Subscribe to supported sent, delivered, deferred, bounced
 and suppressed events. Disable provider tracking. See [operations](operations.md)
 for ambiguous delivery outcomes and retry controls.
 
-Optionally set `SENTRY_DSN` for error reports from web, worker and migrations. See
+Optionally set `SENTRY_DSN` for error reports from web, worker, migrations and `cli`
+commands. See
 [operations](operations.md#monitoring-and-maintenance) for what a report contains.
 
 The `updater` service installs new versions once the server's host setup runs, and
