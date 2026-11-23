@@ -16,6 +16,7 @@ from decimal import Decimal
 
 from portal.i18n import language
 from portal.models import PrivacyNotice
+from portal.services import email_connection
 from portal.services.outbound import recipient_approved
 
 # Part of every revision. Raising it sends every open draft back.
@@ -25,6 +26,7 @@ INTAKE_VERSION = 2
 CLOSED = "closed"
 UNAPPROVED_RECIPIENT = "unapproved_recipient"
 NO_PRIVACY_NOTICE = "no_privacy_notice"
+EMAIL_NOT_SET_UP = "email_not_set_up"
 
 
 @dataclass(frozen=True)
@@ -94,13 +96,15 @@ def of(form):
     )
 
 
-def refusal(form, privacy_notice):
+def refusal(form, privacy_notice, email_ready=None):
     """Why `form` takes no new claims now, or "" while it does. `privacy_notice` is the
-    current one (`PrivacyNotice.current()`, or the one `of(form)` offers).
+    current one (`PrivacyNotice.current()`, or the one `of(form)` offers); `email_ready`
+    whether the email connection is ready, looked up when None.
 
     A form takes claims while it is open (`Form.is_open`) and available: its inbox is an
-    approved Finance inbox and a privacy notice exists for participants to acknowledge.
-    The Draft gate, the start page and the admin's Open now follow this one rule.
+    approved Finance inbox, a privacy notice exists for participants to acknowledge, and
+    the app can send email. The Draft gate, the start page and the admin's Open now
+    follow this one rule.
     """
     if not form.is_open():
         return CLOSED
@@ -108,6 +112,8 @@ def refusal(form, privacy_notice):
         return UNAPPROVED_RECIPIENT
     if privacy_notice is None:
         return NO_PRIVACY_NOTICE
+    if not (email_connection.ready() if email_ready is None else email_ready):
+        return EMAIL_NOT_SET_UP
     return ""
 
 

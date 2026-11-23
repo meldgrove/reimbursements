@@ -55,6 +55,9 @@ def local_settings(settings, tmp_path):
     settings.STATIC_ROOT.mkdir()
     settings.UPLOAD_SCANNER = "disabled"
     settings.MAIL_DELIVERY_MODE = "local"
+    # As set in the environment; tests that send with "mailersend" mode use it. Tests of
+    # Admin > Email clear it.
+    settings.MAILERSEND_API_TOKEN = "synthetic-test-token"
     settings.MIN_FREE_STORAGE_BYTES = 0
     settings.APPROVED_DELIVERY_RECIPIENTS = ["finance@example.invalid"]
     settings.TEST_RECIPIENT_ALLOWLIST = []

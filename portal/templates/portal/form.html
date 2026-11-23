@@ -31,7 +31,7 @@
     {% include "portal/section_heading.html" with number="01" id="section-details" title=title text=text %}
     <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
       {% include 'portal/field.html' with field=claim_form.full_name %}
-      {% t "For the confirmation of receipt and questions about your claim." as hint %}{% include 'portal/field.html' with field=claim_form.email hint=hint %}
+      {% if confirmation %}{% t "For the confirmation of receipt and questions about your claim." as hint %}{% else %}{% t "For questions about your claim." as hint %}{% endif %}{% include 'portal/field.html' with field=claim_form.email hint=hint %}
       {% include 'portal/field.html' with field=claim_form.street wide=True %}
       <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4">{% include 'portal/field.html' with field=claim_form.postal_code %}{% include 'portal/field.html' with field=claim_form.city %}</div>
       {% include 'portal/field.html' with field=claim_form.country %}

@@ -8,13 +8,14 @@ from functools import cache
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.utils import timezone, translation
 
 from portal import dates, numbers, theme
 from portal.constants import DECLARATION, DECLARATION_VERSION, FORM_DESCRIPTION, FORM_TITLE
 from portal.countries import country_name
+from portal.encryption import seal, unseal
 from portal.i18n import LANGUAGES, t
 from portal.intake import EXPENSE_FIELD_LENGTHS
 
@@ -131,6 +132,98 @@ class Appearance(AppSettings):
 
     def __str__(self):
         return "Appearance"
+
+
+class EmailSettings(models.Model):
+    """The Email tab: how the app sends email and the participant confirmation.
+
+    One row for the whole app; see portal.services.email_connection. Secrets are stored
+    sealed (portal.encryption) in the `*_sealed` fields and never shown again.
+    """
+
+    class Provider(models.TextChoices):
+        NONE = "", "Not set up"
+        MAILERSEND = "mailersend", "MailerSend"
+        SMTP = "smtp", "SMTP server"
+
+    class Security(models.TextChoices):
+        STARTTLS = "starttls", "STARTTLS (usually port 587)"
+        TLS = "tls", "TLS (usually port 465)"
+        NONE = "none", "None (only for a relay in a trusted network)"
+
+    provider = models.CharField(
+        "Send email with", max_length=12, choices=Provider.choices, blank=True, default=""
+    )
+    from_address = models.EmailField(
+        "Sender address",
+        blank=True,
+        help_text="Every email comes from this address. With MailerSend, it must be on a "
+        "verified domain.",
+    )
+    reply_to_address = models.EmailField(
+        "Reply address for Finance",
+        blank=True,
+        help_text="Replies to claim emails sent to Finance go here. Replies to participant "
+        "confirmations go to each form's contact.",
+    )
+    mailersend_token_sealed = models.TextField(blank=True, editable=False)
+    webhook_secret_sealed = models.TextField(blank=True, editable=False)
+    smtp_host = models.CharField("Server", max_length=253, blank=True)
+    smtp_port = models.PositiveIntegerField(
+        "Port", default=587, validators=[MinValueValidator(1), MaxValueValidator(65535)]
+    )
+    smtp_security = models.CharField(
+        "Encryption", max_length=8, choices=Security.choices, default=Security.STARTTLS
+    )
+    smtp_username = models.CharField(
+        "Username", max_length=254, blank=True, help_text="Leave empty for a server without login."
+    )
+    smtp_password_sealed = models.TextField(blank=True, editable=False)
+    confirmation_enabled = models.BooleanField(
+        "Send participants a confirmation of receipt", default=True
+    )
+    # Admins' own subject and text per language: {"de": {"subject": …, "body": …}}. Empty
+    # or missing means the standard text.
+    confirmation_texts = models.JSONField(default=dict, blank=True, editable=False)
+    # When the last signed MailerSend webhook arrived.
+    webhook_received_at = models.DateTimeField(null=True, blank=True, editable=False)
+    updated_at = models.DateTimeField("Changed", auto_now=True)
+
+    class Meta:
+        verbose_name = "Email"
+        verbose_name_plural = "Email"
+
+    def __str__(self):
+        return "Email"
+
+    @classmethod
+    def load(cls):
+        """The saved settings, or the defaults while none are saved."""
+        return cls.objects.filter(pk=1).first() or cls(pk=1)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def secret_saved(self, name):
+        """Whether a value of the secret `name` is saved, readable or not."""
+        return bool(getattr(self, f"{name}_sealed"))
+
+    def secret(self, name):
+        """The secret `name` (mailersend_token, webhook_secret or smtp_password): "" while
+        none is saved, None when the current secret key cannot open it."""
+        return unseal(getattr(self, f"{name}_sealed"))
+
+    def set_secret(self, name, value):
+        setattr(self, f"{name}_sealed", seal(value))
+
+    @classmethod
+    def note_webhook(cls):
+        """Remember that a signed MailerSend webhook arrived just now."""
+        now = timezone.now()
+        if not cls.objects.filter(pk=1).update(webhook_received_at=now):
+            cls.objects.get_or_create(pk=1)
+            cls.objects.filter(pk=1).update(webhook_received_at=now)
 
 
 def default_declaration():

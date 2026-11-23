@@ -431,6 +431,7 @@ TEXT = {
     "For the confirmation of receipt and questions about your claim.": (
         "Für die Eingangsbestätigung und Rückfragen zu deinem Antrag."
     ),
+    "For questions about your claim.": "Für Rückfragen zu deinem Antrag.",
     "The name the account is held in.": "Name, auf den das Konto läuft.",
     "IBANs from other countries are possible too.": "Auch ausländische IBANs sind möglich.",
     "Only needed for accounts outside the SEPA area.": (

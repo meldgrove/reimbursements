@@ -69,9 +69,11 @@ their UUID reference. The readable reference contains a name and is deleted with
 the claim at content purge; the counter contains no participant data and is retained to prevent
 number reuse. Operator commands accept either reference or UUID.
 
-Acceptance also queues one participant confirmation email through MailerSend,
-independently of the Finance PDF job. The email includes the reference, form name,
-support contact, and instructions to contact the support address for payment questions. It has
+Acceptance also queues one participant confirmation email through the email
+connection (MailerSend or SMTP), independently of the Finance PDF job, unless admins
+turned confirmations off under Admin > Email. The standard email includes the
+reference, form name, support contact, and instructions to contact the support address
+for payment questions; admins may write their own subject and text per language. It has
 no attachments or banking details. Replaying a submission queues no additional
 email. Local development captures it as a private `.eml` file. The existing test
 recipient allowlist applies to participant emails too; Finance inbox approval

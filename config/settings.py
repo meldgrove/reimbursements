@@ -197,10 +197,16 @@ CONTENT_RETENTION_DAYS = 90
 UPLOAD_SCANNER = os.getenv("UPLOAD_SCANNER", "disabled" if DEBUG else "clamav")
 CLAMAV_HOST = os.getenv("CLAMAV_HOST", "scanner")
 CLAMAV_PORT = int(os.getenv("CLAMAV_PORT", "3310"))
-MAIL_DELIVERY_MODE = os.getenv("MAIL_DELIVERY_MODE", "local" if DEBUG else "mailersend")
+# "local" keeps every email as a private file (development only); "send" sends it with
+# the provider set up under Admin > Email. "mailersend" is the former name of "send".
+MAIL_DELIVERY_MODE = os.getenv("MAIL_DELIVERY_MODE", "local" if DEBUG else "send")
+if MAIL_DELIVERY_MODE not in {"local", "send", "mailersend"}:
+    raise ImproperlyConfigured("MAIL_DELIVERY_MODE must be local or send.")
+# Optional: each value set here wins over its field under Admin > Email, and the API token
+# chooses MailerSend (portal.services.email_connection).
 MAILERSEND_API_TOKEN = os.getenv("MAILERSEND_API_TOKEN", "")
 MAILERSEND_WEBHOOK_SIGNING_SECRET = os.getenv("MAILERSEND_WEBHOOK_SIGNING_SECRET", "")
-# Shared by all forms; verify the sender domain in MailerSend.
+# Shared by all forms; with MailerSend, verify the sender domain there.
 MAIL_FROM_ADDRESS = os.getenv("MAIL_FROM_ADDRESS", "no-reply@example.invalid" if DEBUG else "")
 MAIL_REPLY_TO_ADDRESS = os.getenv(
     "MAIL_REPLY_TO_ADDRESS", "finance@example.invalid" if DEBUG else ""
@@ -248,15 +254,11 @@ if not DEBUG:
         "DATABASE_URL",
         "ALLOWED_HOSTS",
         "HEALTHCHECK_TOKEN",
-        "MAILERSEND_API_TOKEN",
-        "MAILERSEND_WEBHOOK_SIGNING_SECRET",
         "APPROVED_DELIVERY_RECIPIENTS",
         "OIDC_CLIENT_ID",
         "OIDC_CLIENT_SECRET",
         "KEYCLOAK_BASE_URL",
         "KEYCLOAK_REALM",
-        "MAIL_FROM_ADDRESS",
-        "MAIL_REPLY_TO_ADDRESS",
     ]
     missing = [key for key in required if not os.getenv(key)]
     if (
@@ -268,8 +270,8 @@ if not DEBUG:
         raise ImproperlyConfigured(f"Missing production configuration: {', '.join(missing)}")
     if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
         raise ImproperlyConfigured("Production requires PostgreSQL.")
-    if UPLOAD_SCANNER != "clamav" or MAIL_DELIVERY_MODE != "mailersend":
-        raise ImproperlyConfigured("Production requires ClamAV and MailerSend.")
+    if UPLOAD_SCANNER != "clamav" or MAIL_DELIVERY_MODE == "local":
+        raise ImproperlyConfigured("Production requires ClamAV and sending email.")
     if not DOCUMENT_SANDBOX_ENABLED:
         raise ImproperlyConfigured("Production requires the document sandbox.")
     if os.getenv("TRUST_PROXY_HEADERS", "0") == "1" and not TRUSTED_PROXY_CIDRS:

@@ -2,9 +2,10 @@
 
 `manage.py verify_setup` runs it after a deployment, an upgrade or a credential change.
 It checks the database, private storage, the worker, the document sandbox, the malware
-scanner and the Keycloak realm. Then it submits a claim the way a participant does:
-receipt and signature uploads, scanning and normalization, the PDF, the Finance email,
-the participant confirmation and, with MailerSend, the signed delivery webhook.
+scanner, the Keycloak realm and that email is set up. Then it submits a claim the way a
+participant does: receipt and signature uploads, scanning and normalization, the PDF, the
+Finance email, the participant confirmation unless it is turned off and, with MailerSend,
+the signed delivery webhook.
 
 The claim goes through a temporary form and template. It takes no bookkeeping reference,
 so Finance's numbering has no gap, and it is deleted with them when the check ends.
@@ -39,7 +40,14 @@ from portal.models import (
     PrivacyNotice,
     Upload,
 )
-from portal.services import drafts, operations, outbound, retention, uploads
+from portal.services import (
+    confirmations,
+    drafts,
+    email_connection,
+    operations,
+    retention,
+    uploads,
+)
 from portal.services.capacity import storage_available
 from portal.services.documents import sandbox_ready
 from portal.services.readiness import queue_age_seconds
@@ -54,7 +62,6 @@ from portal.services.transport import (
     PENDING,
     SENDING,
     UNKNOWN,
-    LocalOutbox,
 )
 
 OK, FAIL, SKIP = "ok", "FAIL", "skip"
@@ -62,15 +69,6 @@ ACTOR = "verify_setup"
 FORM_NAME = "Setup check (not a real claim)"
 # The EICAR antivirus test file, in two parts so that this source is not detected itself.
 EICAR = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$" + b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
-SEND_PROBLEMS = {
-    "provider_rejected": (
-        "MailerSend refused the email. Check MAILERSEND_API_TOKEN and that "
-        "MAIL_FROM_ADDRESS is on a verified MailerSend domain."
-    ),
-    "recipient_suppressed": "MailerSend suppresses this recipient after an earlier bounce.",
-    "test_recipient_blocked": "TEST_RECIPIENT_ALLOWLIST does not include the recipient.",
-    "unapproved_recipient": "APPROVED_DELIVERY_RECIPIENTS does not include the recipient.",
-}
 
 
 def pause():
@@ -132,7 +130,8 @@ class SetupCheck:
     def __init__(self, *, finance, participant, timeout, report):
         self.finance, self.participant = finance, participant
         self.timeout, self._report = timeout, report
-        self.local = isinstance(outbound.configured_transport(), LocalOutbox)
+        self.connection = email_connection.current()
+        self.local = self.connection.provider == email_connection.LOCAL
         self.failures, self.deadline, self.claim_id = 0, 0.0, None
 
     def report(self, status, title, detail=""):
@@ -143,13 +142,24 @@ class SetupCheck:
     def run(self):
         if not self.database():
             return False
-        ready = [self.storage(), self.worker(), self.sandbox(), self.scanner()]
+        ready = [self.storage(), self.worker(), self.sandbox(), self.scanner(), self.email()]
         self.keycloak()
         if all(ready):
             self.claim()
         else:
             self.report(SKIP, "Test claim", "Fix the problems above first.")
         return not self.failures
+
+    def email(self):
+        connection = self.connection
+        if not connection.ready:
+            missing = ", ".join(connection.missing)
+            return self.report(
+                FAIL, "Email", f"Not set up: missing {missing}. Set it up under Admin > Email."
+            )
+        if self.local:
+            return self.report(OK, "Email kept in the local outbox")
+        return self.report(OK, f"Email sent with {connection.name} from {connection.sender}")
 
     def database(self):
         try:
@@ -422,21 +432,37 @@ class SetupCheck:
     def send_problem(self, title, record):
         if record is None:
             return self.report(FAIL, title, f"Not sent within {self.timeout} s.")
+        provider = self.connection.provider
         if record.state == PAUSED:
             detail = "MailerSend paused sending for this account; see its dashboard."
         elif record.state == UNKNOWN:
-            detail = f"MailerSend gave no clear answer ({record.error_code})."
+            name = self.connection.name
+            detail = f"{name} gave no clear answer ({record.error_code})."
         else:
-            detail = SEND_PROBLEMS.get(record.error_code, f"Sending failed: {record.error_code}.")
+            detail = email_connection.problem(record.error_code, provider)
         return self.report(FAIL, title, detail)
+
+    def accepted_by(self):
+        """Who has an email the provider accepted."""
+        if self.local:
+            return "kept in the local outbox"
+        if self.connection.provider == email_connection.SMTP:
+            return "accepted by the SMTP server"
+        return "accepted by MailerSend"
 
     def finance_email(self, claim):
         delivery = self.sent(Delivery, claim)
         if delivery is None or delivery.state not in {ACCEPTED, DELIVERED}:
             return self.send_problem("Finance email", delivery)
+        self.report(OK, f"Finance email to {self.finance} {self.accepted_by()}")
         if self.local:
-            return self.report(OK, f"Finance email to {self.finance} kept in the local outbox")
-        self.report(OK, f"MailerSend accepted the Finance email to {self.finance}")
+            return
+        if self.connection.provider == email_connection.SMTP:
+            return self.report(
+                SKIP,
+                "Finance inbox",
+                "SMTP reports no deliveries. Check that the email arrived.",
+            )
         if not self.until(lambda: self.webhook_received(claim)):
             origin = next(iter(settings.CSRF_TRUSTED_ORIGINS), "https://<your host>")
             return self.report(
@@ -467,11 +493,14 @@ class SetupCheck:
         ).exists()
 
     def confirmation(self, claim):
+        if not Confirmation.objects.filter(claim=claim).exists() and not confirmations.enabled():
+            return self.report(SKIP, "Participant confirmation", "Turned off under Admin > Email.")
         confirmation = self.sent(Confirmation, claim)
         if confirmation is None or confirmation.state not in {ACCEPTED, DELIVERED}:
             return self.send_problem("Participant confirmation", confirmation)
-        where = "kept in the local outbox" if self.local else "accepted by MailerSend"
-        return self.report(OK, f"Participant confirmation to {self.participant} {where}")
+        return self.report(
+            OK, f"Participant confirmation to {self.participant} {self.accepted_by()}"
+        )
 
     def remove(self, form, template):
         deadline = clock() + cleanup_seconds()

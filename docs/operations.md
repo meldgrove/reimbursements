@@ -23,9 +23,11 @@ PostgreSQL credentials/URL, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and
 `DEPLOYMENT_ENV=production`. Set `TRUST_PROXY_HEADERS=1` only when the existing
 proxy replaces forwarded protocol headers. Configure:
 
-- `MAIL_DELIVERY_MODE=mailersend`, `MAILERSEND_API_TOKEN` and
-  `MAILERSEND_WEBHOOK_SIGNING_SECRET`. Set `MAIL_FROM_ADDRESS` to an address on a
-  verified sender domain and `MAIL_REPLY_TO_ADDRESS` to the support inbox.
+- Email under Admin > Email: MailerSend or an SMTP server, the sender address on a
+  verified sender domain, and the reply address for Finance emails. Optionally set
+  `MAILERSEND_API_TOKEN`, `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS` and
+  `MAIL_REPLY_TO_ADDRESS` in the environment instead; those win. `MAIL_DELIVERY_MODE`
+  is `send` (the default) outside development, where `local` keeps emails as files.
 - `APPROVED_DELIVERY_RECIPIENTS`, comma-separated approved Buchhaltung inboxes.
   Admins choose a form's recipient from this list.
 - `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`, with
@@ -100,14 +102,30 @@ headroom and active execution reservations. At most 1,000 validations may be
 queued/running. Tune the documented environment limits against measured deployment
 capacity before launch.
 
-## MailerSend and handoff
+## Email and handoff
 
-Create a version 2 webhook for sent, delivered, deferred, soft/hard bounced, and
-suppressed events at `/webhooks/mailersend/`. Check which events the account plan
-supports. The endpoint verifies raw-body signatures, handles the signed setup
+Admin > Email shows whether email is set up, with which provider and sender, and when
+the last signed MailerSend webhook arrived; its test email sends one message with the
+saved settings. Forms take no claims while email is not set up, and an email that waits
+for a provider is retried with the usual backoff. The participant confirmation can be
+turned off there, and its subject and text written per language with placeholders such
+as `{reference}`; text left as the standard text follows later changes to it.
+
+With MailerSend, create a version 2 webhook for sent, delivered, deferred, soft/hard
+bounced, and suppressed events at `/webhooks/mailersend/`. Check which events the
+account plan supports. The endpoint verifies raw-body signatures, handles the signed setup
 ping, and records minimal deduplicated events. Opaque attempt tags can correlate
 a callback arriving before the send response commits. Disable open/click/content
-tracking, as the provider adapter requests.
+tracking, as the provider adapter requests. After switching to SMTP, keep the saved
+MailerSend token and signing secret until earlier emails are settled: reconciliation
+and the webhook still use them.
+
+With an SMTP server the app learns only that the server accepted a message; it counts
+as delivered then, and nothing is reconciled. Bounces go to the sender address, so
+watch that inbox. A refusal before the message content was sent, such as a failed
+login or an unreachable server, is retried; a refused recipient or a permanently
+refused message fails; a connection lost while sending the content becomes
+`send_unknown`.
 
 A locally accepted claim is not a payment approval. API acceptance is not email
 delivery, and recipient-server delivery is not proof of completed accounting processing.
@@ -119,7 +137,7 @@ together with the notice, the summary on the form page and a migration that
 publishes the updated notice. An already started purge always resumes.
 
 Run the [setup check](#setup-check) before launch, then a complete dummy claim
-through one of your forms and the approved MailerSend route. Check all pages,
+through one of your forms and the approved email route. Check all pages,
 KST/KTR, declaration, signature, amounts, and compressed readability. The service compresses the complete PDF in bounded passes down to
 72 DPI / JPEG quality 50. If the complete document still exceeds the configured
 cap, it remains a processing exception. No page is silently removed and no partial
@@ -136,11 +154,12 @@ python manage.py verify_setup --to finance@your-org.example.invalid
 ```
 
 It checks the database, private storage, the worker's heartbeat, the document sandbox,
-ClamAV (including that it detects the EICAR test file) and the Keycloak realm's issuer,
-endpoints and signing key. Then it submits a synthetic claim through a temporary form:
-receipt and signature uploads, scanning, normalization, the PDF, the Finance email and
-the participant confirmation. With MailerSend it waits for the signed delivery webhook
-and the delivery. Each step prints `ok`, `skip` or `FAIL` with what to fix, and the
+ClamAV (including that it detects the EICAR test file), that email is set up, and the
+Keycloak realm's issuer, endpoints and signing key. Then it submits a synthetic claim
+through a temporary form: receipt and signature uploads, scanning, normalization, the
+PDF, the Finance email and, unless it is turned off, the participant confirmation. With
+MailerSend it waits for the signed delivery webhook and the delivery; with SMTP, check
+the Finance inbox yourself. Each step prints `ok`, `skip` or `FAIL` with what to fix, and the
 command exits nonzero on any failure.
 
 `--to` must be one of `APPROVED_DELIVERY_RECIPIENTS`; that inbox receives a PDF titled

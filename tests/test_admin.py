@@ -923,6 +923,7 @@ def test_sidebar_is_the_meldgrove_frame(admin_client):
         ("Claims", "/admin/portal/claim/", "o", False),
         ("Forms", "/admin/portal/form/", "f", True),
         ("General", "/admin/portal/appsettings/", "", False),
+        ("Email", "/admin/portal/emailsettings/", "", False),
         ("Appearance", "/admin/portal/appearance/", "", False),
         ("Templates", "/admin/portal/formtemplate/", "", False),
         ("Privacy notice", "/admin/portal/privacynotice/", "", False),
@@ -1058,7 +1059,11 @@ def open_now(client):
 
 @pytest.mark.parametrize(
     ("unavailable", "reason"),
-    [("recipient", "Receiving inbox not approved"), ("privacy_notice", "No privacy notice")],
+    [
+        ("recipient", "Receiving inbox not approved"),
+        ("privacy_notice", "No privacy notice"),
+        ("email", "Email not set up"),
+    ],
 )
 def test_open_now_shows_why_an_open_form_accepts_no_claims(
     admin_client, form, settings, unavailable, reason
@@ -1066,6 +1071,8 @@ def test_open_now_shows_why_an_open_form_accepts_no_claims(
     assert 'alt="True"' in open_now(admin_client)
     if unavailable == "recipient":
         settings.APPROVED_DELIVERY_RECIPIENTS = ["other@example.invalid"]
+    elif unavailable == "email":
+        settings.MAIL_DELIVERY_MODE, settings.MAILERSEND_API_TOKEN = "send", ""
     else:
         PrivacyNotice.objects.all().delete()
     cell = open_now(admin_client)

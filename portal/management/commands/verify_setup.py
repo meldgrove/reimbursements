@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.core.validators import validate_email
 
-from portal.services import outbound, setup_check
+from portal.services import email_connection, outbound, setup_check
 
 
 class Command(BaseCommand):
@@ -47,9 +47,8 @@ class Command(BaseCommand):
             raise CommandError(f"TEST_RECIPIENT_ALLOWLIST does not include {', '.join(blocked)}.")
         if options["timeout"] < 1:
             raise CommandError("--timeout must be at least 1 second.")
-        self.stdout.write(
-            f"Setup check ({settings.DEPLOYMENT_ENV}, email by {settings.MAIL_DELIVERY_MODE})"
-        )
+        provider = email_connection.current().name or "nothing set up"
+        self.stdout.write(f"Setup check ({settings.DEPLOYMENT_ENV}, email by {provider})")
         check = setup_check.SetupCheck(
             finance=finance, participant=participant, timeout=options["timeout"], report=self.line
         )
