@@ -1,14 +1,5 @@
 @import "tailwindcss";
 @import "@meldgrove/ui/styles.css";
-/* Bundled with the app (SIL Open Font License): no font loads from a third party. */
-@import "@fontsource-variable/inter";
-
-@theme {
-  --font-sans:
-    "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-}
 
 /* Native controls (scrollbars, date pickers, select lists) follow the appearance. */
 html.dark {
