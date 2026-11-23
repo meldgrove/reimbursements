@@ -1,0 +1,77 @@
+{
+  "realm": "reimbursements",
+  "enabled": true,
+  "displayName": "Meldgrove Reimbursement development",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "groups": [
+    {
+      "name": "reimbursements",
+      "path": "/reimbursements",
+      "subGroups": [
+        { "name": "admins", "path": "/reimbursements/admins" },
+        { "name": "editors", "path": "/reimbursements/editors" }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "reimbursements",
+      "name": "Meldgrove Reimbursement sign-in",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "reimbursements-dev-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/oidc/callback/",
+        "http://localhost:5173/oidc/callback/",
+        "http://127.0.0.1:8000/oidc/callback/"
+      ],
+      "webOrigins": ["http://localhost:8000", "http://localhost:5173"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:8000/##http://localhost:5173/",
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@example.invalid",
+      "firstName": "Ada",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "admin", "temporary": false }],
+      "groups": ["/reimbursements/admins"]
+    },
+    {
+      "username": "editor",
+      "email": "editor@example.invalid",
+      "firstName": "Eddie",
+      "lastName": "Editor",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "editor", "temporary": false }],
+      "groups": ["/reimbursements/editors"]
+    }
+  ]
+}

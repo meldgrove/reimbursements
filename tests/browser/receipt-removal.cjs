@@ -8,14 +8,20 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await require("./offline.cjs")(page, base);
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const handles = new Set();
-    let releaseUpload, uploadStarted, rejectDeletion = false, deletions = 0;
-    const started = new Promise((resolve) => { uploadStarted = resolve; });
-    const held = new Promise((resolve) => { releaseUpload = resolve; });
-    await page.route("**/f/demo/uploads/**", async (route) => {
+    let releaseUpload,
+      uploadStarted,
+      rejectDeletion = false,
+      deletions = 0;
+    const started = new Promise((resolve) => {
+      uploadStarted = resolve;
+    });
+    const held = new Promise((resolve) => {
+      releaseUpload = resolve;
+    });
+    await page.route("**/api/v1/public/forms/demo/uploads**", async (route) => {
       const request = route.request();
       if (request.method() === "POST") {
         if (!handles.size) {
@@ -24,22 +30,27 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
         }
         const id = randomUUID();
         handles.add(id);
-        return route.fulfill({ status: 202, json: {
-          id, state: "pending", pages: 1,
-          status_url: `/f/demo/uploads/${id}/status/`,
-          delete_url: `/f/demo/uploads/${id}/`,
-        } });
+        return route.fulfill({
+          status: 202,
+          json: { id, state: "pending" },
+        });
       }
       if (request.method() === "DELETE") {
         deletions++;
         if (rejectDeletion && deletions === 2)
-          return route.fulfill({ status: 409, json: { error: "Datei wird noch geprüft." } });
+          return route.fulfill({
+            status: 409,
+            json: { error: { code: "intake_error", message: "Datei wird noch geprüft." } },
+          });
         const id = new URL(request.url()).pathname.split("/").filter(Boolean).at(-1);
         if (!handles.delete(id))
-          return route.fulfill({ status: 404, json: { error: "Datei nicht gefunden." } });
+          return route.fulfill({
+            status: 404,
+            json: { error: { code: "intake_error", message: "Datei nicht gefunden." } },
+          });
         return route.fulfill({ json: { removed: true } });
       }
-      return route.fulfill({ json: { state: "ready", pages: 1 } });
+      return route.fulfill({ json: { state: "ready", pages: 1, message: "" } });
     });
     await page.goto(`${base}/f/demo/`);
     await page.locator("#add-expense").click();
@@ -73,8 +84,13 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
     await remove.click();
     await page.waitForFunction(() => !document.querySelector(".expense-card"));
     assert.deepEqual(errors, []);
-    console.log("Passed active-upload protection, partial deletion failure, retry, replacement and missing-file cleanup.");
+    console.log(
+      "Passed active-upload protection, partial deletion failure, retry, replacement and missing-file cleanup.",
+    );
   } finally {
     await browser.close();
   }
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

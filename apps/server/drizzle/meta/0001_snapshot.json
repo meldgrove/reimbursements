@@ -1,0 +1,3226 @@
+{
+  "id": "ac9ae6d0-0d34-4b16-a386-61f0a96a6d14",
+  "prevId": "81097644-ffd9-4feb-a19e-214243939384",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.portal_appsettings": {
+      "name": "portal_appsettings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_appsettings_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "language": {
+          "name": "language",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_format": {
+          "name": "date_format",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "favicon": {
+          "name": "favicon",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "favicon_type": {
+          "name": "favicon_type",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "favicon_digest": {
+          "name": "favicon_digest",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accent_color": {
+          "name": "accent_color",
+          "type": "varchar(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number_format": {
+          "name": "number_format",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_capacitylock": {
+      "name": "portal_capacitylock",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "smallint",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "portal_capacitylock_id_check": {
+          "name": "portal_capacitylock_id_check",
+          "value": "\"portal_capacitylock\".\"id\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_claimreferencecounter": {
+      "name": "portal_claimreferencecounter",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "smallint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "portal_claimreferencecounter_id_check": {
+          "name": "portal_claimreferencecounter_id_check",
+          "value": "\"portal_claimreferencecounter\".\"id\" >= 0"
+        },
+        "portal_claimreferencecounter_value_check": {
+          "name": "portal_claimreferencecounter_value_check",
+          "value": "\"portal_claimreferencecounter\".\"value\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_claim": {
+      "name": "portal_claim",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "street": {
+          "name": "street",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "postal_code": {
+          "name": "postal_code",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "city": {
+          "name": "city",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "varchar(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_holder": {
+          "name": "account_holder",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "iban": {
+          "name": "iban",
+          "type": "varchar(34)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bic": {
+          "name": "bic",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose_details": {
+          "name": "purpose_details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trip_destination": {
+          "name": "trip_destination",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trip_start": {
+          "name": "trip_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trip_end": {
+          "name": "trip_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total": {
+          "name": "total",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_key": {
+          "name": "pdf_key",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_hash": {
+          "name": "pdf_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_size": {
+          "name": "pdf_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_page_count": {
+          "name": "pdf_page_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pdf_due": {
+          "name": "pdf_due",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_removed_at": {
+          "name": "pdf_removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retention_due": {
+          "name": "retention_due",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_due": {
+          "name": "resolution_due",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "supersedes_id": {
+          "name": "supersedes_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "form_id": {
+          "name": "form_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bookkeeping_reference": {
+          "name": "bookkeeping_reference",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "portal_claim_archived_at_59843ecb": {
+          "name": "portal_claim_archived_at_59843ecb",
+          "columns": [
+            {
+              "expression": "archived_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_bookkeeping_reference_f27a4966_like": {
+          "name": "portal_claim_bookkeeping_reference_f27a4966_like",
+          "columns": [
+            {
+              "expression": "bookkeeping_reference",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_form_id_a8cd19f9": {
+          "name": "portal_claim_form_id_a8cd19f9",
+          "columns": [
+            {
+              "expression": "form_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_pdf_due_e8333a41": {
+          "name": "portal_claim_pdf_due_e8333a41",
+          "columns": [
+            {
+              "expression": "pdf_due",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_retention_due_5a4d5d77": {
+          "name": "portal_claim_retention_due_5a4d5d77",
+          "columns": [
+            {
+              "expression": "retention_due",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_state_102b7533": {
+          "name": "portal_claim_state_102b7533",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_state_102b7533_like": {
+          "name": "portal_claim_state_102b7533_like",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_claim_supersedes_id_fbc751d8": {
+          "name": "portal_claim_supersedes_id_fbc751d8",
+          "columns": [
+            {
+              "expression": "supersedes_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_claim_form_id_a8cd19f9_fk_portal_form_id": {
+          "name": "portal_claim_form_id_a8cd19f9_fk_portal_form_id",
+          "tableFrom": "portal_claim",
+          "tableTo": "portal_form",
+          "columnsFrom": [
+            "form_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "portal_claim_supersedes_id_fbc751d8_fk_portal_claim_id": {
+          "name": "portal_claim_supersedes_id_fbc751d8_fk_portal_claim_id",
+          "tableFrom": "portal_claim",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "supersedes_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_claim_bookkeeping_reference_key": {
+          "name": "portal_claim_bookkeeping_reference_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "bookkeeping_reference"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "portal_claim_pdf_page_count_check": {
+          "name": "portal_claim_pdf_page_count_check",
+          "value": "\"portal_claim\".\"pdf_page_count\" >= 0"
+        },
+        "portal_claim_pdf_size_check": {
+          "name": "portal_claim_pdf_size_check",
+          "value": "\"portal_claim\".\"pdf_size\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_confirmation": {
+      "name": "portal_confirmation",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "portal_confirmation_last_checked_at_604a24c5": {
+          "name": "portal_confirmation_last_checked_at_604a24c5",
+          "columns": [
+            {
+              "expression": "last_checked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_confirmation_claim_id_e1ec4834_fk_portal_claim_id": {
+          "name": "portal_confirmation_claim_id_e1ec4834_fk_portal_claim_id",
+          "tableFrom": "portal_confirmation",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_confirmation_claim_id_key": {
+          "name": "portal_confirmation_claim_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "claim_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_delivery": {
+      "name": "portal_delivery",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_delivery_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "recipient": {
+          "name": "recipient",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_delivery_state_384fbd15": {
+          "name": "portal_delivery_state_384fbd15",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_delivery_state_384fbd15_like": {
+          "name": "portal_delivery_state_384fbd15_like",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_delivery_claim_id_b1627f00_fk_portal_claim_id": {
+          "name": "portal_delivery_claim_id_b1627f00_fk_portal_claim_id",
+          "tableFrom": "portal_delivery",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_delivery_claim_id_key": {
+          "name": "portal_delivery_claim_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "claim_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_deliveryattempt": {
+      "name": "portal_deliveryattempt",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(24)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_deliveryattempt_delivery_id_eb21ca56": {
+          "name": "portal_deliveryattempt_delivery_id_eb21ca56",
+          "columns": [
+            {
+              "expression": "delivery_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_deliveryattempt_last_checked_at_f5aba670": {
+          "name": "portal_deliveryattempt_last_checked_at_f5aba670",
+          "columns": [
+            {
+              "expression": "last_checked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_deliveryattempt_message_id_af9a3e0f_like": {
+          "name": "portal_deliveryattempt_message_id_af9a3e0f_like",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_deliveryattem_delivery_id_eb21ca56_fk_portal_de": {
+          "name": "portal_deliveryattem_delivery_id_eb21ca56_fk_portal_de",
+          "tableFrom": "portal_deliveryattempt",
+          "tableTo": "portal_delivery",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_deliveryattempt_message_id_key": {
+          "name": "portal_deliveryattempt_message_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "message_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_deliveryevent": {
+      "name": "portal_deliveryevent",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_deliveryevent_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient_hash": {
+          "name": "recipient_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_tag": {
+          "name": "attempt_tag",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_timestamp": {
+          "name": "provider_timestamp",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "applied": {
+          "name": "applied",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "portal_deliveryevent_last_checked_at_e331cda0": {
+          "name": "portal_deliveryevent_last_checked_at_e331cda0",
+          "columns": [
+            {
+              "expression": "last_checked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_deliveryevent_message_id_6904c7e3": {
+          "name": "portal_deliveryevent_message_id_6904c7e3",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_deliveryevent_message_id_6904c7e3_like": {
+          "name": "portal_deliveryevent_message_id_6904c7e3_like",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_deliveryevent_provider_id_16305df5_like": {
+          "name": "portal_deliveryevent_provider_id_16305df5_like",
+          "columns": [
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_deliveryevent_provider_id_key": {
+          "name": "portal_deliveryevent_provider_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "provider_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_draftadmission": {
+      "name": "portal_draftadmission",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "window_start": {
+          "name": "window_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_count": {
+          "name": "upload_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_bytes": {
+          "name": "upload_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_window_start": {
+          "name": "upload_window_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_window_count": {
+          "name": "upload_window_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_draftadmission_key_bc2522a5_like": {
+          "name": "portal_draftadmission_key_bc2522a5_like",
+          "columns": [
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_draftadmission_window_start_508d2b79": {
+          "name": "portal_draftadmission_window_start_508d2b79",
+          "columns": [
+            {
+              "expression": "window_start",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "portal_draftadmission_count_check": {
+          "name": "portal_draftadmission_count_check",
+          "value": "\"portal_draftadmission\".\"count\" >= 0"
+        },
+        "portal_draftadmission_upload_bytes_check": {
+          "name": "portal_draftadmission_upload_bytes_check",
+          "value": "\"portal_draftadmission\".\"upload_bytes\" >= 0"
+        },
+        "portal_draftadmission_upload_count_check": {
+          "name": "portal_draftadmission_upload_count_check",
+          "value": "\"portal_draftadmission\".\"upload_count\" >= 0"
+        },
+        "portal_draftadmission_upload_window_count_check": {
+          "name": "portal_draftadmission_upload_window_count_check",
+          "value": "\"portal_draftadmission\".\"upload_window_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_draft": {
+      "name": "portal_draft",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "session_hash": {
+          "name": "session_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_count": {
+          "name": "upload_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_bytes": {
+          "name": "upload_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "form_id": {
+          "name": "form_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_draft_expires_at_f171ba29": {
+          "name": "portal_draft_expires_at_f171ba29",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_draft_form_id_b819ac1b": {
+          "name": "portal_draft_form_id_b819ac1b",
+          "columns": [
+            {
+              "expression": "form_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_draft_claim_id_d6af9412_fk_portal_claim_id": {
+          "name": "portal_draft_claim_id_d6af9412_fk_portal_claim_id",
+          "tableFrom": "portal_draft",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "portal_draft_form_id_b819ac1b_fk_portal_form_id": {
+          "name": "portal_draft_form_id_b819ac1b_fk_portal_form_id",
+          "tableFrom": "portal_draft",
+          "tableTo": "portal_form",
+          "columnsFrom": [
+            "form_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_draft_claim_id_key": {
+          "name": "portal_draft_claim_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "claim_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "portal_draft_upload_bytes_check": {
+          "name": "portal_draft_upload_bytes_check",
+          "value": "\"portal_draft\".\"upload_bytes\" >= 0"
+        },
+        "portal_draft_upload_count_check": {
+          "name": "portal_draft_upload_count_check",
+          "value": "\"portal_draft\".\"upload_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_expense": {
+      "name": "portal_expense",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant": {
+          "name": "merchant",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "varchar(3000)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_reference": {
+          "name": "receipt_reference",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "travel_date": {
+          "name": "travel_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "route_from": {
+          "name": "route_from",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route_to": {
+          "name": "route_to",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distance_km": {
+          "name": "distance_km",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "round_trip": {
+          "name": "round_trip",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mileage_rate": {
+          "name": "mileage_rate",
+          "type": "numeric(4, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "return_date": {
+          "name": "return_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vehicle_registration": {
+          "name": "vehicle_registration",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_expense_claim_id_05f3f970": {
+          "name": "portal_expense_claim_id_05f3f970",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_expense_claim_id_05f3f970_fk_portal_claim_id": {
+          "name": "portal_expense_claim_id_05f3f970_fk_portal_claim_id",
+          "tableFrom": "portal_expense",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "expense_position_unique": {
+          "name": "expense_position_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "claim_id",
+            "position"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "expense_amount_positive": {
+          "name": "expense_amount_positive",
+          "value": "\"portal_expense\".\"amount\" > (0)::numeric"
+        },
+        "portal_expense_distance_km_check": {
+          "name": "portal_expense_distance_km_check",
+          "value": "\"portal_expense\".\"distance_km\" >= 0"
+        },
+        "portal_expense_position_check": {
+          "name": "portal_expense_position_check",
+          "value": "\"portal_expense\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_form_owners": {
+      "name": "portal_form_owners",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_form_owners_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "form_id": {
+          "name": "form_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_form_owners_form_id_de3fc7ed": {
+          "name": "portal_form_owners_form_id_de3fc7ed",
+          "columns": [
+            {
+              "expression": "form_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_form_owners_user_id_c9532439": {
+          "name": "portal_form_owners_user_id_c9532439",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_form_owners_form_id_de3fc7ed_fk_portal_form_id": {
+          "name": "portal_form_owners_form_id_de3fc7ed_fk_portal_form_id",
+          "tableFrom": "portal_form_owners",
+          "tableTo": "portal_form",
+          "columnsFrom": [
+            "form_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "portal_form_owners_user_id_c9532439_fk_auth_user_id": {
+          "name": "portal_form_owners_user_id_c9532439_fk_auth_user_id",
+          "tableFrom": "portal_form_owners",
+          "tableTo": "auth_user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_form_owners_form_id_user_id_eb6780b4_uniq": {
+          "name": "portal_form_owners_form_id_user_id_eb6780b4_uniq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "form_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_formtemplate": {
+      "name": "portal_formtemplate",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_formtemplate_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intro": {
+          "name": "intro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "declaration": {
+          "name": "declaration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "declaration_version": {
+          "name": "declaration_version",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "travel": {
+          "name": "travel",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mileage_enabled": {
+          "name": "mileage_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mileage_rate": {
+          "name": "mileage_rate",
+          "type": "numeric(4, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_formtemplate_name_151c361a_like": {
+          "name": "portal_formtemplate_name_151c361a_like",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_formtemplate_name_key": {
+          "name": "portal_formtemplate_name_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_form": {
+      "name": "portal_form",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_form_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_values": {
+          "name": "field_values",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose_options": {
+          "name": "purpose_options",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructions": {
+          "name": "instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient": {
+          "name": "recipient",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "support_email": {
+          "name": "support_email",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trip_start": {
+          "name": "trip_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trip_end": {
+          "name": "trip_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "opens_at": {
+          "name": "opens_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closes_at": {
+          "name": "closes_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "template_id": {
+          "name": "template_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "primary": {
+          "name": "primary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "creation_key": {
+          "name": "creation_key",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "form_primary_unique": {
+          "name": "form_primary_unique",
+          "columns": [
+            {
+              "expression": "primary",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"portal_form\".\"primary\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_form_slug_bd4bc797_like": {
+          "name": "portal_form_slug_bd4bc797_like",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_form_template_id_b08269a2": {
+          "name": "portal_form_template_id_b08269a2",
+          "columns": [
+            {
+              "expression": "template_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_form_template_id_b08269a2_fk_portal_formtemplate_id": {
+          "name": "portal_form_template_id_b08269a2_fk_portal_formtemplate_id",
+          "tableFrom": "portal_form",
+          "tableTo": "portal_formtemplate",
+          "columnsFrom": [
+            "template_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_form_creation_key_key": {
+          "name": "portal_form_creation_key_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "creation_key"
+          ]
+        },
+        "portal_form_slug_key": {
+          "name": "portal_form_slug_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.auth_group": {
+      "name": "auth_group",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "auth_group_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(150)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "auth_group_name_a6ea08ec_like": {
+          "name": "auth_group_name_a6ea08ec_like",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_group_name_key": {
+          "name": "auth_group_name_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_job": {
+      "name": "portal_job",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_job_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "key": {
+          "name": "key",
+          "type": "varchar(160)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_after": {
+          "name": "run_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_until": {
+          "name": "lease_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivery_id": {
+          "name": "delivery_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "upload_id": {
+          "name": "upload_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "portal_job_claim_id_6ef2461a": {
+          "name": "portal_job_claim_id_6ef2461a",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_job_delivery_id_4de78ba6": {
+          "name": "portal_job_delivery_id_4de78ba6",
+          "columns": [
+            {
+              "expression": "delivery_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_job_key_d5a35c1e_like": {
+          "name": "portal_job_key_d5a35c1e_like",
+          "columns": [
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_job_run_after_6c9ca569": {
+          "name": "portal_job_run_after_6c9ca569",
+          "columns": [
+            {
+              "expression": "run_after",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_job_state_af9d1159": {
+          "name": "portal_job_state_af9d1159",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_job_state_af9d1159_like": {
+          "name": "portal_job_state_af9d1159_like",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_job_upload_id_711b59f7": {
+          "name": "portal_job_upload_id_711b59f7",
+          "columns": [
+            {
+              "expression": "upload_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_job_claim_id_6ef2461a_fk_portal_claim_id": {
+          "name": "portal_job_claim_id_6ef2461a_fk_portal_claim_id",
+          "tableFrom": "portal_job",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "portal_job_delivery_id_4de78ba6_fk_portal_delivery_id": {
+          "name": "portal_job_delivery_id_4de78ba6_fk_portal_delivery_id",
+          "tableFrom": "portal_job",
+          "tableTo": "portal_delivery",
+          "columnsFrom": [
+            "delivery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "portal_job_upload_id_711b59f7_fk_portal_upload_id": {
+          "name": "portal_job_upload_id_711b59f7_fk_portal_upload_id",
+          "tableFrom": "portal_job",
+          "tableTo": "portal_upload",
+          "columnsFrom": [
+            "upload_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_job_key_key": {
+          "name": "portal_job_key_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "job_exactly_one_target": {
+          "name": "job_exactly_one_target",
+          "value": "(((\"portal_job\".\"claim_id\" IS NULL) AND (\"portal_job\".\"delivery_id\" IS NULL) AND (\"portal_job\".\"upload_id\" IS NOT NULL)) OR ((\"portal_job\".\"claim_id\" IS NOT NULL) AND (\"portal_job\".\"delivery_id\" IS NULL) AND (\"portal_job\".\"upload_id\" IS NULL)) OR ((\"portal_job\".\"claim_id\" IS NULL) AND (\"portal_job\".\"delivery_id\" IS NOT NULL) AND (\"portal_job\".\"upload_id\" IS NULL)))"
+        },
+        "portal_job_attempts_check": {
+          "name": "portal_job_attempts_check",
+          "value": "\"portal_job\".\"attempts\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_operation": {
+      "name": "portal_operation",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_operation_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "action": {
+          "name": "action",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "portal_operation_claim_id_43c1af12": {
+          "name": "portal_operation_claim_id_43c1af12",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_operation_claim_id_43c1af12_fk_portal_claim_id": {
+          "name": "portal_operation_claim_id_43c1af12_fk_portal_claim_id",
+          "tableFrom": "portal_operation",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_privacynotice": {
+      "name": "portal_privacynotice",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_privacynotice_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_privacynotice_version_key": {
+          "name": "portal_privacynotice_version_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "version"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "portal_privacynotice_version_check": {
+          "name": "portal_privacynotice_version_check",
+          "value": "\"portal_privacynotice\".\"version\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_session": {
+      "name": "portal_session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_session_expires_at_idx": {
+          "name": "portal_session_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_session_user_id_idx": {
+          "name": "portal_session_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_session_user_id_fk_auth_user_id": {
+          "name": "portal_session_user_id_fk_auth_user_id",
+          "tableFrom": "portal_session",
+          "tableTo": "auth_user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "portal_session_kind_check": {
+          "name": "portal_session_kind_check",
+          "value": "\"portal_session\".\"kind\" in ('admin', 'participant')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_templatefield": {
+      "name": "portal_templatefield",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "portal_templatefield_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "key": {
+          "name": "key",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "choices": {
+          "name": "choices",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pattern": {
+          "name": "pattern",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "required": {
+          "name": "required",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "template_id": {
+          "name": "template_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_templatefield_key_bd511803": {
+          "name": "portal_templatefield_key_bd511803",
+          "columns": [
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_templatefield_key_bd511803_like": {
+          "name": "portal_templatefield_key_bd511803_like",
+          "columns": [
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_templatefield_template_id_90b76303": {
+          "name": "portal_templatefield_template_id_90b76303",
+          "columns": [
+            {
+              "expression": "template_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_templatefield_template_id_90b76303_fk_portal_fo": {
+          "name": "portal_templatefield_template_id_90b76303_fk_portal_fo",
+          "tableFrom": "portal_templatefield",
+          "tableTo": "portal_formtemplate",
+          "columnsFrom": [
+            "template_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "template_field_key_unique": {
+          "name": "template_field_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "template_id",
+            "key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "portal_templatefield_position_check": {
+          "name": "portal_templatefield_position_check",
+          "value": "\"portal_templatefield\".\"position\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.portal_upload": {
+      "name": "portal_upload",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "expense_id": {
+          "name": "expense_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_name": {
+          "name": "original_name",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_key": {
+          "name": "source_key",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized_key": {
+          "name": "normalized_key",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized_size": {
+          "name": "normalized_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved_bytes": {
+          "name": "reserved_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "media_type": {
+          "name": "media_type",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pages": {
+          "name": "pages",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "portal_upload_claim_id_d9b688d4": {
+          "name": "portal_upload_claim_id_d9b688d4",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_upload_draft_id_062d69ed": {
+          "name": "portal_upload_draft_id_062d69ed",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_upload_claim_id_d9b688d4_fk_portal_claim_id": {
+          "name": "portal_upload_claim_id_d9b688d4_fk_portal_claim_id",
+          "tableFrom": "portal_upload",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "portal_upload_draft_id_062d69ed_fk_portal_draft_id": {
+          "name": "portal_upload_draft_id_062d69ed_fk_portal_draft_id",
+          "tableFrom": "portal_upload",
+          "tableTo": "portal_draft",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "portal_upload_normalized_size_check": {
+          "name": "portal_upload_normalized_size_check",
+          "value": "\"portal_upload\".\"normalized_size\" >= 0"
+        },
+        "portal_upload_pages_check": {
+          "name": "portal_upload_pages_check",
+          "value": "\"portal_upload\".\"pages\" >= 0"
+        },
+        "portal_upload_position_check": {
+          "name": "portal_upload_position_check",
+          "value": "\"portal_upload\".\"position\" >= 0"
+        },
+        "portal_upload_reserved_bytes_check": {
+          "name": "portal_upload_reserved_bytes_check",
+          "value": "\"portal_upload\".\"reserved_bytes\" >= 0"
+        },
+        "portal_upload_size_check": {
+          "name": "portal_upload_size_check",
+          "value": "\"portal_upload\".\"size\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.auth_user_groups": {
+      "name": "auth_user_groups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "auth_user_groups_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "auth_user_groups_group_id_97559544": {
+          "name": "auth_user_groups_group_id_97559544",
+          "columns": [
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_user_groups_user_id_6a12ed8b": {
+          "name": "auth_user_groups_user_id_6a12ed8b",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "auth_user_groups_group_id_97559544_fk_auth_group_id": {
+          "name": "auth_user_groups_group_id_97559544_fk_auth_group_id",
+          "tableFrom": "auth_user_groups",
+          "tableTo": "auth_group",
+          "columnsFrom": [
+            "group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "auth_user_groups_user_id_6a12ed8b_fk_auth_user_id": {
+          "name": "auth_user_groups_user_id_6a12ed8b_fk_auth_user_id",
+          "tableFrom": "auth_user_groups",
+          "tableTo": "auth_user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_user_groups_user_id_group_id_94350c0c_uniq": {
+          "name": "auth_user_groups_user_id_group_id_94350c0c_uniq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "user_id",
+            "group_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.auth_user": {
+      "name": "auth_user",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "auth_user_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "password": {
+          "name": "password",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_login": {
+          "name": "last_login",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_superuser": {
+          "name": "is_superuser",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "username": {
+          "name": "username",
+          "type": "varchar(150)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "varchar(150)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "varchar(150)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(254)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_staff": {
+          "name": "is_staff",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date_joined": {
+          "name": "date_joined",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "auth_user_username_6821ab7c_like": {
+          "name": "auth_user_username_6821ab7c_like",
+          "columns": [
+            {
+              "expression": "username",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "auth_user_username_key": {
+          "name": "auth_user_username_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "username"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.portal_workspacereservation": {
+      "name": "portal_workspacereservation",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "directory": {
+          "name": "directory",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "output_bytes": {
+          "name": "output_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "upload_id": {
+          "name": "upload_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "portal_workspacereservation_claim_id_03246bd9": {
+          "name": "portal_workspacereservation_claim_id_03246bd9",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_workspacereservation_created_at_a0303a5c": {
+          "name": "portal_workspacereservation_created_at_a0303a5c",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_workspacereservation_directory_fc473a49_like": {
+          "name": "portal_workspacereservation_directory_fc473a49_like",
+          "columns": [
+            {
+              "expression": "directory",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "varchar_pattern_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "portal_workspacereservation_upload_id_17fae713": {
+          "name": "portal_workspacereservation_upload_id_17fae713",
+          "columns": [
+            {
+              "expression": "upload_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "portal_workspacerese_claim_id_03246bd9_fk_portal_cl": {
+          "name": "portal_workspacerese_claim_id_03246bd9_fk_portal_cl",
+          "tableFrom": "portal_workspacereservation",
+          "tableTo": "portal_claim",
+          "columnsFrom": [
+            "claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "portal_workspacerese_upload_id_17fae713_fk_portal_up": {
+          "name": "portal_workspacerese_upload_id_17fae713_fk_portal_up",
+          "tableFrom": "portal_workspacereservation",
+          "tableTo": "portal_upload",
+          "columnsFrom": [
+            "upload_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "portal_workspacereservation_directory_key": {
+          "name": "portal_workspacereservation_directory_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "directory"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "portal_workspacereservation_output_bytes_check": {
+          "name": "portal_workspacereservation_output_bytes_check",
+          "value": "\"portal_workspacereservation\".\"output_bytes\" >= 0"
+        },
+        "portal_workspacereservation_size_check": {
+          "name": "portal_workspacereservation_size_check",
+          "value": "\"portal_workspacereservation\".\"size\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

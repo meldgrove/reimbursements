@@ -1,0 +1,73 @@
+# Stand-ins of the upgrade test (tests/upgrade/django-compose.sh), served by
+# Node.js of the image under test: the sign-in provider's discovery document
+# at http://sso.example.invalid:8080/realms/reimbursements, and a ClamAV that
+# answers PING and finds nothing (the real one needs minutes and the
+# internet to load its signatures).
+services:
+  oidc:
+    image: ghcr.io/meldgrove/reimbursements:0.0.0-upgrade-test
+    networks:
+      default:
+        aliases: [sso.example.invalid]
+    entrypoint: ["node", "-e"]
+    command:
+      - |
+        const issuer = "http://sso.example.invalid:8080/realms/reimbursements";
+        const endpoint = (name) => issuer + "/protocol/openid-connect/" + name;
+        require("node:http")
+          .createServer((request, response) => {
+            response.setHeader("content-type", "application/json");
+            response.end(
+              JSON.stringify({
+                issuer,
+                authorization_endpoint: endpoint("auth"),
+                token_endpoint: endpoint("token"),
+                userinfo_endpoint: endpoint("userinfo"),
+                jwks_uri: endpoint("certs"),
+                end_session_endpoint: endpoint("logout"),
+                response_types_supported: ["code"],
+                subject_types_supported: ["public"],
+                id_token_signing_alg_values_supported: ["RS256"],
+                code_challenge_methods_supported: ["S256"],
+              }),
+            );
+          })
+          .listen(8080);
+
+  scanner:
+    image: ghcr.io/meldgrove/reimbursements:0.0.0-upgrade-test
+    entrypoint: ["node", "-e"]
+    command:
+      - |
+        require("node:net")
+          .createServer((socket) => {
+            let buffer = Buffer.alloc(0);
+            let streaming = false;
+            socket.on("data", (data) => {
+              buffer = Buffer.concat([buffer, data]);
+              if (!streaming) {
+                if (buffer.toString().startsWith("zPING\0")) return socket.end("PONG\0");
+                if (!buffer.toString().startsWith("zINSTREAM\0")) return;
+                streaming = true;
+                buffer = buffer.subarray(10);
+              }
+              while (buffer.length >= 4) {
+                const size = buffer.readUInt32BE(0);
+                if (size === 0) return socket.end("stream: OK\0");
+                if (buffer.length < 4 + size) return;
+                buffer = buffer.subarray(4 + size);
+              }
+            });
+          })
+          .listen(3310);
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const s=require('node:net').connect(3310,'127.0.0.1',()=>s.write('zPING\\0'));s.on('data',(d)=>process.exit(d.toString().startsWith('PONG')?0:1));s.on('error',()=>process.exit(1))",
+        ]
+      interval: 2s
+      start_period: 5s
+      retries: 10

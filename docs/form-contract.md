@@ -10,8 +10,9 @@ Field names below are the German labels.
   12 letters, digits, spaces and hyphens.
 - Kontoinhaber:in → `Claim.account_holder`, prefilled with the name; also `&` and
   `,` for joint accounts.
-- IBAN → normalized `Claim.iban`: country format and checksum validated with
-  python-stdnum, any IBAN country. `Claim.bic` is validated when given and required
+- IBAN → normalized `Claim.iban`: country format and checksum validated as 0.4 did
+  with python-stdnum (`apps/server/src/bank-accounts.ts`), any IBAN country; stdnum's
+  directory of Belgian bank codes is not checked. `Claim.bic` is validated when given and required
   for IBANs outside the SEPA countries.
 - Purpose → `Claim.purpose`. When the
   form has one purpose option, it is fixed text; several options require a choice
@@ -28,8 +29,8 @@ Field names below are the German labels.
   rate instead of a merchant. A return trip requires a return date on or after the
   outbound date; one-way trips discard any return date. Their amount is calculated
   on the server. Totals use exact decimal arithmetic.
-- Declaration → the standard text in `portal/constants.py` (German in
-  `portal/i18n/de.py`), the default of each new template in the app language,
+- Declaration → the standard text in `packages/shared/src/constants.ts` (German in
+  `packages/shared/src/i18n/de.ts`), the default of each new template in the app language,
   versioned and snapshotted at acceptance.
 - Signature → required private drawn/uploaded image, normalized and included
   in the PDF. Date → server-recorded submission date in the app timezone.
@@ -42,8 +43,8 @@ The form starts with no positions. Participants choose "Auslage mit Beleg" or
 need at least one receipt; one file is sufficient and additional files are optional.
 Mileage rows need none.
 
-Form editors set each form's public title and description in the admin area under
-"Für Teilnehmende". Empty values use the standard heading and description. These
+Form editors set each form's public title and description in the form editor's
+"For participants" section. Empty values use the standard heading and description. These
 wording changes do not invalidate open drafts. Entries are checked 650 ms after
 typing stops. Inline messages appear for edited fields and their dependencies;
 the review button validates every field using the same server rules as submission.
@@ -61,7 +62,8 @@ snapshotted with the claim and printed in the PDF's header box. Participants can
 see or edit these internal values or the recipient. The claim UUID
 remains the internal identifier and receipt-page URL key. New claims receive a
 stored, unique bookkeeping reference `Erst/YYYY-MM-DD/form-slug/surname/000001`.
-The date is the Berlin submission date, the surname is the URL-safe last word of
+The date is the submission date in the app timezone (Admin > General; Europe/Berlin
+by default), the surname is the URL-safe last word of
 the full name, and the suffix is a database-locked global sequence. The reference
 never changes after acceptance and is used in confirmation, admin search, PDFs and
 emails. Email filenames replace slashes with underscores. Existing claims keep

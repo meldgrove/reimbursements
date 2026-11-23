@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+apps/server/drizzle/
+apps/server/src/db/fixtures/
+playwright-report/
+test-results/
+*.md
+# The compose files of 0.4 as servers have them.
+tests/upgrade/compose.django.yaml
+# Answers recorded from the updater: kept byte for byte.
+tests/fixtures/
+# Answers recorded from the updater: kept byte for byte.
+apps/server/src/test/fixtures/

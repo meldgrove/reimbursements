@@ -1,1 +1,0 @@
-{% load admin_urls ui %}{# From the sidebar's page to this one: the list, the record, what happens to it. #}{% if current %}{% url opts|admin_urlname:'changelist' as list_url %}{% breadcrumbs opts.verbose_name_plural|capfirst list_url parent_label parent_url current "" %}{% else %}{% breadcrumbs opts.verbose_name_plural|capfirst "" %}{% endif %}

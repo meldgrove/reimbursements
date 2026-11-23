@@ -19,11 +19,19 @@ x-application: &application
   pids_limit: 64
   mem_limit: 512m
   environment:
-    DJANGO_DEBUG: "0"
     DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-production}
-    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set a random secret of at least 50 characters}
-    ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Include the public hostname and 127.0.0.1}
-    CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set the public HTTPS origin}
+    # Signs sessions: a random secret of at least 50 characters. The Django
+    # version's DJANGO_SECRET_KEY stands in; AUTH_SECRET wins when both are set.
+    AUTH_SECRET: ${AUTH_SECRET:-${DJANGO_SECRET_KEY:?Set AUTH_SECRET to a random secret of at least 50 characters}}
+    # Still opens the secrets entered under Admin > Email that a version before sealed
+    # with it, when AUTH_SECRET differs.
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
+    # The public URL, e.g. https://reimbursements.example.invalid: sign-in sends the
+    # provider back to it. Without APP_URL, the Django version's CSRF_TRUSTED_ORIGINS
+    # stands in (its first https origin without a wildcard), and every origin it lists
+    # stays trusted for changes. The app does not start without one of the two.
+    APP_URL: ${APP_URL:-}
+    CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
     DATABASE_URL: ${DATABASE_URL:?Use the separate PostgreSQL resource internal URL}
     PRIVATE_STORAGE_ROOT: /app/var/private
     TRUST_PROXY_HEADERS: "1"
@@ -33,13 +41,17 @@ x-application: &application
     HEALTHCHECK_TOKEN: ${HEALTHCHECK_TOKEN:?Set a random health check token}
     PORTAL_OPERATOR: ${PORTAL_OPERATOR:-}
     PORTAL_LEGAL_URL: ${PORTAL_LEGAL_URL:-}
-    KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:?Set the identity provider HTTPS URL}
-    KEYCLOAK_REALM: ${KEYCLOAK_REALM:?Set the identity provider realm}
+    # Sign-in: KEYCLOAK_BASE_URL and KEYCLOAK_REALM, or OIDC_ISSUER for any OpenID Connect provider.
+    KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-}
+    KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
+    OIDC_ISSUER: ${OIDC_ISSUER:-}
+    # The ID token claim that lists the person's groups.
+    OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
     # Email is set up under Admin > Email; values set here win over it.
     MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
     MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:-}
-    OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set the Keycloak client ID}
-    OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set the Keycloak client secret}
+    OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set the sign-in client ID}
+    OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set the sign-in client secret}
     KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP:-/reimbursements/admins}
     KEYCLOAK_EDITOR_GROUP: ${KEYCLOAK_EDITOR_GROUP:-/reimbursements/editors}
     MAIL_DELIVERY_MODE: send
@@ -83,22 +95,28 @@ services:
   # health, so the successfully exited container does not mark the stack unhealthy.
   migrate:
     <<: *application
-    command: ["python", "manage.py", "migrate", "--noinput"]
+    command: ["migrate"]
     restart: "no"
 
   web:
     <<: *application
     expose:
       - "8000"
-    # Each sync gunicorn worker serves one request at a time, so a slowly sent request
-    # would hold it. Traefik receives the whole request first and forwards it at once.
+    # The app reads at most TOTAL_WEB_WORKERS uploads at a time, so a slowly sent upload
+    # would hold a slot. Traefik receives the whole request first and forwards it at once.
     # Coolify attaches middlewares defined here to the routers it generates for `web`.
     # The limit stays above the upload cap, so the app still answers oversized uploads.
     labels:
       - traefik.http.middlewares.reimbursement-portal-buffering.buffering.maxRequestBodyBytes=10485760
     depends_on: *dependencies
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/-/readyz',headers={'X-Health-Token':os.environ['HEALTHCHECK_TOKEN'],'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r,timeout=3)"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8000/-/readyz',{headers:{'X-Health-Token':process.env.HEALTHCHECK_TOKEN},signal:AbortSignal.timeout(3000)}).then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
       interval: 30s
       start_period: 60s
       timeout: 5s
@@ -106,12 +124,19 @@ services:
 
   worker:
     <<: *application
-    command: ["python", "manage.py", "run_jobs"]
+    command: ["worker"]
     mem_limit: 2g
     cpus: 2
     depends_on: *dependencies
     healthcheck:
-      test: ["CMD", "python", "-c", "from pathlib import Path; import time; assert 0 <= time.time()-Path('/app/var/private/worker-heartbeat').stat().st_mtime < 420"]
+      # The worker writes its heartbeat at least every few minutes while it works.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const a=Date.now()-require('fs').statSync('/app/var/private/worker-heartbeat').mtimeMs;process.exit(a>=-1000&&a<420000?0:1)",
+        ]
       interval: 60s
       start_period: 60s
       timeout: 5s
@@ -171,7 +196,7 @@ services:
       APP_NAME: reimbursements
       APP_IMAGE: *image
       # Settings a restore needs that are not in the backup (names only).
-      APP_SECRETS: DJANGO_SECRET_KEY
+      APP_SECRETS: AUTH_SECRET,DJANGO_SECRET_KEY
     volumes:
       - private_data:/data/private_data:ro
 

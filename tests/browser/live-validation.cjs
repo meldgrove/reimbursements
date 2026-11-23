@@ -1,5 +1,5 @@
 // Delayed field feedback and stale-response regression checks. No uploads or mail.
-// Run against the demo form. FORM_HTML optionally supplies an offline rendered page.
+// Run against the demo form; the participant API's validation is answered here.
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 
@@ -10,9 +10,10 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  let requests = 0, holdNext = false, heldRoute;
-  await require("./offline.cjs")(page, base);
-  await page.route("**/f/demo/validate/", async (route) => {
+  let requests = 0,
+    holdNext = false,
+    heldRoute;
+  await page.route("**/api/v1/public/forms/demo/validate", async (route) => {
     requests++;
     if (holdNext) {
       holdNext = false;
@@ -30,7 +31,9 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
       fields.__all__ = [{ message: "Die Summe aller Positionen ist zu hoch." }];
     for (const row of data.expenses) {
       if (row.kind === "mileage" && row.vehicle_registration === "ß".repeat(20))
-        fields[`expense-${row.id}-vehicle_registration`] = [{ message: "Das Kennzeichen darf höchstens 20 Zeichen haben." }];
+        fields[`expense-${row.id}-vehicle_registration`] = [
+          { message: "Das Kennzeichen darf höchstens 20 Zeichen haben." },
+        ];
       if (row.kind === "mileage" && row.round_trip && row.return_date < row.travel_date)
         fields[`expense-${row.id}-return_date`] = [{ message: "Rückfahrt liegt vor der Hinfahrt." }];
     }
@@ -56,8 +59,8 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
 
     holdNext = true;
     await input("#id_iban", "invalid");
-    await page.waitForRequest("**/f/demo/validate/");
-    const corrected = page.waitForResponse("**/f/demo/validate/");
+    await page.waitForRequest("**/api/v1/public/forms/demo/validate");
+    const corrected = page.waitForResponse("**/api/v1/public/forms/demo/validate");
     await input("#id_iban", "DE89370400440532013000");
     await corrected;
     await heldRoute.fulfill({ json: { fields: { iban: [{ message: "Obsolete error" }] } } });
@@ -77,7 +80,9 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
     const errorId = await amount.getAttribute("aria-describedby");
     assert.match(await page.locator(`[id="${errorId}"]`).textContent(), /positiven Betrag/);
     await amount.fill("12,50");
-    await page.waitForFunction(() => !document.querySelector('[data-field="amount"]').hasAttribute("aria-invalid"));
+    await page.waitForFunction(
+      () => !document.querySelector('[data-field="amount"]').hasAttribute("aria-invalid"),
+    );
     assert.equal(await page.locator(`[id="${errorId}"]`).textContent(), "");
 
     await amount.fill("999");
@@ -92,20 +97,29 @@ const base = process.env.BASE_URL || "http://127.0.0.1:8000";
     // A reorder must not strand errors on another row or lose the current error.
     await mileage.locator('[data-action="up"]').click();
     await plate.fill("B-AB 123");
-    await page.waitForFunction(() => !document.querySelector('[data-field="vehicle_registration"]').hasAttribute("aria-invalid"));
+    await page.waitForFunction(
+      () => !document.querySelector('[data-field="vehicle_registration"]').hasAttribute("aria-invalid"),
+    );
     assert.equal(await mileage.locator('[data-field="route_from"]').getAttribute("aria-invalid"), null);
     await mileage.locator('[data-field="travel_date"]').fill("2026-10-21");
     await mileage.locator('[data-field="round_trip"]').check();
     await mileage.locator('[data-field="return_date"]').fill("2026-10-20");
     await mileage.locator('[data-field="return_date"][aria-invalid="true"]').waitFor();
     await mileage.locator('[data-field="travel_date"]').fill("2026-10-19");
-    await page.waitForFunction(() => !document.querySelector('[data-field="return_date"]').hasAttribute("aria-invalid"));
+    await page.waitForFunction(
+      () => !document.querySelector('[data-field="return_date"]').hasAttribute("aria-invalid"),
+    );
     await page.locator("#review-button").click();
     await page.locator('#id_email[aria-invalid="true"]').waitFor();
     assert.equal(await page.locator("#details-panel").isVisible(), true);
     assert.deepEqual(errors, []);
-    console.log("Live validation passed: debounce, focus, corrections, dependencies, stale responses, expense amounts, and review checks.");
+    console.log(
+      "Live validation passed: debounce, focus, corrections, dependencies, stale responses, expense amounts, and review checks.",
+    );
   } finally {
     await browser.close();
   }
-})().catch((error) => { console.error(error); process.exit(1); });
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

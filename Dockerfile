@@ -1,51 +1,90 @@
-FROM ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
+# One image for every process. The command selects the role:
+#   all      web app and worker
+#   web      web app and API (port 8000)
+#   worker   jobs: upload checks, claim PDFs, email, retention
+#   migrate  apply database migrations (taking over a database of the Django version), then exit
+#   cli      operator commands, e.g. `cli verify-setup --to finance@example.invalid` (apps/server/src/commands)
 
-# The update button, the secret field and the shared colors from @meldgrove/ui (package.json).
-FROM node:26.13.1-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS ui
+FROM node:26.13.1-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS base
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --no-audit --no-fund && npm run static
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+COPY packages/shared/package.json packages/shared/
 
-FROM python:3.13-slim-bookworm@sha256:a5a7017efc5969e00ae2b91c8eb0631049a569652aa4ffc4501769049ae45c72 AS base
-COPY --from=uv /uv /usr/local/bin/uv
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core libseccomp2 \
+FROM base AS deps
+RUN npm ci --no-audit --no-fund
+
+FROM deps AS build
+COPY . .
+RUN npm run build
+# Release builds upload the source maps of the server and the web app to
+# Sentry, which finds them by the debug IDs the build wrote into the bundles
+# (scripts/inject-debug-ids.mjs). Without the token, nothing is uploaded.
+ARG SENTRY_ORG=""
+ARG SENTRY_PROJECT=""
+RUN --mount=type=secret,id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
+    if [ -n "$SENTRY_AUTH_TOKEN" ]; then \
+      export SENTRY_CLI_NO_TELEMETRY=1 SENTRY_CLI_NO_UPDATE_CHECK=1 \
+      && node_modules/.bin/sentry sourcemap upload apps/server/dist \
+      && node_modules/.bin/sentry sourcemap upload apps/web/dist; \
+    fi
+# The web app's source maps would be public under /assets: they stay out of
+# the image. The server's are never served.
+RUN find apps/web/dist -name '*.map' -delete
+
+# The document sandbox (apps/server/native/sandbox): the launcher that applies
+# the resource limits and Landlock before the document child starts, and the
+# add-on with its seccomp filter. Built against this Node's headers; the
+# add-on loads libseccomp.so.2 when it runs, so only the compiler is needed.
+FROM base AS sandbox
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/server/native/sandbox apps/server/native/sandbox
+RUN node apps/server/native/sandbox/build.mjs
+
+FROM base AS prod-deps
+# npm keeps a package under apps/server/node_modules when the lock file puts it
+# there; the folder exists either way, for the copy below.
+RUN npm ci --omit=dev --workspace @reimbursements/server --include-workspace-root=false --no-audit --no-fund \
+    && mkdir -p apps/server/node_modules
+
+FROM node:26.13.1-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS runtime
+# libseccomp2 for the document sandbox (the claim PDF's font comes with the
+# app, apps/server/assets/fonts). The user of the Django version (uid 10001),
+# which owns the private volume and which compose.yaml's backup agent runs as too.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libseccomp2 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10001 portal && useradd --uid 10001 --gid portal --create-home portal
+    && groupadd --gid 10001 portal \
+    && useradd --uid 10001 --gid portal --no-create-home --shell /usr/sbin/nologin portal \
+    && mkdir -p /app/var/private \
+    && chown portal:portal /app/var/private \
+    && chmod 0700 /app/var/private
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    PRIVATE_STORAGE_ROOT=/app/var/private
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
-COPY pyproject.toml uv.lock ./
-
-FROM base AS test
-RUN uv sync --locked
-COPY . .
-RUN mkdir -p var/private && chown -R portal:portal /app
-USER portal
-ENV PATH="/app/.venv/bin:$PATH"
-CMD ["pytest", "-q"]
-
-FROM base AS assets
-# The stylesheet is built here with the pinned standalone Tailwind CLI and the shared
-# colors from the ui stage.
-COPY scripts/tailwind.py scripts/
-COPY portal portal
-COPY --from=ui /app/portal/static/portal/vendor/ portal/static/portal/vendor/
-RUN python scripts/tailwind.py build
-
-FROM base AS runtime
-RUN uv sync --locked --no-dev
-COPY . .
-COPY --from=assets /app/portal/static/portal/ui.css portal/static/portal/ui.css
-COPY --from=ui /app/portal/static/portal/vendor/meldgrove-updates.js /app/portal/static/portal/vendor/meldgrove-secret-input.js portal/static/portal/vendor/
-# Coolify injects deployment variables as build arguments. Static assets need
-# only development defaults, even when those arguments are empty or unresolved.
-RUN env -i PATH="$PATH" PYTHONDONTWRITEBYTECODE=1 DJANGO_DEBUG=1 DEPLOYMENT_ENV=development \
-    /app/.venv/bin/python manage.py collectstatic --noinput \
-    && mkdir -p var/private && chown -R portal:portal /app
+COPY --from=prod-deps --chown=portal:portal /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=portal:portal /app/apps/server/node_modules ./apps/server/node_modules
+COPY --from=build --chown=portal:portal /app/package.json ./package.json
+COPY --from=build --chown=portal:portal /app/apps/server/package.json ./apps/server/package.json
+COPY --from=build --chown=portal:portal /app/apps/server/dist ./apps/server/dist
+COPY --from=build --chown=portal:portal /app/apps/server/drizzle ./apps/server/drizzle
+COPY --from=build --chown=portal:portal /app/apps/web/dist ./apps/web/dist
+COPY --from=build /app/apps/server/assets ./apps/server/assets
+# Owned by root: the app's user cannot change the sandbox it runs parsers in.
+COPY --from=sandbox /app/apps/server/native/build ./apps/server/native/build
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# A server that the updater moves from the Django version (0.4) still has its
+# compose.yaml, which runs `python manage.py ...` and Python health checks.
+COPY --chmod=755 docker-django-compat.sh /usr/local/bin/python
 # The release workflow sets the version; images built from source have none.
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
 USER portal
-ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
-CMD ["sh", "/app/scripts/start-web.sh"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["web"]

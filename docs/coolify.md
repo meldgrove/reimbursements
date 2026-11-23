@@ -46,7 +46,7 @@ differences:
 
 Deploy, then sign in at `/admin/` and continue as
 [first launch](deployment.md#first-launch) describes, with the setup check run in the
-web container. The migration job must complete before web and worker start. For
+terminal of the web container: `docker-entrypoint.sh cli verify-setup --to …`. The migration job must complete before web and worker start. For
 upgrades, stop old workers before migrations and preserve database, private files and
 scanner volumes. Back up the database and private files together before a manual
 upgrade; automatic updates rely on scheduled backups instead.
@@ -55,6 +55,36 @@ Before a manual upgrade, read the GitHub release notes of every version since th
 deployed one; they list the upgrade steps a release needs. Take the steps, then change
 `REIMBURSEMENTS_VERSION` in the resource's environment variables and redeploy. Coolify
 reads `compose.coolify.yaml` from `stable`, which is at the newest release.
+
+### Upgrade from 0.4
+
+[Upgrade from 0.4](deployment.md#upgrade-from-04) says what changes. On Coolify:
+
+1. Back up the database and the private files together, and copy the resource's
+   environment variables (Developer view) somewhere safe: going back needs them.
+2. Keep the environment variables: `DJANGO_SECRET_KEY` and `CSRF_TRUSTED_ORIGINS` still
+   work. When `CSRF_TRUSTED_ORIGINS` lists several `https` origins, add `APP_URL` with
+   the one registered as the redirect URI. Keep `ALLOWED_HOSTS` while you may go back.
+3. Scheduled tasks that run `python manage.py <command>` keep working; their new form
+   is `docker-entrypoint.sh cli <command>`, such as `cli reconcile-deliveries`.
+4. Set `REIMBURSEMENTS_VERSION` to `0.5` and redeploy. The deploy reads 0.5's
+   `compose.coolify.yaml` from `stable`.
+5. Sign in at `/admin/` and run the setup check in the web container's terminal:
+   `docker-entrypoint.sh cli verify-setup --to …`.
+
+To go back to 0.4, the resource must read 0.4's `compose.coolify.yaml` again: a redeploy
+from `stable` reads 0.5's file, whose commands and health checks 0.4's image does not
+have.
+
+1. Clear `UPDATE_DEPLOY_HOOK_URL`, so the updater does not deploy again, and stop the
+   resource.
+2. Point the resource's source at the commit of the tag `v0.4.0` (Git Commit SHA under
+   the resource's source settings; the release page names the commit) instead of the
+   newest commit of `stable`.
+3. Restore the environment variables you copied in step 1, with
+   `REIMBURSEMENTS_VERSION=0.4.0`, and deploy. Change scheduled tasks back to
+   `python manage.py`. Everyone signs in again, and open drafts are lost again.
+4. Before updating again, set the source back to `stable` and the latest commit.
 
 ## Backups
 

@@ -1,6 +1,6 @@
 # Version updates: npm at the root every weekday, the rest weekly. A release
-# is proposed once it has been out for seven days,
-# except @meldgrove/*; security updates ignore the schedule and the cooldown.
+# is proposed once it has been out for seven days, except @meldgrove/*;
+# security updates ignore the schedule and the cooldown.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,17 +9,6 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-  # Python dependencies (pyproject.toml and uv.lock).
-  - package-ecosystem: uv
-    directory: /
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    groups:
-      python-minor-and-patch:
-        patterns: ["*"]
-        update-types: [minor, patch]
   # Images are pinned by digest; these updates keep the digests current and reviewed.
   - package-ecosystem: docker
     directory: /
@@ -28,16 +17,11 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # pyproject.toml requires Python 3.13.
-      - dependency-name: python
-        update-types:
-          - version-update:semver-major
-          - version-update:semver-minor
       # A new Node.js major goes together with engines in package.json.
       - dependency-name: node
         update-types:
           - version-update:semver-major
-  # compose.yaml and its compose.<name>.yaml variants.
+  # compose.yaml, compose.coolify.yaml, compose.postgres.yaml and compose.dev.yaml.
   - package-ecosystem: docker-compose
     directory: /
     schedule:
@@ -49,8 +33,8 @@ updates:
       - dependency-name: postgres
         update-types:
           - version-update:semver-major
-  # @meldgrove/ui (package.json): the update button and the shared colors.
-  # Meldgrove's own packages come at once, in a pull request of their own.
+  # The npm workspaces (package.json, apps/*, packages/*). Meldgrove's own
+  # packages (@meldgrove/ui) come at once, in a pull request of their own.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -65,7 +49,7 @@ updates:
         patterns: ["*"]
         exclude-patterns: ["@meldgrove/*"]
         update-types: [minor, patch]
-  # Playwright for the browser checks; CI installs the Chromium of the locked version.
+  # Playwright for the browser checks.
   - package-ecosystem: npm
     directory: /tests/browser
     schedule:

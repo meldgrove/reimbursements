@@ -39,7 +39,7 @@ such as `0.3.2` or `0.3.3-preview.1`.
 
 ## Update button
 
-Template admins see an update icon in the admin header; form editors do not. It checks
+Template admins see an update icon at the right of the admin header; form editors do not. It checks
 for updates on click, shows an available update with its changes and when it installs,
 installs it at once with **Install now**, shows the progress, and says why an
 installation failed. Web and worker restart during an installation; the page reloads
@@ -52,8 +52,8 @@ then install it with **Install anyway…**.
 Admin > Updates shows the installed version, the channel, when updates install
 automatically and the last check. The button and Admin > Updates come from
 `@meldgrove/ui`, the same in every Meldgrove app; the app serves their four routes under
-`/admin/updates/`. Without a reachable updater, the icon is grey and Admin > Updates says
-so. `UPDATER_URL` is where the app reaches the updater, `http://updater:8080` by
+`/api/v1/admin/updates` to template admins, and the page is `/admin/updates`. Without
+a reachable updater, the icon is grey and Admin > Updates says so. `UPDATER_URL` is where the app reaches the updater, `http://updater:8080` by
 default. Under `compose.yaml` an empty value falls back to that default; empty hides
 the icon only where the app reads its environment directly, as in the local setup.
 The updater's port has no authentication: never publish it.

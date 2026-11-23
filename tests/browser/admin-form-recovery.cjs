@@ -1,102 +1,131 @@
-// Publication and archive regressions against a real admin editor; all save requests are intercepted.
-// Requires FORM_ADMIN_URL for an unused local draft and ADMIN_STORAGE_STATE for a local admin session.
+// Publication and archive regressions of the form editor in a real browser; every save is intercepted.
+// Needs the app at BASE_URL with DEV_LOGIN=1 (development) and a template admin ADMIN_USERNAME, or
+// ADMIN_STORAGE_STATE with a session of one. The script makes a draft of its own and leaves it.
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 
-const editorUrl = process.env.FORM_ADMIN_URL;
+const base = process.env.BASE_URL || "http://localhost:5173";
+const username = process.env.ADMIN_USERNAME;
 const storageState = process.env.ADMIN_STORAGE_STATE;
 const scenario = process.env.SCENARIO || "all";
-if (!editorUrl || !storageState)
-  throw new Error("Set FORM_ADMIN_URL and ADMIN_STORAGE_STATE for a local draft editor.");
+if (!username && !storageState)
+  throw new Error("Set ADMIN_USERNAME (with DEV_LOGIN=1) or ADMIN_STORAGE_STATE.");
 
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
   try {
-    const context = await browser.newContext({ storageState });
+    const context = await browser.newContext(storageState ? { storageState } : {});
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("dialog", (dialog) => dialog.accept());
-    await page.goto(editorUrl);
-    const toggle = page.locator("[data-publication-toggle]");
-    const archiveToggle = page.locator("[data-archive-toggle]");
-    const retry = page.locator("[data-autosave-retry]");
-    const status = page.locator("[data-autosave-status]");
-    const badge = page.locator("[data-form-status]");
-    const indicator = page.locator("[data-autosave-indicator]");
-    const deleteLink = page.locator("[data-form-delete]");
-    const pathname = new URL(editorUrl).pathname;
-    const slug = await page.locator("#id_slug").inputValue();
-    let serverStatus = await badge.getAttribute("data-status");
-    assert.equal(serverStatus, "draft", "Use a draft form for this test.");
+    await page.goto(`${base}/admin/login`);
+    if (username) {
+      const status = await page.evaluate(
+        async (name) =>
+          (
+            await fetch("/api/v1/auth/dev-login", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ username: name }),
+            })
+          ).status,
+        username,
+      );
+      assert.equal(status, 200, "Development sign-in failed: is DEV_LOGIN=1 set?");
+    }
+    // A draft of the first template, for this test alone.
+    const draft = await page.evaluate(async () => {
+      const templates = await (await fetch("/api/v1/admin/forms/templates")).json();
+      const response = await fetch(`/api/v1/admin/forms?template=${templates[0].id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Browser check", instructions: "Synthetic" }),
+      });
+      return response.json();
+    });
+    const pathname = `/api/v1/admin/forms/${draft.id}`;
+    await page.goto(`${base}/admin/forms/${draft.id}`);
+
+    const toggle = () => page.getByRole("button", { name: /^(Publish|Unpublish)$/ });
+    const archiveToggle = () => page.getByRole("button", { name: /^(Archive|Unarchive)$/ });
+    const retry = page.getByRole("button", { name: "Try again", exact: true });
+    const status = page.locator("[data-save-state]");
+    const deleteButton = page.getByRole("button", { name: "Delete", exact: true });
+    await status.waitFor();
+    let serverStatus = draft.status;
+    assert.equal(serverStatus, "draft");
     const statusAfter = { publish: "published", unpublish: "draft", archive: "archived", unarchive: "draft" };
     const labels = { draft: "Draft", published: "Published", archived: "Archived" };
     const actions = [];
     let failure = null;
     let delayNextSave = null;
 
-    const field = (body, name) =>
-      body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r\\n]*)`))?.[1] || "";
-    await page.route((url) => url.pathname === pathname, async (route) => {
-      if (route.request().method() !== "POST") return route.continue();
-      const body = route.request().postDataBuffer().toString();
-      const action = field(body, "_publication") || null;
-      actions.push(action);
-      const fail = failure;
-      failure = null;
-      const delay = delayNextSave;
-      delayNextSave = null;
-      if (delay) await delay;
-      if (fail === "network") return route.abort("failed");
-      if (fail === "http")
-        return route.fulfill({ status: 503, json: { error: "Synthetic server failure" } });
-      if (action) serverStatus = statusAfter[action];
-      if (fail === "response-lost") return route.abort("failed");
-      return route.fulfill({
-        json: {
-          url: pathname,
-          name: field(body, "name"),
-          slug,
-          status: serverStatus,
-          status_label: labels[serverStatus],
-          primary: false,
-          link: `/f/${slug}/`,
-          delete_url: pathname.replace(/change\/$/, "delete/"),
-          can_delete: serverStatus !== "published",
-        },
-      });
-    });
+    await page.route(
+      (url) => url.pathname === pathname,
+      async (route) => {
+        if (route.request().method() !== "PUT") return route.continue();
+        const body = JSON.parse(route.request().postData() || "{}");
+        const action = body.action || null;
+        actions.push(action);
+        const fail = failure;
+        failure = null;
+        const delay = delayNextSave;
+        delayNextSave = null;
+        if (delay) await delay;
+        if (fail === "network") return route.abort("failed");
+        if (fail === "http")
+          return route.fulfill({
+            status: 503,
+            json: { error: { code: "unavailable", message: "Synthetic server failure" } },
+          });
+        if (action) serverStatus = statusAfter[action];
+        if (fail === "response-lost") return route.abort("failed");
+        return route.fulfill({
+          json: {
+            id: draft.id,
+            name: body.name,
+            slug: draft.slug,
+            status: serverStatus,
+            primary: false,
+            link: `/f/${draft.slug}/`,
+            canDelete: serverStatus !== "published",
+          },
+        });
+      },
+    );
 
     async function saved() {
       await page.getByText("All changes saved.", { exact: true }).waitFor();
-      assert.equal(await indicator.getAttribute("data-save-state"), "saved");
-      assert.equal(await page.locator('[data-save-symbol="saved"]').isVisible(), true);
-      assert.equal(await deleteLink.isVisible(), serverStatus !== "published");
-      for (const name of Object.keys(labels)) {
-        assert.equal(await page.locator(`[data-${name}-badge]`).isVisible(), serverStatus === name);
+      assert.equal(await status.getAttribute("data-save-state"), "saved");
+      assert.equal(await deleteButton.isVisible(), serverStatus !== "published");
+      for (const [name, label] of Object.entries(labels)) {
+        assert.equal(await page.getByText(label, { exact: true }).isVisible(), serverStatus === name, label);
       }
       // An archived form is unarchived as a draft before it can be published again.
-      assert.equal(await toggle.isVisible(), serverStatus !== "archived");
-      assert.equal(await archiveToggle.isVisible(), true);
-      assert.equal((await archiveToggle.textContent()).trim(),
-        serverStatus === "archived" ? "Unarchive" : "Archive");
+      assert.equal(await toggle().isVisible(), serverStatus !== "archived");
+      assert.equal(
+        (await archiveToggle().textContent()).trim(),
+        serverStatus === "archived" ? "Unarchive" : "Archive",
+      );
     }
 
     async function failedThenRetry(action, mode, editWhileFailed = false) {
       failure = mode;
       const before = actions.length;
-      await (action.endsWith("archive") ? archiveToggle : toggle).click();
+      await (action.endsWith("archive") ? archiveToggle() : toggle()).click();
       await retry.waitFor({ state: "visible" });
-      assert.equal(await indicator.getAttribute("data-save-state"), "error");
-      assert.equal(await page.locator('[data-save-symbol="error"]').isVisible(), true);
+      assert.equal(await status.getAttribute("data-save-state"), "error");
       assert.equal(actions.at(-1), action);
       await page.waitForTimeout(700);
       assert.equal(actions.length, before + 1, "Failures must wait for an explicit retry.");
       if (editWhileFailed) {
         const unchangedStatus = serverStatus;
-        const response = page.waitForResponse((response) =>
-          response.request().method() === "POST" && new URL(response.url()).pathname === pathname);
-        await page.locator("#id_instructions").fill(`Synthetic edit after failed ${action}`);
+        const response = page.waitForResponse(
+          (response) =>
+            response.request().method() === "PUT" && new URL(response.url()).pathname === pathname,
+        );
+        await page.getByLabel("Notes for participants").fill(`Synthetic edit after failed ${action}`);
         await response;
         if (mode === "response-lost") {
           // The ordinary save confirms the state of an earlier committed transition.
@@ -109,13 +138,12 @@ if (!editorUrl || !storageState)
         await retry.waitFor({ state: "visible" });
         assert.equal(serverStatus, unchangedStatus, "Autosave must not replay publication actions.");
         assert.equal(actions.at(-1), null);
-        assert.notEqual(await status.textContent(), "All changes saved.");
+        assert.notEqual((await status.textContent()).trim(), "All changes saved.");
       }
       await retry.click();
       await saved();
       assert.equal(actions.at(-1), action, "Explicit retry must preserve the requested transition.");
       assert.equal(serverStatus, statusAfter[action]);
-      assert.equal(await badge.getAttribute("data-status"), serverStatus);
       assert.equal(await retry.isVisible(), false);
     }
 
@@ -134,17 +162,16 @@ if (!editorUrl || !storageState)
     if (scenario === "all" || scenario === "keyboard") {
       for (const expected of ["draft", "published"]) {
         const before = actions.length;
-        const name = page.locator("#id_name");
+        const name = page.getByLabel(/^Name/);
         await name.fill(`Synthetic ${expected} keyboard edit`);
         await name.press("Enter");
         await saved();
         assert.equal(serverStatus, expected, "Enter in a text input must preserve publication status.");
-        assert.equal(await badge.getAttribute("data-status"), expected);
         assert.ok(actions.length > before);
         assert.ok(actions.slice(before).every((action) => action === null));
         // Enter on the publication button remains an explicit keyboard activation.
-        await toggle.focus();
-        await toggle.press("Enter");
+        await toggle().focus();
+        await toggle().press("Enter");
         await saved();
         assert.equal(serverStatus, expected === "draft" ? "published" : "draft");
       }
@@ -160,32 +187,45 @@ if (!editorUrl || !storageState)
       await failedThenRetry("unarchive", "network", true);
       console.log("Passed archiving and unarchiving retries through the save queue.");
     }
+
     if (scenario === "all") {
       let finishSave;
-      delayNextSave = new Promise((resolve) => { finishSave = resolve; });
-      const requested = page.waitForRequest((request) =>
-        request.method() === "POST" && new URL(request.url()).pathname === pathname);
-      await page.locator("#id_instructions").fill("Synthetic save indicator check");
+      delayNextSave = new Promise((resolve) => {
+        finishSave = resolve;
+      });
+      const requested = page.waitForRequest(
+        (request) => request.method() === "PUT" && new URL(request.url()).pathname === pathname,
+      );
+      await page.getByLabel("Notes for participants").fill("Synthetic save indicator check");
       await requested;
-      assert.equal(await indicator.getAttribute("data-save-state"), "saving");
-      assert.equal(await page.locator('[data-save-symbol="saving"]').isVisible(), true);
-      assert.equal(await page.locator('[data-save-symbol="saved"]').isVisible(), false);
+      assert.equal(await status.getAttribute("data-save-state"), "saving");
       finishSave();
       await saved();
-      const toolbar = page.locator("[data-form-toolbar]");
-      const controls = await Promise.all([
-        toolbar.locator("[data-publication-toggle]").boundingBox(),
-        toolbar.locator("[data-archive-toggle]").boundingBox(),
-        toolbar.getByRole("link", { name: "Preview", exact: true }).boundingBox(),
-        toolbar.getByRole("link", { name: "History", exact: true }).boundingBox(),
+      const boxes = await Promise.all([
+        toggle().boundingBox(),
+        archiveToggle().boundingBox(),
+        page.getByRole("link", { name: "Preview", exact: true }).boundingBox(),
+        deleteButton.boundingBox(),
       ]);
-      assert.ok(controls.every((box) => box && Math.abs(box.y - controls[0].y) < 1));
-      await deleteLink.click();
-      await page.getByRole("heading", { name: "Delete draft?", exact: true }).waitFor();
-      assert.equal(await page.getByRole("button", { name: "Delete draft for good", exact: true }).isVisible(), true);
-      await page.getByRole("link", { name: "Cancel", exact: true }).click();
-      await page.locator("[data-publication-toggle]").waitFor();
-      console.log("Passed save indicators, toolbar alignment, draft deletion visibility, and confirmation cancellation.");
+      assert.ok(
+        boxes.every((box) => box && Math.abs(box.y - boxes[0].y) < 1),
+        "Toolbar buttons on one line.",
+      );
+      await deleteButton.click();
+      const dialog = page.getByRole("alertdialog");
+      await dialog
+        .getByText("The draft and its form link are deleted permanently.", { exact: false })
+        .waitFor();
+      assert.equal(
+        await dialog.getByRole("button", { name: "Delete draft for good", exact: true }).isVisible(),
+        true,
+      );
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await toggle().waitFor();
+      console.log(
+        "Passed save indicators, toolbar alignment, draft deletion visibility, and confirmation cancellation.",
+      );
     }
     assert.deepEqual(errors, []);
   } finally {
