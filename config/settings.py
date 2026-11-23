@@ -117,6 +117,9 @@ DATABASES = {
     "default": dj_database_url.parse(
         os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'var/development.sqlite3'}"),
         conn_max_age=60,
+        # A kept connection dies when PostgreSQL restarts. Each request and each round of
+        # the worker checks it before its first query and reconnects instead of failing.
+        conn_health_checks=True,
     )
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
