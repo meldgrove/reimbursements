@@ -39,7 +39,7 @@ describe("admin area", () => {
     mockApi({ "/api/v1/meta": { body: testMeta({ user: ADMIN }) } });
     const { router } = renderApp("/admin");
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/claims"));
-    for (const label of ["Forms", "General", "Templates", "Privacy notice", "Updates"]) {
+    for (const label of ["Forms", "General", "Email", "Templates", "Privacy notice", "Updates"]) {
       expect((await screen.findAllByText(label)).length).toBeGreaterThan(0);
     }
   });

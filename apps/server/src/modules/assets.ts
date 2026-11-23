@@ -44,6 +44,7 @@ export function legacyAdminPath(path: string): string | null {
     [/^\/admin\/portal\/privacynotice\/add\/?.*$/, () => "/admin/privacy-notice/new"],
     [/^\/admin\/portal\/privacynotice(\/.*)?$/, () => "/admin/privacy-notice"],
     [/^\/admin\/portal\/appsettings(\/.*)?$/, () => "/admin/general"],
+    [/^\/admin\/portal\/emailsettings(\/.*)?$/, () => "/admin/email"],
     [/^\/admin\/portal\/appearance(\/.*)?$/, () => "/admin/appearance"],
     [/^\/admin\/portal\/updates(\/.*)?$/, () => "/admin/updates"],
     [/^\/admin\/updates(\/.*)?\/$/, () => "/admin/updates"],

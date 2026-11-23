@@ -24,6 +24,7 @@ const PAGES: { label: string; url: string; templateAdmins: boolean }[] = [
   { label: "Claims", url: "/admin/claims", templateAdmins: false },
   { label: "Forms", url: "/admin/forms", templateAdmins: false },
   { label: "General", url: "/admin/general", templateAdmins: true },
+  { label: "Email", url: "/admin/email", templateAdmins: true },
   { label: "Appearance", url: "/admin/appearance", templateAdmins: true },
   { label: "Templates", url: "/admin/templates", templateAdmins: true },
   { label: "Privacy notice", url: "/admin/privacy-notice", templateAdmins: true },

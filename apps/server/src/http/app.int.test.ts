@@ -164,6 +164,7 @@ describe("addresses of the Django version", () => {
     ["/admin/portal/formtemplate/3/change/", "/admin/templates/3"],
     ["/admin/portal/privacynotice/add/", "/admin/privacy-notice/new"],
     ["/admin/portal/appsettings/1/change/", "/admin/general"],
+    ["/admin/portal/emailsettings/1/change/", "/admin/email"],
     ["/admin/portal/appearance/1/change/", "/admin/appearance"],
     ["/admin/portal/updates/", "/admin/updates"],
     ["/admin/login/", "/admin/login"],

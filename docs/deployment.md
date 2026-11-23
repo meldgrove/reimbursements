@@ -68,21 +68,38 @@ set (exactly one address), else the first `https` origin of `CSRF_TRUSTED_ORIGIN
 without a wildcard. Every origin `CSRF_TRUSTED_ORIGINS` lists, wildcards included,
 may send changes, as in 0.4. With several addresses, set `APP_URL` to the one
 registered as the redirect URI. `DJANGO_SECRET_KEY` (or `AUTH_SECRET`, which wins when
-both are set) signs the sessions: a random secret of at least 50 characters.
+both are set) signs the sessions and seals the secrets entered under Admin > Email: a
+random secret of at least 50 characters.
 
 Set `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app language, timezone and date
 format are set after the first sign-in under Admin > General, the accent color and
-favicon under Admin > Appearance. Set `MAIL_FROM_ADDRESS`
-to an address in a verified MailerSend domain, and `MAIL_REPLY_TO_ADDRESS` to a
-monitored inbox. `APPROVED_DELIVERY_RECIPIENTS` lists every inbox a form may send to.
-For staging, also set a nonempty `TEST_RECIPIENT_ALLOWLIST`; it restricts accounting
-and participant messages. Do not make production receipts available to staging.
+favicon under Admin > Appearance. `APPROVED_DELIVERY_RECIPIENTS` lists every inbox a
+form may send to. For staging, also set a nonempty `TEST_RECIPIENT_ALLOWLIST`; it
+restricts accounting and participant messages. Do not make production receipts
+available to staging.
 
-Supply MailerSend API credentials and a webhook signing secret. Create a version
-2 webhook at `https://reimbursements.example.invalid/webhooks/mailersend/`, using
-your actual hostname. Subscribe to supported sent, delivered, deferred, bounced
-and suppressed events. Disable provider tracking. See [operations](operations.md)
-for ambiguous delivery outcomes and retry controls.
+Set up email after the first sign-in under Admin > Email, and send a test email from
+there. Forms take no claims until it is set up. Choose one provider:
+
+- **MailerSend**: enter an API token, and a sender address on a verified MailerSend
+  domain. Create a version 2 webhook at
+  `https://reimbursements.example.invalid/webhooks/mailersend/`, using your actual
+  hostname, subscribe it to the supported sent, delivered, deferred, bounced and
+  suppressed events, and enter its signing secret. Disable provider tracking. The
+  page shows when the last signed event arrived.
+- **SMTP server**: enter the server, port, encryption (STARTTLS, TLS, or none for a
+  relay in a trusted network) and, if it needs a login, username and password. SMTP
+  reports no deliveries or bounces back: an email counts as delivered once the server
+  accepts it, and bounces go to the sender address.
+
+Also enter the reply address for Finance emails, a monitored inbox. Tokens, signing
+secrets and passwords entered there are stored encrypted with a key derived from
+`AUTH_SECRET` (or `DJANGO_SECRET_KEY`); after changing that secret, enter them again.
+Instead of entering them, you can set `MAILERSEND_API_TOKEN` (which chooses
+MailerSend), `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS` and
+`MAIL_REPLY_TO_ADDRESS` in the environment; a value set there wins and the admin area
+shows it without letting anyone change it. See [operations](operations.md) for
+ambiguous delivery outcomes and retry controls.
 
 Optionally set `SENTRY_DSN` for error reports from web, worker, migrations and `cli`
 commands. See
@@ -166,10 +183,11 @@ Run the commands as root (`sudo -i`).
 
 Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your
 operator's notice, review the template declaration, and create a form with an
-approved recipient, support address and required internal values. Then run
+approved recipient, support address and required internal values. Set up email under
+Admin > Email ([above](#application-settings)). Then run
 `docker compose run --rm web cli verify-setup --to <an approved inbox>`.
-It sends a synthetic claim through the scanner, document sandbox, MailerSend and the
-signed delivery webhook, and deletes it again; see
+It sends a synthetic claim through the scanner, document sandbox, the email provider
+and, with MailerSend, the signed delivery webhook, and deletes it again; see
 [setup check](operations.md#setup-check). Publish your form and send a synthetic claim
 through it before accepting participant data, and verify its PDF.
 
@@ -253,6 +271,12 @@ What changes:
   processed and sent as usual, and their confirmation email still arrives. Tell
   support to answer such questions from the admin area, so that nobody submits again.
 - Everyone in the admin area signs in once more.
+- Email keeps working as it did: the MailerSend variables in `.env` still choose
+  MailerSend and win over Admin > Email, which 0.5 adds (MailerSend or an SMTP server,
+  and the participant confirmation's text). A server that ran a 0.4 preview with
+  Admin > Email keeps its settings there; keep `DJANGO_SECRET_KEY` in `.env`, so the
+  secrets entered there still open when `AUTH_SECRET` differs. 0.4 ignores the page's
+  table if you go back.
 - The admin area is the app frame of the other Meldgrove apps. Its pages have new
   addresses (`/admin/claims`, `/admin/forms`, ...); links to the pages of 0.4 lead to
   the new ones. Participant links (`/f/<form>/`, `/received/<id>/`) stay.

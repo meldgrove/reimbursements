@@ -346,7 +346,9 @@ Email provider and recipient copies follow their separately approved retention p
 ## Backup and restore
 
 Back up PostgreSQL and private source/PDF files together, encrypted and off-host.
-Do not back up only the database. Record the backup interval, expiry, key access,
+Do not back up only the database. Keep `AUTH_SECRET` (or `DJANGO_SECRET_KEY`) apart
+from the backups: without it, the secrets entered under Admin > Email cannot be read
+after a restore and have to be entered again. Record the backup interval, expiry, key access,
 recovery time target, and accepted loss window. The current single-host acceptance
 path cannot promise survival of total host loss since the last backup; zero-loss
 acceptance requires off-host file durability and matching database durability.

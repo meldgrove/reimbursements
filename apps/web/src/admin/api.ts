@@ -4,6 +4,7 @@ import type {
   ClaimDetail,
   ClaimList,
   DeletePreview,
+  EmailSettingsPage,
   FormEditor,
   FormList,
   GeneralSettingsPage,
@@ -123,6 +124,12 @@ export const newPrivacyNoticeQuery = queryOptions({
 export const generalQuery = queryOptions({
   queryKey: ["admin", "settings", "general"],
   queryFn: ({ signal }) => api.get<GeneralSettingsPage>("/admin/settings/general", undefined, signal),
+  refetchOnWindowFocus: false,
+});
+
+export const emailQuery = queryOptions({
+  queryKey: ["admin", "settings", "email"],
+  queryFn: ({ signal }) => api.get<EmailSettingsPage>("/admin/settings/email", undefined, signal),
   refetchOnWindowFocus: false,
 });
 

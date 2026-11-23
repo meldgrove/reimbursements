@@ -23,6 +23,9 @@ x-application: &application
     # Signs sessions: a random secret of at least 50 characters. The Django
     # version's DJANGO_SECRET_KEY stands in; AUTH_SECRET wins when both are set.
     AUTH_SECRET: ${AUTH_SECRET:-${DJANGO_SECRET_KEY:?Set AUTH_SECRET to a random secret of at least 50 characters}}
+    # Still opens the secrets entered under Admin > Email that a version before sealed
+    # with it, when AUTH_SECRET differs.
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
     # The public URL, e.g. https://reimbursements.example.invalid: sign-in sends the
     # provider back to it. Without APP_URL, the Django version's CSRF_TRUSTED_ORIGINS
     # stands in (its first https origin without a wildcard), and every origin it lists
@@ -44,15 +47,16 @@ x-application: &application
     OIDC_ISSUER: ${OIDC_ISSUER:-}
     # The ID token claim that lists the person's groups.
     OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
-    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:?Set the verified sender address}
-    MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:?Set the reply address}
+    # Email is set up under Admin > Email; values set here win over it.
+    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+    MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:-}
     OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set the sign-in client ID}
     OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set the sign-in client secret}
     KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP:-/reimbursements/admins}
     KEYCLOAK_EDITOR_GROUP: ${KEYCLOAK_EDITOR_GROUP:-/reimbursements/editors}
-    MAIL_DELIVERY_MODE: mailersend
-    MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:?Set the MailerSend API token}
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: ${MAILERSEND_WEBHOOK_SIGNING_SECRET:?Set the webhook signing secret}
+    MAIL_DELIVERY_MODE: send
+    MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
+    MAILERSEND_WEBHOOK_SIGNING_SECRET: ${MAILERSEND_WEBHOOK_SIGNING_SECRET:-}
     APPROVED_DELIVERY_RECIPIENTS: ${APPROVED_DELIVERY_RECIPIENTS:?Set the approved accounting inboxes}
     TEST_RECIPIENT_ALLOWLIST: ${TEST_RECIPIENT_ALLOWLIST:-}
     UPLOAD_SCANNER: clamav

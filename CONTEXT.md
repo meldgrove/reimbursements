@@ -12,7 +12,7 @@ are in [the form contract](docs/form-contract.md); operations in
   forms list (`apps/server/src/services/publication.ts`).
 - **Accepting**: a form takes new claims while it is **open** (published, within its
   opening times, its internal values fit its template) and **available** (an approved
-  Finance inbox and a privacy notice). The Draft gate, the start page and the admin's
+  Finance inbox, a privacy notice and a ready email connection). The Draft gate, the start page and the admin's
   Open now use one rule (`terms.refusal`).
 - **Terms**: what a participant agrees to and what their entries are validated against:
   the declaration and its version, the privacy notice, the purpose options, the travel
@@ -52,6 +52,10 @@ are in [the form contract](docs/form-contract.md); operations in
 
 ## Email
 
+- **Email connection**: the provider that sends every email, MailerSend or an SMTP
+  server, with its credentials and the sender address. Admins set it up under Admin >
+  Email; a value in the environment wins over its field there. It is **ready** once
+  everything the provider needs is there (`apps/server/src/services/email-connection.ts`).
 - **Outbound email**: every email the app sends, through `apps/server/src/services/outbound.ts`:
   recipient rules, composing and transmitting each message once (a failure while
   composing is definite), and forgetting local copies and Evidence. Each email has one
@@ -59,8 +63,9 @@ are in [the form contract](docs/form-contract.md); operations in
 - **Finance delivery**: sending a claim's PDF to its approved Finance inbox, in one or
   more **Delivery attempts**.
 - **Confirmation**: the participant's confirmation of receipt, without attachments or
-  banking details.
+  banking details. Admins can turn it off and write its subject and text per language.
 - **Evidence**: what MailerSend says about a sent email, from a webhook or a lookup.
+  An SMTP server gives none: its acceptance of a message counts as delivery.
   The MailerSend adapter translates it; the Evidence module (`apps/server/src/services/evidence.ts`)
   applies it to the email's record and reconciles the unsettled emails of every sender.
 

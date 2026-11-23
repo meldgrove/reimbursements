@@ -15,6 +15,7 @@ import { NewPrivacyNoticePage } from "./privacy/new-privacy-notice-page";
 import { PrivacyNoticeVersionPage } from "./privacy/privacy-notice-version-page";
 import { GeneralPage } from "./settings/general-page";
 import { AppearancePage } from "./settings/appearance-page";
+import { EmailPage } from "./settings/email-page";
 import { UpdatesPage } from "./settings/updates-page";
 import { SearchPage } from "./search-page";
 import type { ClaimsSearch, FormsSearch } from "./api";
@@ -161,6 +162,13 @@ export const generalRoute = createRoute({
   component: GeneralPage,
 });
 
+export const emailRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "/admin/email",
+  beforeLoad: requireTemplateAdmin,
+  component: EmailPage,
+});
+
 export const appearanceRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "/admin/appearance",
@@ -203,6 +211,7 @@ export const adminRoutes = [
   newPrivacyNoticeRoute,
   privacyNoticeVersionRoute,
   generalRoute,
+  emailRoute,
   appearanceRoute,
   updatesRoute,
   settingsRoute,

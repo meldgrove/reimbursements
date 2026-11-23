@@ -27,6 +27,7 @@ export function navigationFor(me: Pick<MeUser, "isTemplateAdmin">): NavGroup[] {
       label: "Admin",
       items: [
         { label: "General", to: "/admin/general" },
+        { label: "Email", to: "/admin/email" },
         { label: "Appearance", to: "/admin/appearance" },
         { label: "Templates", to: "/admin/templates" },
         { label: "Privacy notice", to: "/admin/privacy-notice" },

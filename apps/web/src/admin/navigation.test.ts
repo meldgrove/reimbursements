@@ -10,6 +10,7 @@ describe("admin navigation", () => {
     expect(groups[1]?.label).toBe("Admin");
     expect(groups[1]?.items.map((item) => item.label)).toEqual([
       "General",
+      "Email",
       "Appearance",
       "Templates",
       "Privacy notice",
