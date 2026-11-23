@@ -3,6 +3,6 @@
   "private": true,
   "description": "Playwright for the browser checks in this directory; see docs/browser-checks.md.",
   "devDependencies": {
-    "playwright": "1.64.1"
+    "playwright": "1.65.0"
   }
 }
