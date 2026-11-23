@@ -16,7 +16,7 @@ from django.utils import timezone
 from portal import app_settings
 from portal.i18n import t
 from portal.models import Claim, Delivery, DeliveryAttempt
-from portal.services import outbound, queue, retention
+from portal.services import email_connection, outbound, queue, retention
 from portal.services.outbound import Undeliverable
 from portal.services.storage import path_for
 from portal.services.transport import (
@@ -107,10 +107,11 @@ def compose(attempt):
             "The complete reimbursement form and all receipts are in the attached PDF.\n",
             **values,
         )
+    connection = email_connection.current()
     return Message(
         attempt_id=str(attempt.id),
-        sender=settings.MAIL_FROM_ADDRESS,
-        reply_to=settings.MAIL_REPLY_TO_ADDRESS,
+        sender=connection.sender,
+        reply_to=connection.reply_to,
         recipient=delivery.recipient,
         subject=subject,
         text=text,

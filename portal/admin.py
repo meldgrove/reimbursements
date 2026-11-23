@@ -1,6 +1,8 @@
 """The admin area, always in English: claims, forms, templates, the privacy notice and the
-General and Appearance settings, behind Keycloak. Updates are in portal.admin_updates."""
+General, Email and Appearance settings, behind Keycloak. Updates are in
+portal.admin_updates; the Email tab's form in portal.admin_email."""
 
+import logging
 import uuid
 
 from django import forms
@@ -19,12 +21,14 @@ from django.utils.html import format_html, format_html_join
 from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from mozilla_django_oidc.views import OIDCLogoutView
 
-from portal import admin_navigation, admin_updates, app_settings, roles, theme
+from portal import admin_email, admin_navigation, admin_updates, app_settings, roles, theme
 from portal.constants import APP_NAME
+from portal.i18n import LANGUAGES
 from portal.models import (
     Appearance,
     AppSettings,
     Claim,
+    EmailSettings,
     Form,
     FormTemplate,
     Operation,
@@ -35,7 +39,9 @@ from portal.models import (
 from portal.roles import is_form_editor, is_template_admin
 from portal.services import (
     claim_status,
+    confirmations,
     delivery,
+    email_connection,
     operations,
     publication,
     retention,
@@ -43,6 +49,7 @@ from portal.services import (
 )
 from portal.templatetags.ui import render_component
 
+logger = logging.getLogger(__name__)
 # The sidebar's state on wide screens, the cookie of @meldgrove/ui's frame ("false": folded).
 SIDEBAR_COOKIE = "sidebar_state"
 
@@ -298,6 +305,186 @@ class AppSettingsAdmin(SettingsTabAdmin):
         return settings.APP_VERSION or "Built from source"
 
 
+@admin.register(EmailSettings, site=site)
+class EmailSettingsAdmin(SettingsTabAdmin):
+    """The Email tab: the provider that sends email, and the participant confirmation."""
+
+    form = admin_email.EmailSettingsForm
+    change_form_template = "admin/portal/email_settings.html"
+    title = "Email"
+    description = "How the app sends email to Finance and to participants."
+    saved_message = "The email settings were saved."
+    readonly_fields = ["connection_status", "webhook_status"]
+
+    class Media:
+        js = [forms.Script("portal/admin-email.js", defer=True)]
+
+    def get_fieldsets(self, request, obj=None):
+        saved = obj or EmailSettings.load()
+
+        def secret(name):
+            # Deleting is offered for a saved secret the environment does not replace.
+            if email_connection.environment(name) or not saved.secret_saved(name):
+                return [name]
+            return [name, f"delete_{name}"]
+
+        languages = [
+            field
+            for code, _ in LANGUAGES
+            for field in (f"confirmation_subject_{code}", f"confirmation_body_{code}")
+        ]
+        placeholders = format_html_join(
+            ", ", "<code>{{{}}}</code> {}", confirmations.PLACEHOLDERS.items()
+        )
+        return [
+            ("Status", {"fields": ["connection_status"]}),
+            ("Sending", {"fields": ["provider", "from_address", "reply_to_address"]}),
+            (
+                "MailerSend",
+                {
+                    "fields": [
+                        "webhook_status",
+                        *secret("mailersend_token"),
+                        *secret("webhook_secret"),
+                    ],
+                    "classes": ["provider-mailersend"],
+                    "description": "Sends through the MailerSend API and learns from its "
+                    "webhook whether each email was delivered.",
+                },
+            ),
+            (
+                "SMTP server",
+                {
+                    "fields": [
+                        "smtp_host",
+                        "smtp_port",
+                        "smtp_security",
+                        "smtp_username",
+                        *secret("smtp_password"),
+                    ],
+                    "classes": ["provider-smtp"],
+                    "description": "SMTP reports no deliveries or bounces back to the app: an "
+                    "email counts as delivered once the server accepts it, and bounces go to "
+                    "the sender address.",
+                },
+            ),
+            (
+                "Confirmation of receipt",
+                {
+                    "fields": ["confirmation_enabled", *languages],
+                    "description": format_html(
+                        "Participants receive it once their claim is accepted, in the language "
+                        "they saw, without receipts or banking details. Placeholders: {}.",
+                        placeholders,
+                    ),
+                },
+            ),
+        ]
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        self._request = request
+        test_form = admin_email.TestEmailForm(initial={"to": request.user.email})
+        extra_context = {**(extra_context or {}), "test_form": test_form}
+        return super().change_view(request, object_id, form_url, extra_context)
+
+    def get_urls(self):
+        return [
+            path(
+                "test/",
+                self.admin_site.admin_view(self.test_view),
+                name="portal_emailsettings_test",
+            ),
+            *super().get_urls(),
+        ]
+
+    def test_view(self, request):
+        """Send a test email with the saved settings, then show the Email tab again."""
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+        form = admin_email.TestEmailForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Enter the email address for the test email.")
+            return redirect("admin:portal_emailsettings_change", 1)
+        recipient = form.cleaned_data["to"]
+        try:
+            connection, result = admin_email.send_test(recipient)
+        except Exception:
+            logger.exception("email_test_failed")
+            messages.error(request, "Sending failed unexpectedly; the email may still arrive.")
+        else:
+            reached, text = admin_email.test_outcome(connection, recipient, result)
+            (messages.success if reached else messages.error)(request, text)
+        return redirect("admin:portal_emailsettings_change", 1)
+
+    @admin.display(description="Sending")
+    def connection_status(self, obj):
+        connection = email_connection.current(obj)
+        if connection.provider == email_connection.LOCAL:
+            badge = render_component("badge", "Local outbox", variant="secondary")
+            text = (
+                "Development: every email is kept as a file in the private outbox, and "
+                "nothing is sent (MAIL_DELIVERY_MODE=local)."
+            )
+        elif connection.ready:
+            badge = render_component("badge", "Ready", variant="success")
+            chosen = (
+                " (MAILERSEND_API_TOKEN in the environment)"
+                if email_connection.environment("mailersend_token")
+                else ""
+            )
+            text = f"Sends with {connection.name}{chosen} from {connection.sender}."
+        else:
+            badge = render_component("badge", "Not set up", variant="warning")
+            text = (
+                f"Forms take no claims until email is set up. Missing: "
+                f"{', '.join(connection.missing)}."
+            )
+        warning = ""
+        if connection.provider == email_connection.MAILERSEND and not connection.webhook_secret:
+            warning = format_html(
+                '<span class="text-muted-foreground">Without a webhook signing secret, only '
+                "<code>{}</code> learns whether emails were delivered.</span>",
+                "reconcile_deliveries",
+            )
+        unreadable = ""
+        if connection.unreadable:
+            names = ", ".join(
+                admin_email.SECRET_LABELS[name][0].lower() for name in connection.unreadable
+            )
+            unreadable = format_html(
+                '<span class="text-destructive">Saved but unreadable since '
+                "DJANGO_SECRET_KEY changed: {}. Enter it again.</span>",
+                names,
+            )
+        return format_html(
+            '<span class="flex flex-col items-start gap-2">{}<span>{}</span>{}{}</span>',
+            badge,
+            text,
+            warning,
+            unreadable,
+        )
+
+    @admin.display(description="Webhook")
+    def webhook_status(self, obj):
+        request = getattr(self, "_request", None)
+        webhook = reverse("mailersend_webhook")
+        url = request.build_absolute_uri(webhook) if request else webhook
+        if obj.webhook_received_at:
+            received = format_html(
+                "Last signed event: {}.", display_for_value(obj.webhook_received_at, "")
+            )
+        else:
+            received = "No signed event has arrived yet."
+        return format_html(
+            "In MailerSend, create a webhook for {} with the events sent, delivered, deferred, "
+            "soft bounced, hard bounced and suppressed, and enter its signing secret here. {}",
+            format_html("<code>{}</code>", url),
+            received,
+        )
+
+
 @admin.register(Appearance, site=site)
 class AppearanceAdmin(SettingsTabAdmin):
     """The Appearance tab: the accent color and the favicon."""
@@ -527,6 +714,7 @@ def report_archiving(request, changed, noun, *, archived):
 UNAVAILABLE = {
     terms.UNAPPROVED_RECIPIENT: "Receiving inbox not approved",
     terms.NO_PRIVACY_NOTICE: "No privacy notice",
+    terms.EMAIL_NOT_SET_UP: "Email not set up",
 }
 
 FORM_STATUS_TONES = {
@@ -712,9 +900,18 @@ class FormAdmin(admin.ModelAdmin):
             request._current_privacy_notice = PrivacyNotice.current()
         return request._current_privacy_notice
 
+    def _email_ready(self):
+        """Whether the app can send email, looked up once per page instead of once per row."""
+        request = getattr(self, "_request", None)
+        if request is None:
+            return email_connection.ready()
+        if not hasattr(request, "_email_ready"):
+            request._email_ready = email_connection.ready()
+        return request._email_ready
+
     @admin.display(description="Open now")
     def open_now(self, obj):
-        refused = terms.refusal(obj, self._privacy_notice())
+        refused = terms.refusal(obj, self._privacy_notice(), self._email_ready())
         icon = display_for_value(not refused, "", boolean=True)
         reason = UNAVAILABLE.get(refused)
         if not reason:

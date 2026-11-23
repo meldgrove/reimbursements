@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
-from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from portal.constants import APP_NAME
+from portal.services import email_connection
 from portal.services.transport import (
     ACCEPTED,
     DELIVERED,
@@ -49,10 +49,12 @@ ATTEMPT_TAG = "attempt-"
 
 
 def client():
+    """The MailerSend API with the API token from the environment or Admin > Email."""
+    token = email_connection.current().mailersend_token
     return httpx.Client(
         base_url="https://api.mailersend.com/v1/",
         headers={
-            "Authorization": f"Bearer {settings.MAILERSEND_API_TOKEN}",
+            "Authorization": f"Bearer {token}",
             "Accept": "application/json",
         },
         timeout=httpx.Timeout(30, connect=10),
@@ -117,7 +119,7 @@ WEBHOOK_TEST_SECRET = "test_Am3L1GuOIc4blLUuHqAPxxwkZaJyEk8G"
 
 
 def verify_webhook(raw_body, signature, *, test=False):
-    secret = WEBHOOK_TEST_SECRET if test else settings.MAILERSEND_WEBHOOK_SIGNING_SECRET
+    secret = WEBHOOK_TEST_SECRET if test else email_connection.current().webhook_secret
     if not secret or not isinstance(signature, str):
         return False
     expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()

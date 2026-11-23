@@ -47,6 +47,7 @@ NAVIGATION = (
         "Admin",
         (
             Page("General", "admin:portal_appsettings_changelist", ("appsettings",)),
+            Page("Email", "admin:portal_emailsettings_changelist", ("emailsettings",)),
             Page("Appearance", "admin:portal_appearance_changelist", ("appearance",)),
             Page("Templates", "admin:portal_formtemplate_changelist", ("formtemplate",)),
             Page("Privacy notice", "admin:portal_privacynotice_changelist", ("privacynotice",)),

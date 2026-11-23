@@ -547,6 +547,7 @@ name = "reimbursements"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "dj-database-url" },
     { name = "django" },
     { name = "gunicorn" },
@@ -571,6 +572,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=46,<51" },
     { name = "dj-database-url", specifier = ">=3,<4" },
     { name = "django", specifier = ">=5.2.8,<5.3" },
     { name = "gunicorn", specifier = ">=23,<24" },

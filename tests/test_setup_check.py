@@ -16,13 +16,15 @@ from portal.models import (
     ClaimReferenceCounter,
     DeliveryAttempt,
     Draft,
+    EmailSettings,
     Form,
     FormTemplate,
     Operation,
     Upload,
 )
-from portal.services import operations, outbound, setup_check
+from portal.services import operations, outbound, setup_check, smtp
 from portal.services.storage import write_heartbeat
+from portal.services.transport import DELIVERED, SendResult
 from tests.test_delivery import mock_provider
 from tests.test_scanner import FakeClamAV
 
@@ -147,6 +149,49 @@ def test_a_claim_a_job_still_holds_is_named_for_deletion(worker, monkeypatch, se
     assert worker.now >= settings.JOB_LEASE_SECONDS + 60
 
 
+def test_without_email_no_claim_is_submitted(worker, settings):
+    settings.MAIL_DELIVERY_MODE, settings.MAILERSEND_API_TOKEN = "send", ""
+    output, error = verify(to="finance@example.invalid")
+    assert error == "Setup check failed: 1 problem."
+    assert (
+        "FAIL  Email\n        Not set up: missing a provider. Set it up under Admin > Email."
+        in output
+    )
+    assert "skip  Test claim" in output
+    assert nothing_left()
+
+
+def test_with_smtp_the_server_accepts_both_emails(worker, settings, monkeypatch):
+    settings.MAIL_DELIVERY_MODE, settings.MAILERSEND_API_TOKEN = "send", ""
+    EmailSettings(provider="smtp", smtp_host="smtp.example.invalid").save()
+    sent = []
+
+    def accept(self, message):
+        sent.append(message)
+        return SendResult(DELIVERED, f"smtp-{message.attempt_id}")
+
+    monkeypatch.setattr(smtp.SmtpTransport, "send", accept)
+    output, error = verify(to="finance@example.invalid", confirmation_to="kim@example.invalid")
+    assert error is None, output
+    assert "Setup check (development, email by SMTP server)" in output
+    for step in [
+        "ok    Email sent with SMTP server from no-reply@example.invalid",
+        "ok    Finance email to finance@example.invalid accepted by the SMTP server",
+        "skip  Finance inbox\n        SMTP reports no deliveries. Check that the email arrived.",
+        "ok    Participant confirmation to kim@example.invalid accepted by the SMTP server",
+    ]:
+        assert step in output
+    assert len(sent) == 2 and nothing_left()
+
+
+def test_a_turned_off_confirmation_is_skipped(worker, sent):
+    EmailSettings(confirmation_enabled=False).save()
+    output, error = verify(to="finance@example.invalid")
+    assert error is None, output
+    assert "skip  Participant confirmation\n        Turned off under Admin > Email." in output
+    assert len(sent) == 1 and nothing_left()
+
+
 def signed_webhook(client, settings, attempt, kind):
     body = json.dumps(
         {
@@ -191,7 +236,8 @@ def test_with_mailersend_the_signed_webhook_must_arrive(worker, mailersend, clie
     output, error = verify(to="finance@example.invalid")
     assert error is None, output
     for step in [
-        "ok    MailerSend accepted the Finance email to finance@example.invalid",
+        "ok    Email sent with MailerSend from no-reply@example.invalid",
+        "ok    Finance email to finance@example.invalid accepted by MailerSend",
         "ok    MailerSend webhook received, signature verified",
         "ok    Finance inbox received the email",
         "ok    Participant confirmation to finance@example.invalid accepted by MailerSend",
@@ -206,6 +252,14 @@ def test_a_missing_webhook_names_the_url_to_configure(worker, mailersend):
     assert "FAIL  MailerSend webhook\n        No signed delivery event within 30 s." in output
     assert "https://reimbursements.example.invalid/webhooks/mailersend/" in output
     assert "ok    Test claim, form and template deleted" in output
+    assert nothing_left()
+
+
+def test_without_a_signing_secret_the_webhook_is_skipped(worker, mailersend, settings):
+    settings.MAILERSEND_WEBHOOK_SIGNING_SECRET = ""
+    output, error = verify(to="finance@example.invalid", timeout=30)
+    assert error is None, output
+    assert "skip  MailerSend webhook\n        No signing secret is set" in output
     assert nothing_left()
 
 

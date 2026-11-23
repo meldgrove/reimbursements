@@ -1,0 +1,16 @@
+{% extends "admin/portal/settings_tab.html" %}{% load ui %}
+{# The Email tab (portal.admin_email). The test email has its own form below the settings, so it sends what is saved. #}
+{% block content %}{{ block.super }}
+<form method="post" action="{% url 'admin:portal_emailsettings_test' %}" class="mt-6" data-email-test>{% csrf_token %}
+{% component "card" %}
+  {% component "card_header" %}{% component "card_title" %}Test email{% endcomponent %}{% component "card_description" %}Sends one email with the saved settings, so save your changes first.{% endcomponent %}{% endcomponent %}
+  {% component "card_content" class="flex flex-col gap-3 sm:flex-row sm:items-end" %}
+    <div class="flex min-w-0 flex-1 flex-col gap-2">
+      <label for="{{ test_form.to.id_for_label }}" class="text-sm font-medium">{{ test_form.to.label }}</label>
+      {{ test_form.to }}
+    </div>
+    {% component "button" type="submit" variant="outline" %}{% icon "send" %}Send test email{% endcomponent %}
+  {% endcomponent %}
+{% endcomponent %}
+</form>
+{% endblock %}

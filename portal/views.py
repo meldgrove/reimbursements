@@ -16,10 +16,18 @@ from portal.constants import PAYMENT_TIMING
 from portal.forms import ClaimForm
 from portal.i18n import t
 from portal.intake import IntakeError
-from portal.models import Claim, Form, PrivacyNotice
+from portal.models import Claim, EmailSettings, Form, PrivacyNotice
 from portal.participants import RequestParticipant
 from portal.roles import manages
-from portal.services import claim_status, claim_validation, drafts, evidence, terms, uploads
+from portal.services import (
+    claim_status,
+    claim_validation,
+    confirmations,
+    drafts,
+    evidence,
+    terms,
+    uploads,
+)
 from portal.services.capacity import storage_available
 from portal.services.drafts import open_draft
 from portal.services.mailersend import verify_webhook, webhook_evidence
@@ -118,6 +126,7 @@ def form_page(request, form_slug):
             "max_distance_km": intake.MAX_DISTANCE_KM,
             "development": settings.DEBUG,
             "preview": preview,
+            "confirmation": confirmations.enabled(),
         },
     )
 
@@ -289,6 +298,9 @@ def mailersend_webhook(request):
         test = data.get("type") == "webhook.test"
         if not verify_webhook(raw, request.headers.get("Signature", ""), test=test):
             return JsonResponse({"error": "invalid_signature"}, status=401)
+        if not test:
+            # Admin > Email shows it: the webhook and its signing secret work.
+            EmailSettings.note_webhook()
         if not test and (provided := webhook_evidence(data)):
             evidence.record(provided)
     except (ValueError, TypeError, AttributeError, KeyError):

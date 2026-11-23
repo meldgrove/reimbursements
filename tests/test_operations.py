@@ -54,9 +54,15 @@ def test_production_cannot_silently_use_development_defaults(tmp_path, mode, deb
         {"DJANGO_SECRET_KEY": "development-secret"},
         {"KEYCLOAK_BASE_URL": ""},
         {"KEYCLOAK_REALM": ""},
-        {"MAIL_FROM_ADDRESS": ""},
-        {"MAIL_REPLY_TO_ADDRESS": ""},
+        {"MAIL_DELIVERY_MODE": "postcard"},
         {},
+        # Admins can set up email under Admin > Email instead.
+        {
+            "MAILERSEND_API_TOKEN": "",
+            "MAILERSEND_WEBHOOK_SIGNING_SECRET": "",
+            "MAIL_FROM_ADDRESS": "",
+            "MAIL_REPLY_TO_ADDRESS": "",
+        },
     ],
 )
 def test_unsafe_production_settings_refuse_startup(tmp_path, override):
@@ -86,7 +92,8 @@ def test_unsafe_production_settings_refuse_startup(tmp_path, override):
         capture_output=True,
         text=True,
     )
-    assert (result.returncode == 0) is (override == {})
+    starts = override == {} or "MAILERSEND_API_TOKEN" in override
+    assert (result.returncode == 0) is starts, result.stderr
 
 
 def test_http_500_has_redacted_diagnostics_and_correlation(client, monkeypatch):

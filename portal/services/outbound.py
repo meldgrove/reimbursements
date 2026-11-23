@@ -1,9 +1,10 @@
 """Outbound email: who may receive it, how one message is sent, and what is left of it.
 
-Finance deliveries and participant confirmations both send through `send`. While a test
-allowlist is configured, nobody else receives email. In local development `LocalOutbox`
-keeps a private copy of each message instead of sending it. `forget` removes the copies
-and the provider's evidence of sent messages.
+Finance deliveries and participant confirmations both send through `send`, with the
+provider of the email connection (`email_connection`). While a test allowlist is
+configured, nobody else receives email. In local development `LocalOutbox` keeps a private
+copy of each message instead of sending it. `forget` removes the copies and the provider's
+evidence of sent messages.
 """
 
 import logging
@@ -12,9 +13,9 @@ from django.conf import settings
 from django.db.models import Q
 
 from portal.models import DeliveryEvent
-from portal.services import mailersend
+from portal.services import email_connection, mailersend, smtp
 from portal.services.storage import outbox_key, remove_keys
-from portal.services.transport import FAILED, LocalOutbox, SendResult
+from portal.services.transport import FAILED, LocalOutbox, NotSetUp, SendResult
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,15 @@ def recipient_approved(address):
     return address.lower() in settings.APPROVED_DELIVERY_RECIPIENTS
 
 
-def configured_transport():
-    if settings.MAIL_DELIVERY_MODE == "local" and settings.DEBUG:
+def configured_transport(connection=None):
+    """The adapter that sends with `connection`, by default the current one."""
+    connection = connection or email_connection.current()
+    if connection.provider == email_connection.LOCAL:
         return LocalOutbox()
+    if not connection.ready:
+        return NotSetUp()
+    if connection.provider == email_connection.SMTP:
+        return smtp.SmtpTransport(connection.smtp)
     return mailersend.MailerSendTransport()
 
 
