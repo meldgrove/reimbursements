@@ -498,7 +498,7 @@ def test_what_smtplib_cannot_send_in_ascii_is_never_unknown(smtp_server):
     login = account(smtp_server, username="kim", password="pässword")
     result = smtp.SmtpTransport(login).send(message())
     assert (result.state, result.error_code) == (PENDING, "smtp_login_not_ascii")
-    idn = message(recipient="kim@bücher.example")
+    idn = message(recipient="kim@bücher.example.invalid")
     result = smtp.SmtpTransport(account(smtp_server)).send(idn)
     assert (result.state, result.error_code) == (FAILED, "address_not_ascii")
     assert not smtp_server.received
