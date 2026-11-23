@@ -18,10 +18,10 @@
  * (services/terms.ts). A draft is accepting while it is unsubmitted and its form is.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { config } from "../config";
 import { drafts, forms, type Draft } from "../db/schema";
-import { q } from "../db/tx";
+import { atomic, q } from "../db/tx";
 import { t } from "../i18n";
 import { IntakeError } from "../intake";
 import { loadForm, type FormWithTemplate } from "../models";
@@ -138,6 +138,15 @@ export async function gate(
   return { draft, form: form! };
 }
 
+let newDrafts: Promise<unknown> = Promise.resolve();
+
+/** Runs `fn` after every earlier call of this process has finished. */
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = newDrafts.then(fn, fn);
+  newDrafts = run.catch(() => undefined);
+  return run;
+}
+
 /**
  * The participant's draft of an accepting form, or a newly admitted one, with its token.
  *
@@ -176,36 +185,48 @@ export async function openDraft(
       if (draft) return { draft, token: remembered.token };
     }
   }
-  const [active] = await q()
-    .select({ value: count() })
-    .from(drafts)
-    .where(and(isNull(drafts.claimId), gt(drafts.expiresAt, now)));
-  if (Number(active?.value ?? 0) >= config().MAX_ACTIVE_DRAFTS)
-    throw new IntakeError(t("The form is busy right now. Please try again later."), { status: 503 });
-  if (binding !== null) {
-    const [recent] = await q()
-      .select({ value: count() })
-      .from(drafts)
-      .where(
-        and(
-          eq(drafts.sessionHash, binding),
-          gt(drafts.createdAt, new Date(now.getTime() - 24 * 3600 * 1000)),
-        ),
-      );
-    if (Number(recent?.value ?? 0) >= MAX_DRAFTS_PER_SESSION)
-      throw new IntakeError(t("Too many new forms. Please try again later."), { status: 429 });
-  }
-  if (!(await chargeDraft(participant.network)))
-    throw new IntakeError(t("Too many new forms from this network. Please try again later."), {
-      status: 429,
-    });
-  // Only admitted visitors get a session.
-  const token = randomBytes(32).toString("base64url");
-  const sessionHash = (await participant.binding({ create: true }))!;
-  const [draft] = await q()
-    .insert(drafts)
-    .values({ formId: form.id, sessionHash, tokenHash: digest(token), revision })
-    .returning();
-  await participant.remember(form.slug, draft!.id, token);
-  return { draft: draft!, token };
+  // One new-draft decision at a time, across processes (the advisory lock):
+  // the counts below and the insert must not interleave, or concurrent
+  // requests pass the global and per-session limits together. Within a
+  // process they queue before taking a connection, because a new session is
+  // written on a connection of its own (participants.ts) and waiting
+  // transactions must not use up the pool.
+  const { draft, token } = await oneAtATime(() =>
+    atomic(async () => {
+      await q().execute(sql`select pg_advisory_xact_lock(hashtext('reimbursements.new-draft'))`);
+      const [active] = await q()
+        .select({ value: count() })
+        .from(drafts)
+        .where(and(isNull(drafts.claimId), gt(drafts.expiresAt, now)));
+      if (Number(active?.value ?? 0) >= config().MAX_ACTIVE_DRAFTS)
+        throw new IntakeError(t("The form is busy right now. Please try again later."), { status: 503 });
+      if (binding !== null) {
+        const [recent] = await q()
+          .select({ value: count() })
+          .from(drafts)
+          .where(
+            and(
+              eq(drafts.sessionHash, binding),
+              gt(drafts.createdAt, new Date(now.getTime() - 24 * 3600 * 1000)),
+            ),
+          );
+        if (Number(recent?.value ?? 0) >= MAX_DRAFTS_PER_SESSION)
+          throw new IntakeError(t("Too many new forms. Please try again later."), { status: 429 });
+      }
+      if (!(await chargeDraft(participant.network)))
+        throw new IntakeError(t("Too many new forms from this network. Please try again later."), {
+          status: 429,
+        });
+      // Only admitted visitors get a session.
+      const token = randomBytes(32).toString("base64url");
+      const sessionHash = (await participant.binding({ create: true }))!;
+      const [draft] = await q()
+        .insert(drafts)
+        .values({ formId: form.id, sessionHash, tokenHash: digest(token), revision })
+        .returning();
+      return { draft: draft!, token };
+    }),
+  );
+  await participant.remember(form.slug, draft.id, token);
+  return { draft, token };
 }

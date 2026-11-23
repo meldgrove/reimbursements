@@ -9,7 +9,8 @@ case "$1" in
     ;;
   cli)
     shift
-    exec node /app/apps/server/dist/cli.mjs "$@"
+    # Error reports of operator commands too, tagged with the command (cli.ts).
+    exec node --import /app/apps/server/dist/instrument.mjs /app/apps/server/dist/cli.mjs "$@"
     ;;
   *)
     exec "$@"

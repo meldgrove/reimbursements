@@ -126,10 +126,10 @@ export const newTemplateRoute = createRoute({
   component: TemplatePage,
 });
 
+/** A template; form editors may open it read-only (links from 0.4 and from their forms), as in Django. */
 export const templateRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "/admin/templates/$templateId",
-  beforeLoad: requireTemplateAdmin,
   component: TemplatePage,
 });
 

@@ -38,6 +38,31 @@ describe("health checks", () => {
   });
 });
 
+describe("plain HTTP outside development", () => {
+  it("goes to the HTTPS address, as Django's SECURE_SSL_REDIRECT did", async () => {
+    overrideConfigForTests({
+      isDevelopment: false,
+      APP_URL: "https://reimbursements.example.invalid",
+      TRUST_PROXY_HEADERS: true,
+    });
+    const plain = await request("GET", "/f/demo/?step=2", { headers: { host: "attacker.example.invalid" } });
+    expect(plain.status).toBe(301);
+    expect(plain.headers.get("location")).toBe("https://reimbursements.example.invalid/f/demo/?step=2");
+    // Through the reverse proxy, which ended TLS.
+    const proxied = await request("GET", "/api/v1/meta", { headers: { "x-forwarded-proto": "https" } });
+    expect(proxied.status).toBe(200);
+    // Health checks reach the container over HTTP.
+    const health = await request("GET", "/-/healthz", { headers: { "x-health-token": "test-health-token" } });
+    expect(health.status).toBe(200);
+  });
+
+  it("trusts X-Forwarded-Proto only with TRUST_PROXY_HEADERS", async () => {
+    overrideConfigForTests({ isDevelopment: false, APP_URL: "https://reimbursements.example.invalid" });
+    const response = await request("GET", "/api/v1/meta", { headers: { "x-forwarded-proto": "https" } });
+    expect(response.status).toBe(301);
+  });
+});
+
 describe("the frame of every request", () => {
   it("sends security headers and keeps pages out of caches", async () => {
     const response = await request("GET", "/api/v1/meta");
@@ -184,5 +209,25 @@ describe("participant sessions", () => {
     // Another browser has its own binding.
     const other = new CookieJar();
     expect((await call(other, "POST", "/admit")).binding).not.toBe(binding);
+  });
+
+  it("get their 7 days again when a draft is remembered, as Django's sessions did", async () => {
+    const jar = new CookieJar();
+    await call(jar, "POST", "/admit");
+    // The session's last minute.
+    await getDb()
+      .update(sessions)
+      .set({ expiresAt: new Date(Date.now() + 60_000) });
+    const response = await app.request(
+      "/admit",
+      { method: "POST", headers: { cookie: jar.header() ?? "" } },
+      peer("192.0.2.7"),
+    );
+    const [row] = await getDb().select().from(sessions);
+    expect(Math.round((row!.expiresAt.getTime() - Date.now()) / 86_400_000)).toBe(7);
+    const cookie = response.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("reimbursements_participant=");
+    const expires = new Date(/Expires=([^;]+)/i.exec(cookie)![1]!);
+    expect(Math.round((expires.getTime() - Date.now()) / 86_400_000)).toBe(7);
   });
 });

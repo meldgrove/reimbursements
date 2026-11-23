@@ -69,51 +69,50 @@ export type SettingsChanges = Partial<
   Pick<GeneralSettings, "language" | "timezone" | "dateFormat" | "numberFormat" | "accentColor">
 >;
 
-/** Saves changes to the settings row, creating it with the defaults first. Validates nothing: callers do. */
-export async function saveSettings(changes: SettingsChanges): Promise<GeneralSettings> {
-  const current = await loadSettings();
-  const next = { ...current, ...changes };
+/** A new favicon (`content` empty: back to the standard one). */
+export type FaviconChange = { content: Buffer; type?: string };
+
+/**
+ * Saves changes to the settings row in one statement, creating it with the
+ * defaults first. Only the given settings change, so a save of the General
+ * page and one of the Appearance page do not undo each other. Validates
+ * nothing: callers do.
+ */
+export async function saveSettings(
+  changes: SettingsChanges,
+  favicon?: FaviconChange,
+): Promise<GeneralSettings> {
+  const set: Partial<typeof appSettings.$inferInsert> = {};
+  for (const key of ["language", "timezone", "dateFormat", "numberFormat", "accentColor"] as const)
+    if (changes[key] !== undefined) (set as Record<string, unknown>)[key] = changes[key];
+  if (favicon) {
+    const { content } = favicon;
+    set.favicon = content;
+    set.faviconType = content.length > 0 ? (favicon.type ?? "") : "";
+    set.faviconDigest =
+      content.length > 0 ? createHash("sha256").update(content).digest("hex").slice(0, 16) : "";
+  }
   await q()
     .insert(appSettings)
     .values({
       id: SETTINGS_ID,
-      language: next.language,
-      timezone: next.timezone,
-      dateFormat: next.dateFormat,
-      numberFormat: next.numberFormat,
-      accentColor: next.accentColor,
+      language: DEFAULT_SETTINGS.language,
+      timezone: DEFAULT_SETTINGS.timezone,
+      dateFormat: DEFAULT_SETTINGS.dateFormat,
+      numberFormat: DEFAULT_SETTINGS.numberFormat,
+      accentColor: DEFAULT_SETTINGS.accentColor,
       favicon: Buffer.alloc(0),
       faviconType: "",
       faviconDigest: "",
+      ...set,
     })
-    .onConflictDoUpdate({
-      target: appSettings.id,
-      set: {
-        language: next.language,
-        timezone: next.timezone,
-        dateFormat: next.dateFormat,
-        numberFormat: next.numberFormat,
-        accentColor: next.accentColor,
-        updatedAt: new Date(),
-      },
-    });
+    .onConflictDoUpdate({ target: appSettings.id, set: { ...set, updatedAt: new Date() } });
   return loadSettings();
 }
 
 /** Uses `content` as the favicon; empty content restores the standard one. */
 export async function setFavicon(content: Buffer, mediaType = ""): Promise<GeneralSettings> {
-  await saveSettings({});
-  const digest = content.length > 0 ? createHash("sha256").update(content).digest("hex").slice(0, 16) : "";
-  await q()
-    .update(appSettings)
-    .set({
-      favicon: content,
-      faviconType: content.length > 0 ? mediaType : "",
-      faviconDigest: digest,
-      updatedAt: new Date(),
-    })
-    .where(eq(appSettings.id, SETTINGS_ID));
-  return loadSettings();
+  return saveSettings({}, { content, type: mediaType });
 }
 
 /** The favicon image and its type, or null for the standard one. */

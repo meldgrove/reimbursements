@@ -155,6 +155,27 @@ describe("retention periods", () => {
     expect(await exists(claim.id)).toBe(false);
   });
 
+  it("the cleanup deletes nothing that stopped being due after it listed it", async () => {
+    // Listed while due, then unarchived by an operator before the cleanup took the lock.
+    const { delivery } = await readyDelivery();
+    await getDb().insert(deliveryAttempts).values({ deliveryId: delivery.id, state: "failed" });
+    await deliveriesService.refresh(delivery);
+    await getDb()
+      .update(claims)
+      .set({ resolutionDue: past(), archivedAt: new Date() })
+      .where(eq(claims.id, delivery.claimId));
+    await operations.unarchive([delivery.claimId], { actor: "admin" });
+    await retention.purgeClaim(delivery.claimId, { dueBy: new Date() });
+    expect(await exists(delivery.claimId)).toBe(true);
+  });
+
+  it("the cleanup keeps a PDF whose date was cleared after it listed it", async () => {
+    const { claim } = await readyDelivery();
+    await getDb().update(claims).set({ pdfDue: null }).where(eq(claims.id, claim.id));
+    await retention.removePdf(claim.id, { dueBy: new Date() });
+    expect((await claimRow(claim.id)).pdfKey).toBe("pdf/test.pdf");
+  });
+
   it("never purges archived forms", async () => {
     const form = await createForm({ status: "archived" });
     await cleanup({ execute: true });

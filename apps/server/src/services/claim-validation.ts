@@ -121,7 +121,8 @@ function text(value: unknown, key: ExpenseTextField, required = true): string {
 export function parseDjangoDate(value: unknown): string {
   const raw = value === null || value === undefined || value === "" ? "" : value;
   if (typeof raw !== "string") throw new TypeError("not a date");
-  const match = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(raw) ?? /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);
+  // Both separators or neither (2026-11-05, 20261105), as date.fromisoformat reads it.
+  const match = /^(\d{4})(\d{2})(\d{2})$/.exec(raw) ?? /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);
   if (!match) throw new Error("");
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
   const date = new Date(Date.UTC(year, month - 1, day));

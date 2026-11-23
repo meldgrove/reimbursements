@@ -4,9 +4,11 @@ import {
   formatDate,
   formatDateTime,
   formatShortDateTime,
+  isDateFormat,
   parseDate,
   zoneName,
   zonedInstant,
+  zonedInstants,
 } from "./dates";
 import { example, formatAmount, fromCents, NUMBER_FORMATS, toCents, toFixedDecimal } from "./numbers";
 
@@ -61,5 +63,24 @@ describe("numbers", () => {
     expect(toCents("9999999999.99")).toBe(999999999999n);
     expect(fromCents(1250n)).toBe("12.50");
     expect(fromCents(5)).toBe("0.05");
+  });
+});
+
+describe("review fixes", () => {
+  it("knows only its own date formats, not properties every object has", () => {
+    for (const code of ["toString", "constructor", "__proto__", "hasOwnProperty"])
+      expect(isDateFormat(code)).toBe(false);
+    expect(isDateFormat("d.m.Y")).toBe(true);
+  });
+
+  it("finds no instant for a skipped time, two for a repeated one", () => {
+    expect(zonedInstants("2026-03-29", "02:30", "Europe/Berlin")).toEqual([]);
+    expect(zonedInstants("2026-10-25", "02:30", "Europe/Berlin")?.map((d) => d.toISOString())).toEqual([
+      "2026-10-25T00:30:00.000Z",
+      "2026-10-25T01:30:00.000Z",
+    ]);
+    expect(zonedInstants("2026-06-01", "09:28:15", "Europe/Berlin")?.map((d) => d.toISOString())).toEqual([
+      "2026-06-01T07:28:15.000Z",
+    ]);
   });
 });

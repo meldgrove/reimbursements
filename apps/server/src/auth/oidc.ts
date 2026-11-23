@@ -6,10 +6,13 @@ import { logger } from "../logger";
 
 /**
  * Sign-in to the admin area with Keycloak or any OpenID Connect provider:
- * the authorization code flow with PKCE, a state and a nonce. Endpoints come
- * from the provider's discovery document, fetched on first use and cached
- * for an hour, so the app starts even while the provider is down; explicit
- * endpoints (OIDC_*_ENDPOINT) win over it.
+ * the authorization code flow with PKCE, a state and a nonce. With the
+ * Django version's settings (KEYCLOAK_BASE_URL and KEYCLOAK_REALM), the
+ * endpoints are the realm's, as that version derived them, without
+ * discovery. With OIDC_ISSUER, they come from the provider's discovery
+ * document, fetched on first use and cached for an hour, so the app starts
+ * even while the provider is down. Explicit endpoints (OIDC_*_ENDPOINT) win
+ * over both.
  *
  * The ID token gets every check of the Django version (portal/auth.py):
  * issuer, every audience the client, the authorized party, a subject and a
@@ -132,6 +135,21 @@ export async function discovery(): Promise<Endpoints> {
     .update(JSON.stringify([settings.oidcIssuer, settings.OIDC_SIGN_ALGO, explicit]))
     .digest("hex");
   if (cache && cache.key === key && cache.until > Date.now()) return cache.endpoints;
+  if (settings.oidcLegacyKeycloak) {
+    // config/settings.py of the Django version: the realm's endpoints.
+    const base = `${settings.oidcIssuer}/protocol/openid-connect`;
+    return validateDiscovery(
+      {
+        issuer: settings.oidcIssuer,
+        authorization_endpoint: `${base}/auth`,
+        token_endpoint: `${base}/token`,
+        userinfo_endpoint: `${base}/userinfo`,
+        jwks_uri: `${base}/certs`,
+        end_session_endpoint: `${base}/logout`,
+      },
+      explicit,
+    );
+  }
   let document: unknown;
   try {
     const response = await providerFetch.fetch(`${settings.oidcIssuer}/.well-known/openid-configuration`, {
@@ -272,8 +290,10 @@ export async function completeSignIn(
  */
 export function checkIdToken(payload: Record<string, unknown>, nowSeconds = Date.now() / 1000): void {
   const settings = config();
-  if (String(payload.iss).replace(/\/+$/, "") !== settings.oidcIssuer)
-    throw new Error("ID token issuer did not match");
+  // The Django version compared the realm URL exactly; with OIDC_ISSUER, a
+  // slash at the end some providers sign does not count.
+  const issuer = settings.oidcLegacyKeycloak ? payload.iss : String(payload.iss).replace(/\/+$/, "");
+  if (issuer !== settings.oidcIssuer) throw new Error("ID token issuer did not match");
   for (const claim of ["sub", "nonce"]) {
     if (typeof payload[claim] !== "string" || !payload[claim])
       throw new Error(`ID token ${claim} is missing`);

@@ -38,6 +38,9 @@ function connect(host: string, port: number, timeoutMs: number): Promise<net.Soc
     socket.setTimeout(timeoutMs, () => socket.destroy(new Error("timeout")));
     socket.once("connect", () => {
       socket.removeListener("error", reject);
+      // Errors after connecting reach the caller through the writes and the
+      // reply; this keeps a second one (EPIPE, then ECONNRESET) from going unheard.
+      socket.on("error", () => undefined);
       resolve(socket);
     });
     socket.once("error", reject);
@@ -84,6 +87,9 @@ export class ClamAVScanner implements Scanner {
       const socket = await connect(this.host, this.port, 30_000);
       try {
         const replied = readReply(socket, 4096);
+        // Observed from the start: when a write below fails first, the reply's
+        // rejection must not become an unhandled rejection that stops the worker.
+        replied.catch(() => undefined);
         await write(socket, Buffer.from("zINSTREAM\0", "latin1"));
         for await (const chunk of createReadStream(path, { highWaterMark: 64 * 1024 })) {
           const length = Buffer.alloc(4);
@@ -108,6 +114,7 @@ export class ClamAVScanner implements Scanner {
       const socket = await connect(this.host, this.port, 2000);
       try {
         const replied = readReply(socket, 32);
+        replied.catch(() => undefined);
         await write(socket, Buffer.from("zPING\0", "latin1"));
         return trimReply((await replied).subarray(0, 32)) === "PONG";
       } finally {

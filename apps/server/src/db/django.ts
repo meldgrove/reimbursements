@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type pg from "pg";
 import { logger } from "../logger";
+import { OperatorError } from "../operator-error";
 
 /**
  * Takes over the database of the Django version (Reimbursements 0.3 and 0.4)
@@ -18,13 +19,15 @@ import { logger } from "../logger";
  *   installation of 0.3 never got it, and records 0018 and 0019 (which
  *   changed only help texts) for Django, so 0.4 runs on the database too;
  * - gives the foreign keys the rules on delete Django applied itself
- *   (cascade, set null, and protect as restrict), checked at once instead of
- *   at the end of the transaction;
+ *   (cascade, set null, and protect as restrict), still deferrable and
+ *   checked at the end of the transaction as Django declared them (a
+ *   restrict rule itself is checked at once);
  * - checks that every column of the baseline is there with its type.
  *
  * Django's own tables (sessions, permissions, content types, the admin log,
  * its migration list) stay, so going back to the version before still works.
- * Everything runs in one transaction: a failure changes nothing.
+ * It runs in the caller's transaction (src/db/migrate.ts), with the
+ * migrations after it: a failure at any step changes nothing.
  *
  * 0.1 and 0.2 databases (before Django migration 0017) are refused: they
  * first install 0.4, which migrates them.
@@ -42,7 +45,7 @@ export async function adoptDjangoDatabase(client: pg.Client, migrationsFolder: s
   }
   if (!state.portal) return false;
   if (!state.django) {
-    throw new Error(
+    throw new OperatorError(
       "The database has the app's tables but neither Django's nor this version's migration records. " +
         "Restore a backup or use an empty database.",
     );
@@ -52,7 +55,7 @@ export async function adoptDjangoDatabase(client: pg.Client, migrationsFolder: s
   );
   const djangoMigrations = new Set(django.rows.map((row) => row.name));
   if (!djangoMigrations.has("0017_appearance")) {
-    throw new Error(
+    throw new OperatorError(
       "The database is from Reimbursements 0.2 or older. Install 0.4 first (REIMBURSEMENTS_VERSION=0.4), " +
         "let it migrate the database, then install this version.",
     );
@@ -61,54 +64,46 @@ export async function adoptDjangoDatabase(client: pg.Client, migrationsFolder: s
   const journal = readJournal(migrationsFolder);
   const baseline = journal.entries[0];
   if (!baseline || baseline.tag !== "0000_django_baseline") {
-    throw new Error("The first migration must be 0000_django_baseline.");
+    throw new OperatorError("The first migration must be 0000_django_baseline.");
   }
   const baselineSql = fs.readFileSync(path.join(migrationsFolder, `${baseline.tag}.sql`), "utf8");
   const statements = baselineSql.split("--> statement-breakpoint").map((statement) => statement.trim());
   const foreignKeys = statements.filter((statement) => /^ALTER TABLE .* FOREIGN KEY/s.test(statement));
 
   logger.info("taking over the database of the Django version");
-  await client.query("begin");
-  try {
-    // Django migration 0018 (0.3 installations); 0019 changed only help texts.
-    await client.query(
-      "alter table portal_appsettings add column if not exists number_format varchar(8) not null default 'european'",
-    );
-    await client.query("alter table portal_appsettings alter column number_format drop default");
-    for (const name of ["0018_number_format", "0019_accent_follows_meldgrove"]) {
-      if (!djangoMigrations.has(name)) {
-        await client.query(
-          "insert into django_migrations (app, name, applied) values ('portal', $1, now())",
-          [name],
-        );
-      }
+  // Django migration 0018 (0.3 installations); 0019 changed only help texts.
+  await client.query(
+    "alter table portal_appsettings add column if not exists number_format varchar(8) not null default 'european'",
+  );
+  await client.query("alter table portal_appsettings alter column number_format drop default");
+  for (const name of ["0018_number_format", "0019_accent_follows_meldgrove"]) {
+    if (!djangoMigrations.has(name)) {
+      await client.query("insert into django_migrations (app, name, applied) values ('portal', $1, now())", [
+        name,
+      ]);
     }
-
-    // Foreign keys with the rules on delete Django applied in Python, under Django's names.
-    for (const statement of foreignKeys) {
-      const match = /^ALTER TABLE "([a-z_]+)" ADD CONSTRAINT "([a-z0-9_]+)"/.exec(statement);
-      if (!match) throw new Error(`Unexpected statement in the baseline: ${statement.slice(0, 80)}`);
-      await client.query(`alter table "${match[1]}" drop constraint if exists "${match[2]}"`);
-      await client.query(statement.replace(/;$/, ""));
-    }
-
-    await checkColumns(client, statements);
-
-    await client.query('create schema if not exists "drizzle"');
-    await client.query(`
-      create table if not exists "drizzle"."__drizzle_migrations" (
-        id serial primary key, hash text not null, created_at bigint
-      )
-    `);
-    await client.query('insert into "drizzle"."__drizzle_migrations" (hash, created_at) values ($1, $2)', [
-      createHash("sha256").update(baselineSql).digest("hex"),
-      baseline.when,
-    ]);
-    await client.query("commit");
-  } catch (error) {
-    await client.query("rollback").catch(() => undefined);
-    throw error;
   }
+
+  // Foreign keys with the rules on delete Django applied in Python, under Django's names.
+  for (const statement of foreignKeys) {
+    const match = /^ALTER TABLE "([a-z_]+)" ADD CONSTRAINT "([a-z0-9_]+)"/.exec(statement);
+    if (!match) throw new OperatorError(`Unexpected statement in the baseline: ${statement.slice(0, 80)}`);
+    await client.query(`alter table "${match[1]}" drop constraint if exists "${match[2]}"`);
+    await client.query(statement.replace(/;$/, ""));
+  }
+
+  await checkColumns(client, statements);
+
+  await client.query('create schema if not exists "drizzle"');
+  await client.query(`
+    create table if not exists "drizzle"."__drizzle_migrations" (
+      id serial primary key, hash text not null, created_at bigint
+    )
+  `);
+  await client.query('insert into "drizzle"."__drizzle_migrations" (hash, created_at) values ($1, $2)', [
+    createHash("sha256").update(baselineSql).digest("hex"),
+    baseline.when,
+  ]);
   logger.info("took over the database of the Django version");
   return true;
 }
@@ -171,7 +166,7 @@ async function checkColumns(client: pg.Client, statements: string[]): Promise<vo
     }
   }
   if (problems.length > 0) {
-    throw new Error(
+    throw new OperatorError(
       `The database does not have the tables of Reimbursements 0.4 (${problems.slice(0, 5).join("; ")}). ` +
         "Restore a complete backup, or migrate it with Reimbursements 0.4 first.",
     );

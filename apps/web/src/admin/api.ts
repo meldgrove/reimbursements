@@ -74,8 +74,10 @@ export const formEditorQuery = (target: { id: number } | { template: number }) =
       "id" in target
         ? api.get<FormEditor>(`/admin/forms/${target.id}`, undefined, signal)
         : api.get<FormEditor>("/admin/forms/new", { template: target.template }, signal),
-    // The editor keeps what one types; it reads the form once.
+    // The editor keeps what one types; it reads the form once per visit. Its
+    // saves are not in the cache: the next visit reads the form again.
     staleTime: Infinity,
+    gcTime: 0,
     refetchOnWindowFocus: false,
   });
 

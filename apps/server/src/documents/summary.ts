@@ -28,6 +28,9 @@ const MARGIN = { left: 15 * MM, top: 15 * MM, right: 15 * MM, bottom: 18 * MM };
 /** The browser's default body margin (8 px), which 0.4's template kept inside the page margins. */
 const BODY = 6;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN.left - MARGIN.right - 2 * BODY;
+const COLUMN_GAP = 6 * MM;
+const FOOTER_WIDTH = PAGE_WIDTH - MARGIN.left - MARGIN.right;
+const PAGE_NUMBER_WIDTH = 50;
 const BORDER = 0.3 * MM;
 const COLORS = {
   text: "#172033",
@@ -86,11 +89,17 @@ function ruledLayout(
   };
 }
 
+/*
+ * Every column has a fixed width, never "*": pdfmake widens a star column to
+ * its longest unbroken word, past the page edge, while a fixed column breaks
+ * such a word where the line ends (0.4's cells: overflow-wrap: anywhere).
+ */
+
 /** A table of labels and values with a rule under every row (table.details). */
 function details(rows: SummaryRow[]): ContentTable {
   return {
     table: {
-      widths: ["34%", "*"],
+      widths: ["34%", "66%"],
       body: rows.map(([label, value]) => [{ text: label, color: COLORS.meta }, { text: value }]),
     },
     layout: ruledLayout({ x: 1.5 * MM, y: 1 * MM }, (index) => index > 0),
@@ -102,13 +111,13 @@ function box(rows: SummaryRow[]): ContentTable {
   return {
     margin: [0, 1.5 * MM, 0, 0],
     table: {
-      widths: ["*"],
+      widths: ["100%"],
       body: [
         [
           {
             fillColor: COLORS.box,
             table: {
-              widths: ["48%", "*"],
+              widths: ["48%", "52%"],
               body: rows.map(([label, value]) => [{ text: label, color: COLORS.meta }, { text: value }]),
             },
             layout: {
@@ -175,12 +184,18 @@ export function summaryDefinition(summary: ClaimSummary, signature: Buffer | nul
     footer: (currentPage: number, pageCount: number) => ({
       margin: [MARGIN.left, (MARGIN.bottom - 9) / 2, MARGIN.right, 0],
       columns: [
-        { text: summary.footer, fontSize: 7, color: "#666666", lineHeight: 1 },
+        {
+          text: summary.footer,
+          fontSize: 7,
+          color: "#666666",
+          lineHeight: 1,
+          width: FOOTER_WIDTH - PAGE_NUMBER_WIDTH,
+        },
         {
           text: `${currentPage} / ${pageCount}`,
           fontSize: 8,
           alignment: "right",
-          width: "auto",
+          width: PAGE_NUMBER_WIDTH,
           lineHeight: 1,
         },
       ],
@@ -196,13 +211,16 @@ export function summaryDefinition(summary: ClaimSummary, signature: Buffer | nul
       { text: summary.title, bold: true, fontSize: 18, color: COLORS.heading, lineHeight: 1.1 },
       { text: summary.meta.join("\n"), ...meta, margin: [0, 8, 0, 8] },
       {
-        columnGap: 6 * MM,
+        columnGap: COLUMN_GAP,
         columns: [
           {
             width: CONTENT_WIDTH * 0.58,
             stack: [heading(summary.personal.heading), details(summary.personal.rows)],
           },
-          { width: "*", stack: [heading(summary.assignment.heading), box(summary.assignment.rows)] },
+          {
+            width: CONTENT_WIDTH * 0.42 - COLUMN_GAP,
+            stack: [heading(summary.assignment.heading), box(summary.assignment.rows)],
+          },
         ],
       },
       heading(summary.occasion.heading),

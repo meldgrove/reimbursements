@@ -15,7 +15,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, ne, sql } from "drizzle-orm";
-import { formatDate, parseDate, zonedInstant, zonedParts, formatTime } from "@reimbursements/shared/dates";
+import { formatDate, parseDate, zonedInstants, zonedParts } from "@reimbursements/shared/dates";
 import { isEmail } from "@reimbursements/shared/email";
 import type {
   DateTimeInput,
@@ -110,15 +110,45 @@ function dateValue(value: unknown): string | null | undefined {
 /**
  * A time entered in the app timezone (Django's SplitDateTimeField): both
  * parts or none. Returns the instant, null when empty, or an error message.
+ * A time the clocks skip or repeat is refused, as Django refused it.
+ * `kept`: the stored instant, which stays as it is while its date and time
+ * are sent back unchanged (the editor shows no fractions of a second).
  */
-function dateTimeValue(value: Partial<DateTimeInput> | null | undefined): Date | null | string {
+function dateTimeValue(
+  value: Partial<DateTimeInput> | null | undefined,
+  kept: Date | null,
+): Date | null | string {
   const date = stripped(value?.date);
   const time = stripped(value?.time);
   if (!date && !time) return null;
+  if (kept) {
+    const shown = moment(kept);
+    if (date === shown.date && time === shown.time) return kept;
+  }
   const day = date ? parseDate(date, applied().dateFormat) : null;
   if (!day) return "Enter a valid date.";
   if (!time || !/^\d{1,2}:\d{2}(?::\d{2})?$/.test(time)) return "Enter a valid time.";
-  return zonedInstant(day, time, applied().timezone) ?? "Enter a valid time.";
+  const { timezone } = applied();
+  const instants = zonedInstants(day, time, timezone);
+  if (!instants) return "Enter a valid time.";
+  if (instants.length !== 1) {
+    const [hour, minute, second = "00"] = time.split(":");
+    const wall = `${day} ${hour!.padStart(2, "0")}:${minute}:${second}`;
+    return `${wall} couldn’t be interpreted in time zone ${timezone}; it may be ambiguous or it may not exist.`;
+  }
+  return instants[0]!;
+}
+
+/** An instant as the editor shows it: a date in the app date format and a time in its timezone. */
+function moment(value: Date | null): DateTimeInput {
+  if (!value) return { date: "", time: "" };
+  const { dateFormat, timezone } = applied();
+  const parts = zonedParts(value, timezone);
+  const two = (number: number) => String(number).padStart(2, "0");
+  const day = `${String(parts.year).padStart(4, "0")}-${two(parts.month)}-${two(parts.day)}`;
+  // Seconds only when there are some, so a save keeps them (Django's time field showed them).
+  const time = `${two(parts.hour)}:${two(parts.minute)}${parts.second ? `:${two(parts.second)}` : ""}`;
+  return { date: formatDate(day, dateFormat), time };
 }
 
 /**
@@ -171,9 +201,9 @@ export async function validateSettings(
   if (tripStart === undefined) errors.tripStart = "Enter a valid date.";
   const tripEnd = dateValue(input.tripEnd);
   if (tripEnd === undefined) errors.tripEnd = "Enter a valid date.";
-  const opensAt = dateTimeValue(input.opensAt);
+  const opensAt = dateTimeValue(input.opensAt, existing?.opensAt ?? null);
   if (typeof opensAt === "string") errors.opensAt = opensAt;
-  const closesAt = dateTimeValue(input.closesAt);
+  const closesAt = dateTimeValue(input.closesAt, existing?.closesAt ?? null);
   if (typeof closesAt === "string") errors.closesAt = closesAt;
 
   // Drafts get a name and a link of their own.
@@ -232,7 +262,12 @@ export async function validateSettings(
       title,
       description,
       slug,
-      primary: options.canChoosePrimary ? Boolean(input.primary) : (existing?.primary ?? false),
+      // The start page changes only when the editor sends it: a save of other
+      // settings keeps a handover made meanwhile.
+      primary:
+        options.canChoosePrimary && typeof input.primary === "boolean"
+          ? input.primary
+          : (existing?.primary ?? false),
       opensAt: opensAt as Date | null,
       closesAt: closesAt as Date | null,
       instructions,
@@ -249,13 +284,7 @@ export async function validateSettings(
 
 /** A form's settings as the editor shows them: dates in the app date format, times in its timezone. */
 export function settingsOf(form: Form): FormSettings {
-  const { dateFormat, timezone } = applied();
-  const moment = (value: Date | null): DateTimeInput => {
-    if (!value) return { date: "", time: "" };
-    const parts = zonedParts(value, timezone);
-    const day = `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-    return { date: formatDate(day, dateFormat), time: formatTime(value, timezone) };
-  };
+  const { dateFormat } = applied();
   return {
     name: form.name,
     slug: form.slug,

@@ -45,6 +45,8 @@ export async function runJobs(options: WorkerOptions = {}, shouldStop: () => boo
       if (performance.now() - lastMaintenance > MAINTENANCE_MS) {
         await maintenance();
         lastMaintenance = performance.now();
+        // A stop that arrived during maintenance starts no new job, such as an email.
+        if (shouldStop()) return;
       }
       writeHeartbeat();
       processed = await runOne();

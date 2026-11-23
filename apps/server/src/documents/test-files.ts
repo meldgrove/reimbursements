@@ -297,14 +297,14 @@ export function writeManifest(
  */
 export async function pdfText(
   bytes: Uint8Array,
-): Promise<Array<{ text: string; width: number; right: number }>> {
+): Promise<Array<{ text: string; width: number; left: number; right: number }>> {
   const { pdfium } = await import("./pdfium");
   const module = await pdfium();
   const memory = module.pdfium.wasmExports.malloc(bytes.byteLength);
   const heap = () => (module.pdfium as unknown as { HEAPU8: Uint8Array }).HEAPU8;
   heap().set(bytes, memory);
   const document = module.FPDF_LoadMemDocument(memory, bytes.byteLength, "");
-  const pages: Array<{ text: string; width: number; right: number }> = [];
+  const pages: Array<{ text: string; width: number; left: number; right: number }> = [];
   const box = module.pdfium.wasmExports.malloc(32);
   try {
     for (let index = 0; index < module.FPDF_GetPageCount(document); index += 1) {
@@ -315,13 +315,16 @@ export async function pdfText(
       module.FPDFText_GetText(text, 0, count, buffer);
       const content = Buffer.from(heap().subarray(buffer, buffer + count * 2)).toString("utf16le");
       module.pdfium.wasmExports.free(buffer);
+      let left = Infinity;
       let right = 0;
       for (let char = 0; char < count; char += 1) {
         if (module.FPDFText_GetCharBox(text, char, box, box + 8, box + 16, box + 24)) {
-          right = Math.max(right, new Float64Array(heap().slice(box + 8, box + 16).buffer)[0]!);
+          const [charLeft, charRight] = new Float64Array(heap().slice(box, box + 16).buffer);
+          left = Math.min(left, charLeft!);
+          right = Math.max(right, charRight!);
         }
       }
-      pages.push({ text: content, width: module.FPDF_GetPageWidthF(page), right });
+      pages.push({ text: content, width: module.FPDF_GetPageWidthF(page), left, right });
       module.FPDFText_ClosePage(text);
       module.FPDF_ClosePage(page);
     }

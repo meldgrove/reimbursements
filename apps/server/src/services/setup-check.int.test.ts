@@ -361,6 +361,19 @@ describe("single steps", () => {
     expect(detail).toContain("gave no OpenID configuration");
   });
 
+  it("needs no published key for ID tokens signed with the client secret", async () => {
+    const answers = realm();
+    localSettings({ oidcEnabled: true, OIDC_SIGN_ALGO: "HS256" });
+    // The provider publishes no keys: its key set answers 404.
+    vi.spyOn(providerFetch, "fetch").mockImplementation(async (url) =>
+      String(url).endsWith("/.well-known/openid-configuration")
+        ? Response.json(answers.discovery)
+        : new Response(null, { status: 404 }),
+    );
+    const [[status]] = (await results("keycloak")) as [Reported];
+    expect(status).toBe("ok");
+  });
+
   it("skips Keycloak without sign-in settings", async () => {
     localSettings({ oidcEnabled: false });
     expect((await results("keycloak"))[0]![0]).toBe("skip");

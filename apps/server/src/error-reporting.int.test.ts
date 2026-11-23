@@ -15,8 +15,9 @@ import { childEnvironment } from "./services/documents";
 const run = promisify(execFile);
 const PRIVATE = /synthetic_private/i;
 
-/** Sentry's stand-in: keeps the events of every envelope it receives. */
+/** Sentry's stand-in: keeps the events and the trace data (spans, transactions) of every envelope. */
 let events: Array<Record<string, unknown>> = [];
+let traces: Array<Record<string, unknown>> = [];
 let server: http.Server;
 let dsn: string;
 
@@ -30,6 +31,8 @@ beforeAll(async () => {
         try {
           const header = JSON.parse(lines[index]!) as { type?: string };
           if (header.type === "event") events.push(JSON.parse(lines[index + 1]!) as Record<string, unknown>);
+          if (header.type === "span" || header.type === "transaction")
+            traces.push(JSON.parse(lines[index + 1]!) as Record<string, unknown>);
         } catch {
           // Payload lines that are no item header.
         }
@@ -54,6 +57,7 @@ const BASE = {
 /** Runs the child in `mode` with `environment`: its answer and its log lines. */
 async function child(mode: string, environment: Record<string, string>) {
   events = [];
+  traces = [];
   const { stdout, stderr } = await run(
     process.execPath,
     ["--import", "tsx", path.join(SERVER_ROOT, "src/test/error-reporting-child.ts"), mode],
@@ -93,6 +97,48 @@ describe("error reporting", () => {
     await child("log", { SENTRY_DSN: dsn });
     const [event] = events;
     expect(JSON.stringify(event)).toContain("job_failed");
+    expect(JSON.stringify(event)).not.toMatch(PRIVATE);
+  }, 90_000);
+
+  it("traces requests by their route pattern, never by their path", async () => {
+    const { answer } = await child("trace", {
+      SENTRY_DSN: dsn,
+      SENTRY_TRACES_SAMPLE_RATE: "1",
+      APP_ROLE: "web",
+      DATABASE_URL:
+        process.env.TEST_DATABASE_URL ??
+        "postgresql://reimbursement:reimbursement@127.0.0.1:55468/reimbursements",
+    });
+    expect((answer as { statuses: number[] }).statuses).toHaveLength(5);
+    const sent = JSON.stringify(traces);
+    // The route patterns arrive, also for requests no route matched.
+    expect(sent).toContain("GET /api/v1/public/forms/:slug");
+    expect(sent).toContain("GET /*");
+    expect(sent).not.toMatch(PRIVATE);
+    expect(sent).not.toContain("11111111-1111-4111-8111-111111111111");
+  }, 90_000);
+
+  it("reports an operator command's failure, tagged with the command, without its message", async () => {
+    events = [];
+    traces = [];
+    // As the image starts `cli`: Sentry first (docker-entrypoint.sh).
+    const failed = await run(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--import",
+        path.join(SERVER_ROOT, "src/instrument.ts"),
+        path.join(SERVER_ROOT, "src/test/cli-child.ts"),
+        "fail-privately",
+      ],
+      { cwd: SERVER_ROOT, env: { ...BASE, SENTRY_DSN: dsn }, timeout: 60_000 },
+    ).catch((error: { code?: number }) => error);
+    expect((failed as { code?: number }).code).toBe(1);
+    const [event] = events;
+    expect(event).toBeDefined();
+    expect((event!.tags as Record<string, string>).role).toBe("fail-privately");
+    expect(JSON.stringify(event)).toContain("command_failed");
     expect(JSON.stringify(event)).not.toMatch(PRIVATE);
   }, 90_000);
 

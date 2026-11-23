@@ -1,6 +1,7 @@
 import path from "node:path";
 import { z } from "zod";
 import { SERVER_ROOT } from "./paths";
+import { OperatorError } from "./operator-error";
 
 /**
  * Settings from the environment. Read them only through `config()`; blank
@@ -9,8 +10,8 @@ import { SERVER_ROOT } from "./paths";
  * Appearance settings, templates, forms) lives in the database.
  *
  * Every variable of the Django version (0.1 to 0.4) still works, so an
- * existing `.env` needs no change: DJANGO_SECRET_KEY for AUTH_SECRET, the
- * one CSRF_TRUSTED_ORIGINS entry for APP_URL, DJANGO_DEBUG=1 for a
+ * existing `.env` needs no change: DJANGO_SECRET_KEY for AUTH_SECRET,
+ * CSRF_TRUSTED_ORIGINS for APP_URL (`publicUrl`) and the origins it trusts, DJANGO_DEBUG=1 for a
  * development deployment, KEYCLOAK_BASE_URL and KEYCLOAK_REALM for the
  * sign-in provider. ALLOWED_HOSTS is no longer read: every address the app
  * builds comes from APP_URL.
@@ -163,26 +164,51 @@ function isLocal(url: string): boolean {
 
 /**
  * The public URL: APP_URL, or else CSRF_TRUSTED_ORIGINS of the Django
- * version. Django allows origins with a wildcard, which name no address. Of
- * the others, the list must name exactly one: sign-in sends the provider
- * back to it.
+ * version. APP_URL names exactly one address: sign-in sends the provider
+ * back to it. CSRF_TRUSTED_ORIGINS may list several, as Django allowed (the
+ * development example of 0.4 names localhost and 127.0.0.1); the first one
+ * with https wins, else the first one. Origins with a wildcard name no
+ * address; all of them stay trusted origins (`originAllowed`).
  */
 export function publicUrl(
   appUrl: string | undefined,
   trustedOrigins: string | undefined,
 ): { url?: string; problem?: string } {
   const listed = splitList(appUrl ?? "");
-  const origins = listed.length > 0 ? listed : splitList(trustedOrigins ?? "");
+  if (listed.length > 0) {
+    const addresses = listed.filter((origin) => !origin.includes("*"));
+    if (addresses.length === 1 && listed.length === 1) return { url: addresses[0] };
+    return { problem: "APP_URL names several addresses or a wildcard. Set it to the public URL of the app" };
+  }
+  const origins = splitList(trustedOrigins ?? "");
   if (origins.length === 0) return {};
   const addresses = origins.filter((origin) => !origin.includes("*"));
-  if (addresses.length === 1) return { url: addresses[0] };
-  const source = listed.length > 0 ? "APP_URL" : "CSRF_TRUSTED_ORIGINS (Django version)";
+  const url = addresses.find((origin) => /^https:/i.test(origin)) ?? addresses[0];
+  if (url) return { url };
   return {
     problem:
-      addresses.length === 0
-        ? `${source} names only origins with a wildcard. Set APP_URL to the public URL, e.g. https://reimbursements.example.invalid`
-        : `${source} names several addresses. Set APP_URL to the public URL of the app`,
+      "CSRF_TRUSTED_ORIGINS (Django version) names only origins with a wildcard. Set APP_URL to the public URL, e.g. https://reimbursements.example.invalid",
   };
+}
+
+/**
+ * Whether a browser's Origin may change data (the Django version's CSRF
+ * check): the origin of APP_URL, or one of CSRF_TRUSTED_ORIGINS, where
+ * `https://*.example.invalid` stands for the domain and its subdomains.
+ */
+export function originAllowed(origin: string, settings: Pick<Config, "APP_URL" | "trustedOrigins">): boolean {
+  if (!URL.canParse(origin)) return false;
+  const given = new URL(origin);
+  if (given.origin === new URL(settings.APP_URL).origin) return true;
+  return settings.trustedOrigins.some((trusted) => {
+    const wildcard = /^([a-z][a-z0-9+.-]*):\/\/\*\.([^/]+)\/?$/i.exec(trusted);
+    if (!wildcard) return URL.canParse(trusted) && new URL(trusted).origin === given.origin;
+    const domain = wildcard[2]!.toLowerCase();
+    return (
+      given.protocol === `${wildcard[1]!.toLowerCase()}:` &&
+      (given.host === domain || given.host.endsWith(`.${domain}`))
+    );
+  });
 }
 
 export function splitList(value: string, lower = false): string[] {
@@ -237,11 +263,19 @@ export type Config = Omit<Parsed, Derived> & {
   TEST_RECIPIENT_ALLOWLIST: string[];
   /** DEPLOYMENT_ENV is development (Django's DEBUG). */
   isDevelopment: boolean;
+  /** CSRF_TRUSTED_ORIGINS of the Django version: origins besides APP_URL's that may change data. */
+  trustedOrigins: string[];
   /** The issuer of the sign-in provider without a trailing slash; empty: sign-in not set up. */
   oidcIssuer: string;
   /** The issuer as configured: ID tokens name it so when the provider has no discovery document. */
   oidcIssuerConfigured: string;
   oidcProviderKind: "keycloak" | "oidc";
+  /**
+   * Sign-in set up as in the Django version (KEYCLOAK_BASE_URL and
+   * KEYCLOAK_REALM): Keycloak's endpoints of the realm, no discovery, and
+   * the exact realm URL as issuer (src/auth/oidc.ts).
+   */
+  oidcLegacyKeycloak: boolean;
   oidcProviderName: string;
   oidcEnabled: boolean;
   // Fixed limits (Django settings without a variable).
@@ -290,7 +324,7 @@ export function config(): Config {
     const problems = parsed.error.issues
       .map((issue) => `  ${issue.path.join(".")}: ${issue.message}`)
       .join("\n");
-    throw new Error(`Invalid configuration:\n${problems}`);
+    throw new OperatorError(`Invalid configuration:\n${problems}`);
   }
   const value = parsed.data;
   const problems: string[] = [];
@@ -383,7 +417,7 @@ export function config(): Config {
   for (const cidr of trustedProxies) {
     if (!isCidr(cidr)) problems.push(`TRUSTED_PROXY_CIDRS: Not a network: ${cidr}`);
   }
-  if (problems.length > 0) throw new Error(`Invalid configuration:\n  ${problems.join("\n  ")}`);
+  if (problems.length > 0) throw new OperatorError(`Invalid configuration:\n  ${problems.join("\n  ")}`);
 
   const MAX_RECEIPT_BYTES = 10_000_000;
   const JOB_TIMEOUT_SECONDS = value.JOB_TIMEOUT_SECONDS;
@@ -412,9 +446,11 @@ export function config(): Config {
     APPROVED_DELIVERY_RECIPIENTS: approved,
     TEST_RECIPIENT_ALLOWLIST: testRecipients,
     isDevelopment,
+    trustedOrigins: splitList(value.CSRF_TRUSTED_ORIGINS ?? ""),
     oidcIssuer,
     oidcIssuerConfigured: fromKeycloak ? oidcIssuer : (value.OIDC_ISSUER ?? "").trim(),
     oidcProviderKind,
+    oidcLegacyKeycloak: fromKeycloak,
     oidcProviderName:
       value.OIDC_PROVIDER_NAME ?? (oidcProviderKind === "keycloak" ? "Keycloak" : "single sign-on"),
     oidcEnabled: Boolean(oidcIssuer && value.OIDC_CLIENT_ID && value.OIDC_CLIENT_SECRET),

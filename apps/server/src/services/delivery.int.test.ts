@@ -318,6 +318,10 @@ describe("Finance delivery", () => {
       await expect(callCommand("retry-claim", [reference, "--reason", "check"])).rejects.toThrow(
         /acknowledge-duplicate-risk/,
       );
+      // A reason left out is no reason, and the flag after it is no acknowledgment.
+      await expect(
+        callCommand("retry-claim", [reference, "--reason", "--acknowledge-duplicate-risk"]),
+      ).rejects.toThrow(/Usage/);
       expect(await countOf(jobs)).toBe(0);
       await callCommand("retry-claim", [
         reference,

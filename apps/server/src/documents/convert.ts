@@ -24,7 +24,6 @@ import {
   renameSync,
   rmSync,
   statSync,
-  writeSync,
 } from "node:fs";
 import path from "node:path";
 import {
@@ -51,6 +50,7 @@ import {
 import type { BuildManifest, BuildResult, ReceiptInput, UploadKind, ValidateResult } from "./manifest";
 import { PdfiumDocument } from "./pdfium";
 import { renderSummary } from "./summary";
+import { writeAll } from "./write-all";
 
 export class DocumentError extends Error {
   constructor(readonly code: string) {
@@ -100,7 +100,7 @@ function writeDurably(target: string, content: Uint8Array) {
   const temporary = target.replace(/\.[^./]+$/, "") + ".tmp";
   const fd = openSync(temporary, "w", 0o600);
   try {
-    writeSync(fd, content);
+    writeAll(fd, content);
     fsyncSync(fd);
   } finally {
     closeSync(fd);
@@ -200,15 +200,16 @@ async function normalizedImage(source: string, signature: boolean): Promise<Shar
 }
 
 /**
- * Whether a pixel differs from white by more than 30 in luminance (ITU-R 601-2,
- * as Pillow's "L" conversion of the difference to white).
+ * Whether a pixel differs from white by more than 30 in luminance (ITU-R 601-2),
+ * rounded exactly as Pillow's "L" conversion of the difference to white (its
+ * 16-bit fixed point, L24 in libImaging/Convert.c).
  */
 function hasInk(data: Uint8Array, channels: number): boolean {
   for (let index = 0; index < data.length; index += channels) {
     const red = 255 - data[index]!;
     const green = 255 - data[index + 1]!;
     const blue = 255 - data[index + 2]!;
-    if (Math.floor((red * 299 + green * 587 + blue * 114) / 1000) > 30) return true;
+    if ((red * 19595 + green * 38470 + blue * 7471 + 0x8000) >> 16 > 30) return true;
   }
   return false;
 }

@@ -167,6 +167,90 @@ describe("participant pages", () => {
     );
   });
 
+  // Review I11: the purpose choice and both consents are required for assistive technology too.
+  it("the purpose choice and the consents are required and carry their errors", async () => {
+    mockApi({
+      ...meta,
+      "/api/v1/public/forms/demo": {
+        body: formPage({ terms: { ...formPage().terms, purposeOptions: ["Werkstatt", "Tagung"] } }),
+      },
+    });
+    renderApp("/f/demo");
+    const group = await screen.findByRole("radiogroup");
+    expect(group).toHaveAttribute("aria-required", "true");
+    expect(group).toHaveAttribute("aria-describedby", "error-purpose");
+    expect(group).toHaveAccessibleName(/Anlass/);
+    for (const id of ["declaration", "privacy_acknowledged"])
+      expect(document.getElementById(id)).toHaveAttribute("aria-required", "true");
+  });
+
+  // Review I6: a link inside the app asks before it drops entries, as the browser did for 0.4's links.
+  it("a link inside the app asks before leaving a form with entries", async () => {
+    mockApi({
+      ...meta,
+      "/api/v1/public/forms/demo": { body: formPage() },
+      "/api/v1/public/privacy": { body: { notice: null } },
+    });
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const { router } = renderApp("/f/demo");
+    fireEvent.change(await screen.findByLabelText(/Vorname Nachname/), {
+      target: { value: "Alex Beispiel" },
+    });
+    fireEvent.click(screen.getByText("Datenschutz", { selector: "a" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(router.state.location.pathname).toBe("/f/demo");
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByText("Datenschutz", { selector: "a" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/datenschutz"));
+  });
+
+  // Review I5: a status request that timed out does not fail the polls after it.
+  it("the received page recovers after a status request timed out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const claim: ReceivedAnswer = {
+        reference: "Erst/2026-10-21/demo/beispiel/000001",
+        state: "processing",
+        final: false,
+        form: { name: "Demo-Veranstaltung", supportEmail: "finance@example.invalid" },
+      };
+      let polls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
+          const json = (body: unknown) =>
+            new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+          if (url.pathname === "/api/v1/meta") return json(testMeta());
+          polls += 1;
+          const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+          if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+          // The first poll hangs until its deadline aborts it.
+          if (polls === 2)
+            return new Promise<Response>((_, reject) =>
+              signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))),
+            );
+          return json(polls === 1 ? claim : { ...claim, state: "delivered", final: true });
+        }),
+      );
+      renderApp("/received/c1/");
+      expect(await screen.findByText(claim.reference)).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(3_000 + 15_000 + 500);
+      await waitFor(() =>
+        expect(document.getElementById("processing-status")).toHaveTextContent("nicht erreichbar"),
+      );
+      await vi.advanceTimersByTimeAsync(7_000);
+      await waitFor(() =>
+        expect(document.getElementById("processing-status")).toHaveTextContent(
+          "Dein Antrag wurde an Finance übermittelt.",
+        ),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("the privacy page shows the notice with its headings and version", async () => {
     mockApi({
       ...meta,

@@ -6,6 +6,8 @@ import { runMigrations } from "./db/migrate";
 import { createApp } from "./http/app";
 import { flushErrorReports } from "./error-reporting";
 import { startWorker, type Stop } from "./worker";
+import { productionChecks } from "./checks";
+import { OperatorError } from "./operator-error";
 
 /**
  * One entry point for every process. APP_ROLE selects what runs:
@@ -17,6 +19,8 @@ import { startWorker, type Stop } from "./worker";
 async function main() {
   const settings = config();
   const role = settings.APP_ROLE;
+  const problems = await productionChecks();
+  if (problems.length > 0) throw new OperatorError(problems.join(" "));
   if (role === "migrate") {
     await runMigrations();
     await closeDb();

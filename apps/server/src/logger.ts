@@ -1,4 +1,5 @@
 import { pino } from "pino";
+import { OperatorError } from "./operator-error";
 
 type FailedQuery = Error & { query: string; params: unknown[] };
 
@@ -33,6 +34,8 @@ export function serializeError(error: unknown) {
   const code = typeof own === "string" ? own : typeof cause === "string" ? cause : undefined;
   return {
     type: error.name && error.name !== "Error" ? error.name : error.constructor.name,
+    // Written for the operator, without personal data (src/operator-error.ts).
+    ...(error instanceof OperatorError ? { message: error.message } : {}),
     ...(isFailedQuery(error) ? { query: error.query } : {}),
     code,
     stack: frames(error),

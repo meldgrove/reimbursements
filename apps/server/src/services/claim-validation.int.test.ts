@@ -150,19 +150,21 @@ describe("claim validation", () => {
     expect(await getDb().$count(claims)).toBe(0);
   });
 
-  it.each(["[".repeat(100_000), `{"full_name": ${"1".repeat(5000)}}`])(
-    "JSON the app cannot load is an invalid request",
-    async (body) => {
-      for (const path of ["validate", "submit"]) {
-        const response = await request("POST", `/api/v1/public/forms/test/${path}`, {
-          jar: current.jar,
-          body,
-          headers: { "content-type": "application/json", "x-draft-token": current.data.token },
-        });
-        expect(response.status).toBe(400);
-      }
-    },
-  );
+  it.each([
+    "[".repeat(100_000),
+    `{"full_name": ${"1".repeat(5000)}}`,
+    // Review I8: well-formed but nested deeper than Python's json reads.
+    `{"full_name": ${"[".repeat(40_000)}${"]".repeat(40_000)}}`,
+  ])("JSON the app cannot load is an invalid request", async (body) => {
+    for (const path of ["validate", "submit"]) {
+      const response = await request("POST", `/api/v1/public/forms/test/${path}`, {
+        jar: current.jar,
+        body,
+        headers: { "content-type": "application/json", "x-draft-token": current.data.token },
+      });
+      expect(response.status).toBe(400);
+    }
+  });
 
   it("expense text with a NUL character is refused", async () => {
     const row = current.data.expenses[0];

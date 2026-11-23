@@ -124,3 +124,19 @@ export const VALIDATION_FAILURE_CODES = [
   "document_process_failed",
   "invalid_processing_output",
 ] as const;
+
+/** The codes a claim PDF's build can fail with, from the child. */
+export const BUILD_FAILURE_CODES = [
+  "output_page_count",
+  "output_blank_page",
+  "output_size_limit",
+  "workspace_limit",
+  "invalid_document",
+  "document_sandbox_unavailable",
+] as const;
+
+/** Every failure code the parent accepts from the child; any other answer is document_process_failed. */
+export const CHILD_FAILURE_CODES: ReadonlySet<string> = new Set([
+  ...VALIDATION_FAILURE_CODES,
+  ...BUILD_FAILURE_CODES,
+]);

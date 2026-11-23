@@ -6,16 +6,24 @@
  * window; this module resets both. Lock order is Draft, then network budget, then capacity.
  */
 import { eq } from "drizzle-orm";
-import { saltedHmac } from "../auth/session";
+import { djangoSaltedHmac } from "../auth/session";
 import { config } from "../config";
 import { draftAdmissions } from "../db/schema";
 import { atomic, q } from "../db/tx";
 
 type Budget = typeof draftAdmissions.$inferSelect;
 
+/**
+ * The key of a network's budget row: the Django version's digest, so the
+ * budgets a network spent stay spent across an upgrade or a rollback.
+ */
+export function budgetKey(network: string): string {
+  return djangoSaltedHmac("draft-admission", network);
+}
+
 /** The network's budget row, locked for this transaction, with expired windows reset. */
 async function locked(network: string): Promise<Budget> {
-  const key = saltedHmac("draft-admission", network);
+  const key = budgetKey(network);
   await q().insert(draftAdmissions).values({ key }).onConflictDoNothing();
   const [budget] = await q().select().from(draftAdmissions).where(eq(draftAdmissions.key, key)).for("update");
   const now = new Date();

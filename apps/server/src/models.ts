@@ -18,6 +18,8 @@ import {
 } from "./db/schema";
 import { q } from "./db/tx";
 import { t } from "./i18n";
+import { logger } from "./logger";
+import { pythonFullmatch } from "./python-regex";
 
 /** A form with its template and the template's fields in order. */
 export type FormWithTemplate = Form & { template: FormTemplate; fields: TemplateField[] };
@@ -31,17 +33,15 @@ export function fieldOptions(field: Pick<TemplateField, "choices">): string[] {
 }
 
 /**
- * A Python regular expression of a template field as a JavaScript one that
- * must match the whole value (re.fullmatch); null when JavaScript cannot
- * read it.
+ * A template field's pattern, written for Python's re (the Django version),
+ * as a JavaScript RegExp with the same meaning that must match the whole
+ * value (re.fullmatch); null when it has no translation (python-regex.ts).
  */
 export function fieldPattern(pattern: string): RegExp | null {
-  try {
-    return new RegExp(`^(?:${pattern})$`);
-  } catch {
-    return null;
-  }
+  return pythonFullmatch(pattern);
 }
+
+const untranslatable = new Set<string>();
 
 /** Why a template field's value is invalid (a message of the admin area). */
 export class FieldValueError extends Error {
@@ -66,6 +66,12 @@ export function validateFieldValue(
     throw new FieldValueError("Choose one of the options.");
   if (field.pattern) {
     const pattern = fieldPattern(field.pattern);
+    if (!pattern && !untranslatable.has(field.pattern)) {
+      // A pattern saved by the Django version that JavaScript cannot match: its
+      // forms stay closed, naming the field, until the template is changed.
+      untranslatable.add(field.pattern);
+      logger.warn({ pattern: field.pattern }, "a template field's pattern has no JavaScript translation");
+    }
     if (!pattern || !pattern.test(cleaned))
       throw new FieldValueError("The value does not match the template's format.");
   }

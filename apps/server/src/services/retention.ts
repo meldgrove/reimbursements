@@ -138,11 +138,20 @@ function lockClaim(claimId: string) {
  *
  * Nothing of the claim remains in the database. Only operator actions stay in
  * the log, without a link to the claim.
+ *
+ * `dueBy` (the cleanup) deletes the claim only if its content is still due
+ * then, checked under the lock: an operator may have unarchived it, or
+ * evidence moved its date, since the cleanup listed it. A purge already begun
+ * always finishes; an operator's deletion passes no date.
  */
-export async function purgeClaim(claimId: string) {
+export async function purgeClaim(claimId: string, options: { dueBy?: Date } = {}) {
   const claim = await atomic(async () => {
     const [locked] = await lockClaim(claimId);
     if (!locked) return null;
+    if (options.dueBy && locked.state !== CLAIM_STATES.PURGING) {
+      const due = contentDue(locked);
+      if (!due || due.getTime() > options.dueBy.getTime()) return null;
+    }
     await beginPurge(locked);
     return locked;
   });
@@ -167,12 +176,16 @@ export async function purgeClaim(claimId: string) {
   });
 }
 
-/** Deletes a delivered claim's PDF and local email copies; the content stays. */
-export async function removePdf(claimId: string) {
+/**
+ * Deletes a delivered claim's PDF and local email copies; the content stays.
+ * `dueBy` (the cleanup): only if the PDF is still due then, checked under the lock.
+ */
+export async function removePdf(claimId: string, options: { dueBy?: Date } = {}) {
   await atomic(async () => {
     // The row lock keeps operator retries out until the PDF is gone.
     const [claim] = await lockClaim(claimId);
     if (!claim || !claim.pdfKey || claim.state === CLAIM_STATES.PURGING) return;
+    if (options.dueBy && !(claim.pdfDue && claim.pdfDue.getTime() <= options.dueBy.getTime())) return;
     if (await queue.claimHasActiveJob(claim.id)) throw new ClaimBusy();
     removeKeys(claim.pdfKey);
     outbound.removeCopies(...(await financeEmails(claim.id)).map((email) => email.id));
@@ -242,7 +255,7 @@ export async function cleanup(options: { execute?: boolean } = {}): Promise<Clea
     .where(lt(draftAdmissions.windowStart, addDays(now, -2)));
   for (const claimId of pdfs) {
     try {
-      await removePdf(claimId);
+      await removePdf(claimId, { dueBy: now });
     } catch (error) {
       if (!(error instanceof ClaimBusy) && !isFileError(error)) throw error;
       result.failures += 1;
@@ -251,7 +264,7 @@ export async function cleanup(options: { execute?: boolean } = {}): Promise<Clea
   }
   for (const claimId of due) {
     try {
-      await purgeClaim(claimId);
+      await purgeClaim(claimId, { dueBy: now });
     } catch (error) {
       if (!(error instanceof ClaimBusy) && !isFileError(error)) throw error;
       result.failures += 1;

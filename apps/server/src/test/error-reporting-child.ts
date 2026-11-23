@@ -3,7 +3,7 @@
  * error reporting tests (error-reporting.int.test.ts). Its answers go to
  * stderr as `RESULT <json>`; the app's logs stay on stdout.
  *
- *   node --import tsx src/test/error-reporting-child.ts <options|request|log|fetch>
+ *   node --import tsx src/test/error-reporting-child.ts <options|request|log|trace|fetch>
  */
 await import("../instrument");
 const Sentry = await import("@sentry/node");
@@ -30,6 +30,25 @@ if (mode === "options") {
     logger.error({ err: error, job: 7, kind: "render" }, "job_failed");
   }
   answer({ logged: true });
+} else if (mode === "trace") {
+  // Requests through a real server, as in production, so the HTTP integration traces them.
+  const { createApp } = await import("../http/app");
+  const { serve } = await import("@hono/node-server");
+  const server = serve({ fetch: createApp().fetch, port: 0, hostname: "127.0.0.1" });
+  await new Promise((resolve) => server.once("listening", resolve));
+  const { port } = server.address() as { port: number };
+  const statuses: number[] = [];
+  for (const path of [
+    "/f/synthetic_private_slug/?iban=SYNTHETIC_PRIVATE_QUERY",
+    "/api/v1/public/forms/synthetic_private_slug",
+    "/received/11111111-1111-4111-8111-111111111111/",
+    "/synthetic_private_unmatched/path",
+    "/api/v1/synthetic_private_unmatched",
+  ]) {
+    statuses.push((await fetch(`http://127.0.0.1:${port}${path}`)).status);
+  }
+  server.close();
+  answer({ statuses });
 } else if (mode === "fetch") {
   const http = await import("node:http");
   const received = await new Promise<Record<string, unknown>>((resolve) => {

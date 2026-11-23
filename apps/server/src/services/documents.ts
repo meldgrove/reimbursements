@@ -38,7 +38,7 @@ import type {
   UploadKind,
   ValidateResult,
 } from "../documents/manifest";
-import { manifestInputs } from "../documents/manifest";
+import { CHILD_FAILURE_CODES, manifestInputs } from "../documents/manifest";
 import { addonPath, launcherPath, nativeBuilt } from "../documents/sandbox";
 import { fontsDirectory } from "../documents/summary";
 import {
@@ -106,9 +106,23 @@ export function childEnvironment(workspace: string): Record<string, string> {
 /** Where the child's code is. Tests point the sandbox at a bundle they build. */
 export const runnerOptions: { workerScript: string | undefined } = { workerScript: undefined };
 
+/** The child's bundle, which `npm run build` writes next to the server's. */
+export function builtWorker(): string {
+  return path.join(SERVER_ROOT, "dist", "file-worker.mjs");
+}
+
 function bundledWorker(): string | undefined {
   if (runnerOptions.workerScript) return runnerOptions.workerScript;
-  return IS_BUNDLED ? path.join(SERVER_ROOT, "dist", "file-worker.mjs") : undefined;
+  return IS_BUNDLED ? builtWorker() : undefined;
+}
+
+/**
+ * The bundle the sandbox runs. The sources' development server (tsx) has no
+ * bundle of its own: it uses the built one, as 0.4's development server
+ * could use the sandbox.
+ */
+function sandboxWorker(): string | undefined {
+  return bundledWorker() ?? (existsSync(builtWorker()) ? builtWorker() : undefined);
 }
 
 /** How node starts the child's code: the bundle, or (development) the sources through tsx. */
@@ -143,10 +157,9 @@ const INTERPRETERS = [
  * The launcher with its arguments (limits and the files the child may use),
  * then node and `script`. The document child's script is the worker bundle.
  */
-export function sandboxCommand(readonly: string[], workspace: string, script = bundledWorker()): string[] {
+export function sandboxCommand(readonly: string[], workspace: string, script = sandboxWorker()): string[] {
   if (!script) throw new ProcessingError("document_sandbox_unavailable");
   const node = realpathSync(process.execPath);
-  const limits = resourceLimits();
   const runtime = existing([
     "/lib",
     "/lib64",
@@ -162,7 +175,7 @@ export function sandboxCommand(readonly: string[], workspace: string, script = b
   );
   return [
     launcherPath(),
-    ...Object.entries(limits).flatMap(([name, value]) => ["--limit", `${name}=${value}`]),
+    ...limitArguments(),
     ...runtime.flatMap((entry) => ["--read", entry]),
     ...existing([
       node,
@@ -198,10 +211,17 @@ const sandboxedRunner: Runner = {
   },
 };
 
-/** Development: the same child, without confinement or limits. */
+/** The launcher's limit options (0.4 applied them to both runners). */
+function limitArguments(): string[] {
+  return Object.entries(resourceLimits()).flatMap(([name, value]) => ["--limit", `${name}=${value}`]);
+}
+
+/** Development: the same child, without confinement; with the limits when the launcher is built. */
 const directRunner: Runner = {
   command(args) {
-    return [process.execPath, ...workerEntry(), ...args];
+    const child = [process.execPath, ...workerEntry(), ...args];
+    if (!existsSync(launcherPath())) return child;
+    return [launcherPath(), ...limitArguments(), "--limits-only", "--", ...child];
   },
   async ready() {
     return true;
@@ -327,6 +347,8 @@ export function assemblePdf(manifestPath: string, outputPath: string): Promise<B
 }
 
 const MAX_ANSWER_BYTES = 65_536;
+/** The launcher's exit status when it cannot confine or start the child. */
+const LAUNCHER_FAILED = 125;
 
 /** Runs the child on `args` in `workspace` and returns its answer; failures are ProcessingError. */
 export async function execute(
@@ -349,6 +371,9 @@ export async function execute(
       if (result === "timeout") throw new ProcessingError("document_timeout");
       const buffer = Buffer.alloc(MAX_ANSWER_BYTES + 1);
       const length = readSync(output, buffer, 0, buffer.length, 0);
+      // The launcher failed before the child ran (no Landlock, a limit refused): an operator's matter.
+      if (result.code === LAUNCHER_FAILED && length === 0)
+        throw new ProcessingError("document_sandbox_unavailable");
       stdout = buffer.subarray(0, length);
       if (stdout.length > MAX_ANSWER_BYTES) throw new ProcessingError("document_process_failed");
       let payload: unknown;
@@ -362,8 +387,11 @@ export async function execute(
       }
       const answer = payload as Record<string, unknown>;
       if (result.code !== 0 || "error" in answer) {
+        // Only the codes the child knows: any other text is not passed on, stored or logged.
         throw new ProcessingError(
-          typeof answer.error === "string" ? answer.error : "document_process_failed",
+          typeof answer.error === "string" && CHILD_FAILURE_CODES.has(answer.error)
+            ? answer.error
+            : "document_process_failed",
         );
       }
       return answer;

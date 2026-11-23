@@ -140,7 +140,12 @@ describe("the update routes", () => {
   ])("install nothing else, without calling the updater (%j)", async (payload) => {
     const response = await request("POST", "/api/v1/admin/updates/install", { user: admin, body: payload });
     expect(response.status).toBe(400);
-    expect(response.body.error.message).toBe("Name the version to install, such as 0.2.1.");
+    // The envelope the update button reads, as Django's `_invalid` answered.
+    expect(response.body).toMatchObject({
+      error: "Name the version to install, such as 0.2.1.",
+      reachable: true,
+      updater: null,
+    });
     expect(updater.calls).toEqual([]);
   });
 
@@ -153,7 +158,11 @@ describe("the update routes", () => {
         headers: { "content-type": "application/json" },
       });
       expect(response.status).toBe(400);
-      expect(response.body.error.message).toBe("The channel is stable or preview.");
+      expect(response.body).toMatchObject({
+        error: "The channel is stable or preview.",
+        reachable: true,
+        updater: null,
+      });
       expect(updater.calls).toEqual([]);
     },
   );

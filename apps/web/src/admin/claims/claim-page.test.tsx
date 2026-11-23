@@ -268,3 +268,39 @@ describe("processing a claim again", () => {
     expect(screen.queryByLabelText(/^Reason/)).toBeNull();
   });
 });
+
+describe("processing a claim again", () => {
+  it("shows the plan as it is now after a refusal, with the reason kept", async () => {
+    const { calls } = mockApi({
+      ...meta,
+      // The delivery became uncertain after the page opened.
+      [`GET /api/v1/admin/claims/${ID}/retry`]: () => ({
+        body: {
+          claim: SUMMARY,
+          plan: { action: "resend", duplicateRisk: calls.some((call) => call.method === "POST") },
+          refused: "",
+        },
+      }),
+      [`POST /api/v1/admin/claims/${ID}/retry`]: {
+        status: 409,
+        body: {
+          error: {
+            code: "duplicate_risk",
+            message:
+              "The email may already have arrived. Check the delivery first, then acknowledge the risk of a duplicate delivery.",
+          },
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/admin/claims/${ID}/retry`);
+    await user.type(await screen.findByLabelText(/^Reason/), "Finance asked again");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Process again" }));
+    expect(
+      await screen.findByRole("checkbox", { name: /accept that Finance may receive the claim twice/ }),
+    ).not.toBeChecked();
+    expect(screen.getByText("Duplicate delivery possible")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Reason/)).toHaveValue("Finance asked again");
+  });
+});

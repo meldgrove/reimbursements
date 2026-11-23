@@ -5,6 +5,7 @@
  * None prints addresses or banking details.
  */
 import os from "node:os";
+import { parseArgs } from "node:util";
 import { and, count, eq, ne, sql, type SQL } from "drizzle-orm";
 import { config } from "../config";
 import { claims, deliveries, formTemplates, forms, jobs, uploads } from "../db/schema";
@@ -21,15 +22,9 @@ import { isEmail } from "@reimbursements/shared/email";
 import { SetupCheck } from "../services/setup-check";
 import { recipientApproved } from "../services/outbound";
 import { runJobs } from "../worker";
-import { option, registerCommand } from "./registry";
+import { CommandError, option, registerCommand } from "./registry";
 
-/** A command's refusal: the CLI prints the message and exits with 1 (Django's CommandError). */
-export class CommandError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CommandError";
-  }
-}
+export { CommandError };
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -142,16 +137,31 @@ registerCommand("retry-claim", {
   usage:
     "retry-claim <reference> --reason <text> [--actor <name>] [--acknowledge-duplicate-risk]  build or send a claim's PDF again",
   run: async (args) => {
-    const [reference] = positional(args, ["--reason", "--actor"]);
-    const reason = option(args, "--reason");
-    if (!reference || reason === undefined) {
-      throw new CommandError("Usage: retry-claim <reference> --reason <text> [--actor <name>]");
+    const usage =
+      "Usage: retry-claim <reference> --reason <text> [--actor <name>] [--acknowledge-duplicate-risk]";
+    // Parsed once, as Django's argparse did: an option's missing value is an error, not the next flag.
+    let parsed;
+    try {
+      parsed = parseArgs({
+        args,
+        allowPositionals: true,
+        options: {
+          reason: { type: "string" },
+          actor: { type: "string" },
+          "acknowledge-duplicate-risk": { type: "boolean" },
+        },
+      });
+    } catch {
+      throw new CommandError(usage);
     }
+    const [reference, ...extra] = parsed.positionals;
+    const { reason, actor } = parsed.values;
+    if (!reference || extra.length || reason === undefined) throw new CommandError(usage);
     try {
       const claim = await retry(reference, {
-        actor: option(args, "--actor") ?? currentUser(),
+        actor: actor ?? currentUser(),
         reason,
-        acknowledgeDuplicateRisk: args.includes("--acknowledge-duplicate-risk"),
+        acknowledgeDuplicateRisk: parsed.values["acknowledge-duplicate-risk"] ?? false,
       });
       out(`Queued retry for ${claimReference(claim)}.`);
     } catch (error) {

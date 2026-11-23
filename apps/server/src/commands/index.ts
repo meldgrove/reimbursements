@@ -4,4 +4,4 @@
 import "./basics";
 import "./back-office";
 
-export { COMMANDS, option, registerCommand, type Command } from "./registry";
+export { CommandError, COMMANDS, option, registerCommand, type Command } from "./registry";

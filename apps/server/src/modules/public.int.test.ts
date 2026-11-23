@@ -15,6 +15,7 @@ import {
   jobs,
   privacyNotices,
   sessions,
+  templateFields,
 } from "../db/schema";
 import { createForm, template } from "../test/fixtures";
 import { CookieJar, createUser, request, signInWithTestHeader } from "../test/helpers";
@@ -161,6 +162,15 @@ describe("form page", () => {
     await getDb().delete(privacyNotices);
     expect((await request("GET", "/api/v1/public/privacy")).body).toEqual({ notice: null });
   });
+
+  // Review I10: the date is the app timezone's day, as the Django template rendered it.
+  it("dates the privacy notice in the app timezone", async () => {
+    await getDb()
+      .update(privacyNotices)
+      .set({ createdAt: new Date("2026-11-23T23:30:00Z") });
+    const response = await request("GET", "/api/v1/public/privacy");
+    expect(response.body.notice.date).toBe("24.11.2026");
+  });
 });
 
 describe("received page", () => {
@@ -262,6 +272,21 @@ describe("races", () => {
     expect(await getDb().$count(jobs, eq(jobs.kind, "render"))).toBe(1);
   });
 
+  // Review I9: the global cap holds when new drafts are opened at the same moment.
+  it("concurrent new drafts stay within the active-draft limit", async () => {
+    await createForm();
+    intakeSettings({ MAX_ACTIVE_DRAFTS: 2 });
+    const statuses = await Promise.all(
+      [0, 1, 2, 3, 4, 5].map((index) =>
+        openForm(new CookieJar(), "test", { remoteAddress: `192.0.2.${10 + index}` }).then(
+          (page) => page.status,
+        ),
+      ),
+    );
+    expect(statuses.sort()).toEqual([200, 200, 503, 503, 503, 503]);
+    expect(await getDb().$count(drafts)).toBe(2);
+  });
+
   it("concurrent fresh sessions share one creation budget", async () => {
     await createForm();
     intakeSettings({ MAX_DRAFTS_PER_NETWORK: 1 });
@@ -284,5 +309,29 @@ describe("races", () => {
       "000003",
       "000004",
     ]);
+  });
+});
+
+// Review I4/A7: patterns saved by the Django version keep their Python meaning.
+describe("template patterns of the Django version", () => {
+  beforeEach(async () => {
+    await freshIntake();
+  });
+
+  it("an existing published form with a Python pattern stays open", async () => {
+    const form = await createForm({ fieldValues: { kst: "KST-1234", ktr: "" } });
+    await getDb()
+      .update(templateFields)
+      .set({ pattern: String.raw`(?i)kst-\d{4}` })
+      .where(eq(templateFields.key, "kst"));
+    const page = await openForm(new CookieJar(), form.slug);
+    expect(page.status).toBe(200);
+    expect(page.body.state).toBe("open");
+  });
+
+  it("a pattern without a JavaScript form keeps the form closed", async () => {
+    const form = await createForm({ fieldValues: { kst: "KST", ktr: "" } });
+    await getDb().update(templateFields).set({ pattern: "(?>KST)" }).where(eq(templateFields.key, "kst"));
+    expect((await openForm(new CookieJar(), form.slug)).body.state).toBe("closed");
   });
 });

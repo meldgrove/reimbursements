@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useBlocker, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   CalendarDays,
@@ -792,20 +792,29 @@ export function ClaimForm({ page, slug }: { page: FormPage; slug: string }) {
     }
   }
 
-  // Leaving with files or a name entered asks first.
+  // Leaving with files or a name entered asks first: the browser for a reload
+  // or another site, a confirmation for links inside the app (the footer's privacy link).
+  const unsaved = useCallback(
+    () =>
+      !accepted.current &&
+      (rowsRef.current.some((row) => row.files.length) || Boolean(valuesRef.current.full_name)),
+    [rowsRef, valuesRef],
+  );
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (
-        !accepted.current &&
-        (rowsRef.current.some((row) => row.files.length) || valuesRef.current.full_name)
-      ) {
+      if (unsaved()) {
         event.preventDefault();
         event.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [rowsRef, valuesRef]);
+  }, [unsaved]);
+  useBlocker({
+    shouldBlockFn: () =>
+      unsaved() && !window.confirm(t("Leave this page? Your entries and receipts will be lost.")),
+    enableBeforeUnload: false,
+  });
 
   // -- rendering ------------------------------------------------------------------------------
 
@@ -1066,11 +1075,8 @@ export function ClaimForm({ page, slug }: { page: FormPage; slug: string }) {
                 </>
               ) : terms.purposeOptions.length ? (
                 <>
-                  <fieldset
-                    className="field choice-list flex flex-col gap-3"
-                    aria-describedby="error-purpose"
-                  >
-                    <legend className="mb-3 text-sm font-medium">
+                  <fieldset className="field choice-list flex flex-col gap-3">
+                    <legend id="purpose-legend" className="mb-3 text-sm font-medium">
                       {purposeLabel}{" "}
                       <span className="required-mark text-destructive" aria-hidden="true">
                         *
@@ -1078,7 +1084,10 @@ export function ClaimForm({ page, slug }: { page: FormPage; slug: string }) {
                     </legend>
                     <RadioGroup
                       name="purpose"
+                      required
                       value={values.purpose}
+                      aria-labelledby="purpose-legend"
+                      aria-describedby="error-purpose"
                       aria-invalid={messages["error-purpose"] ? true : undefined}
                       onValueChange={(value) => setField("purpose", value)}
                     >
@@ -1264,6 +1273,7 @@ export function ClaimForm({ page, slug }: { page: FormPage; slug: string }) {
                 <Checkbox
                   id="declaration"
                   name="declaration"
+                  required
                   checked={declaration}
                   disabled={submitting}
                   onCheckedChange={(checked) => setDeclaration(checked === true)}
@@ -1362,6 +1372,7 @@ export function ClaimForm({ page, slug }: { page: FormPage; slug: string }) {
                 <Checkbox
                   id="privacy_acknowledged"
                   name="privacy_acknowledged"
+                  required
                   checked={privacy}
                   disabled={submitting}
                   onCheckedChange={(checked) => setPrivacy(checked === true)}
