@@ -23,7 +23,7 @@ export function pagesOf(count: number): number {
   return Math.max(1, Math.ceil(count / PAGE_SIZE));
 }
 
-/** The address of a participant page of this app, e.g. https://example.org/f/workshop/. */
+/** The address of a participant page of this app, e.g. https://reimbursements.example.invalid/f/workshop/. */
 export function absolute(path: string): string {
   return new URL(path, config().APP_URL).toString();
 }

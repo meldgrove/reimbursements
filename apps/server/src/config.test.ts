@@ -44,8 +44,8 @@ describe("production settings", () => {
     DJANGO_DEBUG: "0",
     DJANGO_SECRET_KEY: "synthetic-key-".repeat(8),
     DATABASE_URL: "postgresql://test:test@localhost/test",
-    ALLOWED_HOSTS: "test.invalid",
-    CSRF_TRUSTED_ORIGINS: "https://test.invalid",
+    ALLOWED_HOSTS: "reimbursements.example.invalid",
+    CSRF_TRUSTED_ORIGINS: "https://reimbursements.example.invalid",
     MAILERSEND_API_TOKEN: "synthetic",
     MAILERSEND_WEBHOOK_SIGNING_SECRET: "synthetic",
     APPROVED_DELIVERY_RECIPIENTS: "test@example.invalid",
@@ -141,9 +141,9 @@ describe("the public URL from the Django version's CSRF_TRUSTED_ORIGINS", () => 
       ).url,
     ).toBe("https://reimbursements.example.invalid");
     expect(publicUrl(undefined, "https://*.example.invalid").problem).toMatch(/only origins with a wildcard/);
-    expect(publicUrl("https://a.example.invalid,https://b.example.invalid", undefined).problem).toMatch(
-      /APP_URL/,
-    );
+    expect(
+      publicUrl(["https://a.example.invalid", "https://b.example.invalid"].join(","), undefined).problem,
+    ).toMatch(/APP_URL/);
     const settings = {
       APP_URL: "https://reimbursements.example.invalid",
       trustedOrigins: ["https://*.example.invalid", "https://reimbursements.example.invalid"],
@@ -151,7 +151,7 @@ describe("the public URL from the Django version's CSRF_TRUSTED_ORIGINS", () => 
     expect(originAllowed("https://other.example.invalid", settings)).toBe(true);
     expect(originAllowed("https://example.invalid", settings)).toBe(true);
     expect(originAllowed("http://other.example.invalid", settings)).toBe(false);
-    expect(originAllowed("https://example.invalid.evil.example", settings)).toBe(false);
+    expect(originAllowed("https://example.invalid.slack.com", settings)).toBe(false);
     expect(originAllowed("null", settings)).toBe(false);
   });
 });

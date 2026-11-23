@@ -53,7 +53,7 @@ export type FormRow = {
   unavailable: string;
   /** The closing time in the app's date format and timezone, or "". */
   closesAt: string;
-  /** The form's address, e.g. https://example.org/f/workshop/. */
+  /** The form's address, e.g. https://reimbursements.example.invalid/f/workshop/. */
   link: string;
 };
 
