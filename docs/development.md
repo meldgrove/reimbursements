@@ -59,7 +59,8 @@ Uploaded receipts and signatures are parsed only in a child process
 native add-on with seccomp, both in `apps/server/native/sandbox`. They need Linux 6.2 or
 later (Landlock ABI 3), a C compiler and, at run time, libseccomp2:
 `npm run build:sandbox --workspace @reimbursements/server` builds them into
-`apps/server/native/build`, and `DOCUMENT_SANDBOX_ENABLED=1` uses them. `.env.example`
+`apps/server/native/build`, and the worker bundle into `apps/server/dist/file-worker.mjs`;
+`DOCUMENT_SANDBOX_ENABLED=1` uses them. `.env.example`
 sets `DOCUMENT_SANDBOX_ENABLED=0`, which reads files unconfined, for development only;
 production refuses it.
 

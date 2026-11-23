@@ -16,9 +16,9 @@ import type { SessionData } from "./db/schema";
  * - `network`: the client network that shares one admission budget
  *   (`clientNetwork`).
  * - `binding({ create })`: a keyed binding of the browser session, or null
- *   without one. `create: true` starts a session first. A started session
- *   must persist even when later admission fails, so never ask for one
- *   inside a transaction that can roll back (it commits on its own).
+ *   without one. `create: true` starts a session first, in the caller's
+ *   transaction when there is one (its cookie follows the commit): ask for
+ *   one only once admission has passed, as `openDraft` does.
  * - `remembered(formSlug)` / `remember(formSlug, draftId, token)`: the draft
  *   this browser works on for a form, or null.
  */

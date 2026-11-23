@@ -48,8 +48,14 @@ function tryAcquire(): Slot | null {
   for (let index = 0; index < count; index += 1) {
     const fd = openSync(path.join(directory, `slot-${index}`), "a+", 0o600);
     // flock locks belong to the open file: another descriptor, also of this process, waits.
-    if (addon.flock(fd, "exclusive")) return { release: () => closeSync(fd) };
-    closeSync(fd);
+    let locked = false;
+    try {
+      locked = addon.flock(fd, "exclusive");
+    } finally {
+      // Taken by another, or the call failed: the descriptor goes back either way.
+      if (!locked) closeSync(fd);
+    }
+    if (locked) return { release: () => closeSync(fd) };
   }
   return null;
 }

@@ -370,8 +370,12 @@ describe("single steps", () => {
         ? Response.json(answers.discovery)
         : new Response(null, { status: 404 }),
     );
-    const [[status]] = (await results("keycloak")) as [Reported];
-    expect(status).toBe("ok");
+    let [[status, , detail]] = (await results("keycloak")) as [Reported];
+    expect(status, detail).toBe("ok");
+    // Nor a key set's address, as at sign-in (B10).
+    delete answers.discovery.jwks_uri;
+    [[status, , detail]] = (await results("keycloak")) as [Reported];
+    expect(status, detail).toBe("ok");
   });
 
   it("skips Keycloak without sign-in settings", async () => {

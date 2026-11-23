@@ -31,7 +31,7 @@ import { config } from "../config";
 import { claims, drafts, forms } from "../db/schema";
 import { q } from "../db/tx";
 import type { AppEnv } from "../http/env";
-import { BodyTooLarge } from "../http/middleware";
+import { BodyTooLarge, isBodyTooLarge } from "../http/middleware";
 import { applied, formatDateTime, formatInstantDate, language, t, zoneName } from "../i18n";
 import * as intake from "../intake";
 import { IntakeError } from "../intake";
@@ -87,7 +87,7 @@ async function claimJson(c: Context<AppEnv>): Promise<unknown> {
   try {
     data = JSON.parse(await c.req.text());
   } catch (error) {
-    if (error instanceof BodyTooLarge) throw error;
+    if (isBodyTooLarge(error)) throw new BodyTooLarge();
     throw invalidRequest();
   }
   if (!wellFormed(data)) throw invalidRequest();
@@ -280,8 +280,9 @@ async function receiveUpload(c: Context<AppEnv>): Promise<Received> {
     await Promise.allSettled(writes);
     const pending = file as uploads.ReceivedFile | null;
     if (pending) rmSync(pending.path, { force: true });
-    if (error instanceof BodyTooLarge || (error instanceof Error && /too large|limit/i.test(error.message)))
-      throw new IntakeError(intake.message("request_too_large")!, { status: 413 });
+    // The same 413 as for a declared length that is too large (requestLimits).
+    if (isBodyTooLarge(error) || (error instanceof Error && /too large|limit/i.test(error.message)))
+      throw new BodyTooLarge();
     throw invalidRequest();
   }
   // Django accepts one file per request (DATA_UPLOAD_MAX_NUMBER_FILES).

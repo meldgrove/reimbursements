@@ -3,6 +3,7 @@ import type { User } from "../../db/schema";
 import { config } from "../../config";
 import type { AppEnv } from "../../http/env";
 import { badRequest } from "../../http/errors";
+import { BodyTooLarge, isBodyTooLarge } from "../../http/middleware";
 
 /** Who an audited action is logged for: the person's email, or their username. */
 export function actor(user: Pick<User, "email" | "username">): string {
@@ -33,8 +34,9 @@ export async function body(c: Context<AppEnv>): Promise<Record<string, unknown>>
   try {
     const value: unknown = await c.req.json();
     if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
-  } catch {
-    // answered below
+  } catch (error) {
+    if (isBodyTooLarge(error)) throw new BodyTooLarge();
+    // otherwise answered below
   }
   throw badRequest("The request body must be a JSON object");
 }

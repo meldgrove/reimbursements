@@ -19,8 +19,9 @@ server reaches it. `compose.coolify.yaml` publishes no host port; Coolify routes
 directly to the web container, so do not add a second reverse proxy there.
 
 For production set `DEPLOYMENT_ENV=production`, a random `DJANGO_SECRET_KEY` (or
-`AUTH_SECRET`), production PostgreSQL credentials/URL, and the public HTTPS origin in
-`CSRF_TRUSTED_ORIGINS` (or `APP_URL`). `TRUST_PROXY_HEADERS=1`, which `compose.yaml`
+`AUTH_SECRET`, which wins when both are set), production PostgreSQL credentials/URL,
+and the public HTTPS origin in `CSRF_TRUSTED_ORIGINS` (or `APP_URL`; see
+[application settings](deployment.md#application-settings)). `TRUST_PROXY_HEADERS=1`, which `compose.yaml`
 sets, requires `TRUSTED_PROXY_CIDRS`. Configure:
 
 - `MAIL_DELIVERY_MODE=mailersend`, `MAILERSEND_API_TOKEN` and
@@ -195,8 +196,12 @@ deletes forms. A template admin can delete an archived form without claims.
 The commands below run through authorized host access and record the host actor.
 Use operational reasons without participant names, account details, or receipt text.
 On a server, run each as `docker compose run --rm web cli <command>` in
-`/srv/reimbursements`; `cli help` lists them. They replace the `python manage.py`
-commands of 0.4 (`claim_status` became `claim-status`, and so on).
+`/srv/reimbursements`; `cli help` lists them. On Coolify, run
+`docker-entrypoint.sh cli <command>` in the web container's terminal. They replace the
+`python manage.py` commands of 0.4 (`claim_status` became `claim-status`, and so on,
+with the same options); the old form of `claim_status`, `purge_expired`,
+`reconcile_deliveries`, `retry_claim`, `verify_setup` and `verify_storage` still runs
+them, through the `python` stand-in ([upgrade from 0.4](deployment.md#upgrade-from-04)).
 
 ```bash
 cli claim-status

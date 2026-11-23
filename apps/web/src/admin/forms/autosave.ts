@@ -115,6 +115,8 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
 
   const save = useCallback(async () => {
     clearTimeout(timer.current);
+    // Once the person left the editor (also by "Leave without saving"), nothing queued is sent.
+    if (!mounted.current) return;
     if (saving.current || (!dirty.current && !publication.current)) return;
     const action = publication.current;
     publication.current = null;
@@ -189,7 +191,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
     } finally {
       saving.current = false;
       setPublishing(Boolean(publication.current));
-      if (publication.current || revision.current !== startedAt)
+      if (mounted.current && (publication.current || revision.current !== startedAt))
         timer.current = setTimeout(() => void save(), 0);
     }
   }, [editor.template.id, show]);

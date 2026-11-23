@@ -583,6 +583,31 @@ describe("saves that race", () => {
     expect((await reload(other)).primary).toBe(true);
   });
 
+  it("hands the start page over without deadlocking a bulk deletion of both forms", async () => {
+    const first = await createForm({ primary: true });
+    const second = await createForm({ slug: "second", name: "Second" });
+    const deletion = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await deletion.connect();
+    try {
+      await deletion.query("begin");
+      // A bulk deletion locks its forms in id order: the first one now …
+      await deletion.query("select id from portal_form where id = $1 for update", [first.id]);
+      const saving = request("PUT", `/api/v1/admin/forms/${second.id}`, {
+        user: admin,
+        body: formSettings(second, { primary: true }),
+      });
+      await settle();
+      // … then the second one, which the handover must not hold while it waits for the first.
+      await deletion.query("select id from portal_form where id = $1 for update", [second.id]);
+      await deletion.query("rollback");
+      expect((await saving).status).toBe(200);
+      expect((await reload(second)).primary).toBe(true);
+      expect((await reload(first)).primary).toBe(false);
+    } finally {
+      await deletion.end();
+    }
+  });
+
   it("keeps the start page when a template admin's save does not send it", async () => {
     const form = await createForm({ primary: true });
     const response = await request("PUT", `/api/v1/admin/forms/${form.id}`, {

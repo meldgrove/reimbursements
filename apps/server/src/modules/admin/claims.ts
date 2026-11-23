@@ -23,7 +23,7 @@ import {
 import { q } from "../../db/tx";
 import type { AppEnv } from "../../http/env";
 import { AppError, forbidden, notFound, validationError } from "../../http/errors";
-import { requireEditor, requireTemplateAdmin, uuidParam } from "../../http/middleware";
+import { isBodyTooLarge, requireEditor, requireTemplateAdmin, uuidParam } from "../../http/middleware";
 import { applied, formatAmount, formatDateTime, formatInstantDate } from "../../i18n";
 import { isTemplateAdmin, visibleClaims } from "../../auth/roles";
 import * as claimStatus from "../../services/claim-status";
@@ -450,7 +450,11 @@ router.post("/admin/claims/:id/archive", async (c) => {
       changed: 0,
       message: "This claim has already been deleted.",
     } satisfies ArchiveAnswer);
-  const input = await body(c).catch(() => ({}) as Record<string, unknown>);
+  // The body is optional; one too large is still refused.
+  const input = await body(c).catch((error: unknown) => {
+    if (isBodyTooLarge(error)) throw error;
+    return {} as Record<string, unknown>;
+  });
   const answer = await archiveClaims(user, [claim], input.confirm === true);
   if (!answer.confirm && answer.changed)
     answer.message = "The claim was archived. The claims list shows it under Status: Archived.";

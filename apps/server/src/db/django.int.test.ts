@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { migrateWith } from "./migrate";
+import { migrateWith, untranslatablePatterns } from "./migrate";
 import { databaseUrl, MIGRATIONS, recreateDatabase } from "../test/databases";
 import { TEST_DATABASE_URL } from "../test/env";
 
@@ -285,6 +285,21 @@ describe("taking over the database of the Django version", () => {
     await loadFixture();
     await withClient(DJANGO, (client) => client.query("drop table django_migrations"));
     await expect(upgrade(DJANGO)).rejects.toThrow(/neither Django's nor this version's migration records/);
+  });
+
+  it("lists the template fields whose Python patterns have no JavaScript translation", async () => {
+    await loadFixture((sql) =>
+      sql.replace(
+        "VALUES (3, 'id', 'ID', 'text', '', '',",
+        "VALUES (3, 'id', 'ID', 'text', '', '(?P<p>KST)?(?P=p)-\\d{4}',",
+      ),
+    );
+    await upgrade(DJANGO);
+    const refused = await withClient(DJANGO, (client) => untranslatablePatterns(client));
+    // The second template's \d{4} translates; the optional group's reference does not.
+    expect(refused).toEqual([
+      { template: expect.any(String), field: "id", pattern: "(?P<p>KST)?(?P=p)-\\d{4}" },
+    ]);
   });
 
   it("ends Django's sessions at every migration, and keeps their table", async () => {

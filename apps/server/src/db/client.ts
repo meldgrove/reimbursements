@@ -128,16 +128,19 @@ export async function connectClient(url: string = config().DATABASE_URL): Promis
 
 /**
  * Gives a pool libpq's `prefer` (see `prefersTls`): when the server refuses
- * TLS, the pool connects without it from then on.
+ * TLS, the pool connects without it from then on. Every connection that
+ * asked for TLS and was refused tries again without it, also those already
+ * on their way when the first refusal switched the pool to plain.
  */
 export function withTlsFallback(pool: pg.Pool): pg.Pool {
   const connect = pool.connect.bind(pool) as () => Promise<pg.PoolClient>;
   const options = (pool as unknown as { options: pg.PoolConfig }).options;
   const attempt = async (): Promise<pg.PoolClient> => {
+    const askedForTls = Boolean(options.ssl);
     try {
       return await connect();
     } catch (error) {
-      if (!options.ssl || !tlsRefused(error)) throw error;
+      if (!askedForTls || !tlsRefused(error)) throw error;
       plaintextAfterRefusal = true;
       options.ssl = false;
       return connect();

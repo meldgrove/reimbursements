@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, RefreshCw, TriangleAlert } from "lucide-react";
@@ -28,16 +28,14 @@ export function RetryPage() {
   const queryClient = useQueryClient();
   const query = useQuery(retryQuery(claimId));
   const [reason, setReason] = useState("");
-  const [acknowledged, setAcknowledged] = useState(false);
+  /** The claim and plan the acknowledgment was given for: another claim or a changed plan needs its own. */
+  const [acknowledgedFor, setAcknowledgedFor] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
   const reference = query.data?.claim.reference;
-  // An acknowledgment belongs to the plan it was given for.
-  const duplicateRisk = Boolean(query.data?.plan?.duplicateRisk);
-  useEffect(() => {
-    if (!duplicateRisk) setAcknowledged(false);
-  }, [duplicateRisk]);
+  const planKey = query.data?.plan?.duplicateRisk ? `${claimId}:${JSON.stringify(query.data.plan)}` : null;
+  const acknowledged = planKey !== null && acknowledgedFor === planKey;
   useRecordName(
     pathname,
     reference ? (reference.length > 12 ? `${reference.slice(0, 11)}…` : reference) : null,
@@ -145,7 +143,7 @@ export function RetryPage() {
               <Checkbox
                 id="acknowledge-duplicate-risk"
                 checked={acknowledged}
-                onCheckedChange={(value) => setAcknowledged(value === true)}
+                onCheckedChange={(value) => setAcknowledgedFor(value === true ? planKey : null)}
               />
               <Label htmlFor="acknowledge-duplicate-risk" className="leading-snug font-normal">
                 I have checked the delivery and accept that Finance may receive the claim twice.

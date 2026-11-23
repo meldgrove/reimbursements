@@ -1,12 +1,13 @@
 // tests/test_claim_status.py of the Django version.
 import { eq, inArray } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "../db/client";
 import { claims, deliveries, type Claim, type Form } from "../db/schema";
 import { accepted, callCommand, freshState } from "../test/back-office";
 import { createForm } from "../test/fixtures";
 import * as claimStatus from "./claim-status";
 import { CLAIM_STATES } from "./claim-status";
+import { claimReference } from "./documents";
 
 beforeEach(freshState);
 
@@ -172,5 +173,47 @@ describe("claim status", () => {
       .slice(0, -1);
     expect(rows.map((row) => row.status)).toEqual(["purging", "purging"]);
     expect(rows.map((row) => row.archived)).toEqual([false, false]);
+  });
+
+  it("the claim-status command reads a page at a time and waits while stdout is full", async () => {
+    const form = await createForm();
+    const first: Claim[] = [];
+    for (let index = 0; index < 3; index += 1) first.push(await claimIn(form, CLAIM_STATES.RECEIVED, null));
+    const { claimStatusPage } = await import("../commands/back-office");
+    const { COMMANDS } = await import("../commands");
+    const lines: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    // A pipe whose reader is slow: every write fills the buffer until "drain".
+    process.stdout.write = ((chunk: string) => {
+      lines.push(chunk);
+      return false;
+    }) as typeof process.stdout.write;
+    claimStatusPage.size = 2;
+    try {
+      const running = COMMANDS.get("claim-status")!.run([]);
+      await vi.waitFor(() => expect(lines).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(lines).toHaveLength(1);
+      // Submitted while the first page is written: a later page reads it.
+      const late = await claimIn(form, CLAIM_STATES.RECEIVED, null);
+      let done = false;
+      void running.finally(() => (done = true));
+      while (!done) {
+        process.stdout.emit("drain");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await running;
+      const references = lines
+        .slice(0, -1)
+        .map((line) => (JSON.parse(line) as { reference: string }).reference);
+      // The list's order: submission time, then id.
+      const order = (a: Claim, b: Claim) =>
+        a.submittedAt.getTime() - b.submittedAt.getTime() || (a.id < b.id ? -1 : 1);
+      expect(references).toEqual([...first.sort(order), late].map(claimReference));
+      expect(JSON.parse(lines.at(-1)!)).toHaveProperty("pending_jobs");
+    } finally {
+      process.stdout.write = original;
+      claimStatusPage.size = 100;
+    }
   });
 });

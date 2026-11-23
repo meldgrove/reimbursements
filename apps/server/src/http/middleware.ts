@@ -75,6 +75,18 @@ export class BodyTooLarge extends HTTPException {
   }
 }
 
+/**
+ * Whether reading a body failed because it was too large: the same 413
+ * answer for every reader, whether the client declared the length or not.
+ */
+export function isBodyTooLarge(error: unknown): boolean {
+  for (let current = error, depth = 0; current && depth < 5; depth += 1) {
+    if (current instanceof BodyTooLarge) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** Passes a body through while counting it; more than `maxSize` bytes fail the read with BodyTooLarge. */
 function counted(body: ReadableStream<Uint8Array>, maxSize: number): ReadableStream<Uint8Array> {
   let size = 0;
@@ -173,7 +185,7 @@ export async function jsonBody<T extends z.ZodType, E extends Env>(
   try {
     body = await c.req.json();
   } catch (error) {
-    if (error instanceof BodyTooLarge) throw error;
+    if (isBodyTooLarge(error)) throw new BodyTooLarge();
     throw badRequest("The request body must be JSON");
   }
   return parseWith(schema, body);

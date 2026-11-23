@@ -5,7 +5,7 @@
  */
 import { eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getDb } from "../db/client";
+import { closeDb, getDb } from "../db/client";
 import {
   claims,
   draftAdmissions,
@@ -109,6 +109,28 @@ describe("form page", () => {
     expect(page.body.config.messages.upload_hint).toContain("50 MB insgesamt");
     expect(page.body.countries).toContainEqual(["DE", "Deutschland"]);
   });
+
+  it("opens for a first-time participant with a one-connection pool", async () => {
+    // The new draft and its session share one connection: a request that held
+    // one while waiting for a second would wait out the connection timeout.
+    await createForm();
+    await closeDb();
+    const restorePool = intakeSettings({ DATABASE_POOL_SIZE: 1 });
+    try {
+      const jar = new CookieJar();
+      const started = Date.now();
+      const page = await openForm(jar);
+      expect(page.status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(page.body.draft.id).toMatch(/^[0-9a-f-]{36}$/);
+      // The cookie names the committed session: the same browser gets the same draft.
+      expect((await openForm(jar)).body.draft.id).toBe(page.body.draft.id);
+      expect(await participantSessions()).toBe(1);
+    } finally {
+      await closeDb();
+      restorePool();
+    }
+  }, 20_000);
 
   it("is unknown for a slug without a form", async () => {
     expect((await openForm(new CookieJar(), "missing")).status).toBe(404);

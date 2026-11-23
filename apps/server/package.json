@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env --import ./src/instrument.ts --clear-screen=false src/main.ts",
     "build": "node scripts/build.mjs && node ../../scripts/inject-debug-ids.mjs dist",
-    "build:sandbox": "node native/sandbox/build.mjs",
+    "build:sandbox": "node native/sandbox/build.mjs && node scripts/build-file-worker.mjs",
     "start": "node dist/main.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --project unit",

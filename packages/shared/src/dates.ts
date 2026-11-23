@@ -1,3 +1,5 @@
+import { DJANGO_TIMEZONES } from "./timezones";
+
 /**
  * The app date format of the General settings, for every date the app shows
  * (participant pages, emails, the claim PDF and the admin area), and the app
@@ -238,28 +240,11 @@ export const TIMEZONE_REGIONS = new Set(
   "Africa America Antarctica Arctic Asia Atlantic Australia Europe Indian Pacific".split(" "),
 );
 
-/**
- * Names Python's tzdata knows and Intl does not list (aliases and newer
- * names, such as Europe/Kyiv): Django offered them, and Intl accepts them.
- */
-const TZDATA_NAMES = (
-  "Africa/Asmara Africa/Timbuktu America/Argentina/Buenos_Aires America/Argentina/Catamarca " +
-  "America/Argentina/Cordoba America/Argentina/Jujuy America/Argentina/Mendoza America/Atikokan " +
-  "America/Atka America/Ensenada America/Indiana/Indianapolis America/Kentucky/Louisville " +
-  "America/Montreal America/Nipigon America/Nuuk America/Pangnirtung America/Porto_Acre " +
-  "America/Rainy_River America/Santa_Isabel America/Shiprock America/Thunder_Bay America/Virgin " +
-  "America/Yellowknife Asia/Chongqing Asia/Harbin Asia/Ho_Chi_Minh Asia/Istanbul Asia/Kashgar " +
-  "Asia/Kathmandu Asia/Kolkata Asia/Tel_Aviv Asia/Yangon Atlantic/Faroe Atlantic/Jan_Mayen " +
-  "Australia/Canberra Australia/Currie Australia/Yancowinna Europe/Belfast Europe/Kyiv " +
-  "Europe/Nicosia Europe/Tiraspol Pacific/Chuuk Pacific/Johnston Pacific/Kanton Pacific/Pohnpei " +
-  "Pacific/Samoa Pacific/Yap"
-).split(" ");
-
-/** The choices of the General settings, as Django's: Intl's names and tzdata's other ones it accepts. */
+/** The choices of the General settings: every name 0.4 offered, and Intl's names it accepts. */
 export function timezoneNames(): string[] {
   const all =
     (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
-  const known = [...all, ...TZDATA_NAMES].filter(
+  const known = [...all, ...DJANGO_TIMEZONES].filter(
     (name) => TIMEZONE_REGIONS.has(name.split("/")[0]!) && isTimezone(name),
   );
   return [...new Set(["UTC", ...known])].sort();

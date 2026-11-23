@@ -5,7 +5,8 @@
 # the updater's deploy script does (version in .env, docker compose up
 # --wait), checks it and that its worker took the work over, goes back to
 # 0.4.0 (the deploy script's rollback), which reads and writes what this
-# version wrote, and installs the image again.
+# version wrote, installs the image again, and at last takes this version's
+# compose.yaml with the same .env (the operator's `git pull`).
 #
 #   tests/upgrade/django-compose.sh <image>     e.g. reimbursements:ci
 #
@@ -37,7 +38,9 @@ POSTGRES_PASSWORD=$password
 DATABASE_URL=postgresql://reimbursements:$password@postgres:5432/reimbursements
 HEALTHCHECK_TOKEN=$token
 ALLOWED_HOSTS=reimbursements.example.invalid,localhost,127.0.0.1
-CSRF_TRUSTED_ORIGINS=https://reimbursements.example.invalid
+# Several https origins and one with a wildcard, as Django allowed: the first
+# https origin is the app's address, and every one stays trusted.
+CSRF_TRUSTED_ORIGINS=https://reimbursements.example.invalid,https://*.apps.example.invalid,https://other.example.invalid
 TRUSTED_PROXY_CIDRS=172.16.0.0/12
 OIDC_CLIENT_ID=reimbursements
 OIDC_CLIENT_SECRET=upgrade-test
@@ -111,15 +114,27 @@ Job.objects.create(key=f"send:{delivery.pk}", kind="send", delivery=delivery, st
 # interrupted email left alone (its outcome unknown, nothing sent again).
 work_taken_over() {
   for _ in $(seq 60); do
-    test "$(sql "select state from portal_job where kind = 'validate'")" = done && break
+    test "$(sql "select state from portal_job where kind = 'validate'")" = "done" && break
     sleep 2
   done
-  test "$(sql "select state from portal_job where kind = 'validate'")" = done
+  test "$(sql "select state from portal_job where kind = 'validate'")" = "done"
   test "$(sql "select state from portal_upload")" = ready
   test "$(sql "select count(*) from portal_upload where normalized_key <> ''")" = 1
   test "$(sql "select state from portal_job where kind = 'send'")" = failed
   test "$(sql "select string_agg(state, ',') from portal_deliveryattempt")" = send_unknown
   test "$(sql "select count(*) from portal_job where kind = 'send'")" = 1
+}
+
+# The operator commands 0.4's guides told operators to run or schedule run as
+# the cli commands of the same name; any other `manage.py` command is refused.
+old_commands_run() {
+  preview=$(compose exec -T web python manage.py purge_expired)
+  grep -q '^{' <<< "$preview"
+  compose exec -T web python manage.py claim_status --state ready > /dev/null
+  compose exec -T web python manage.py verify_storage > /dev/null
+  status=0
+  compose exec -T web python manage.py shell -c 'print(1)' > /dev/null 2>&1 || status=$?
+  test "$status" = 127
 }
 
 # A row this version writes with the database's sequences (a user, as the
@@ -152,8 +167,13 @@ django_session() {
 django_runs() {
   curl -fsS -H "X-Forwarded-Proto: https" "http://127.0.0.1:$port/" | grep -q "Auslagen einreichen"
 }
+# Whether the app refuses a change sent from the browser origin $1.
+origin_refused() {
+  curl -sS -X POST -H "$proxied" -H "Origin: $1" -H "content-type: application/json" --data '{}' \
+    "http://127.0.0.1:$port/api/v1/public/forms/upgrade/validate" | grep -q '"Cross-site request rejected"'
+}
 checked() {
-  # Healthy by the old file's Python health checks.
+  # Healthy by the compose file's health checks (0.4's call Python).
   for service in web worker; do
     test "$(docker inspect --format '{{.State.Health.Status}}' "$(compose ps --quiet "$service")")" = healthy
   done
@@ -168,6 +188,11 @@ checked() {
     http://sso.example.invalid:8080/realms/reimbursements/protocol/openid-connect/auth\?*redirect_uri=https%3A%2F%2Freimbursements.example.invalid%2Foidc%2Fcallback%2F*) ;;
     *) echo "Sign-in redirects to: $location" >&2 && return 1 ;;
   esac
+  # Every origin of CSRF_TRUSTED_ORIGINS stays trusted for changes, as in 0.4; others are not.
+  for origin in https://other.example.invalid https://forms.apps.example.invalid; do
+    if origin_refused "$origin"; then echo "Refused the trusted origin $origin" >&2 && return 1; fi
+  done
+  origin_refused https://attacker.example.invalid
   test "$(sql "select count(*) from django_session")" = 0
   test "$(sql "select count(*) from drizzle.__drizzle_migrations")" -gt 0
   curl -fsS -H "X-Health-Token: $token" "http://127.0.0.1:$port/-/readyz" | grep -q '"status":"OK"'
@@ -181,6 +206,7 @@ leave_work
 install "${target#*:}"
 checked
 work_taken_over
+old_commands_run
 write_with_new_version
 echo "The image runs with the compose file of 0.4 and took over its queued work."
 
@@ -194,3 +220,9 @@ echo "0.4.0 runs again on the database, and reads and writes what this version w
 install "${target#*:}"
 checked
 echo "Installed again after the rollback."
+
+# The operator's `git pull`: this version's compose.yaml, the same .env of 0.4.
+cp "$root/compose.yaml" "$work/compose.yaml"
+compose up --detach --wait --wait-timeout 300 --quiet-pull
+checked
+echo "Runs with its own compose.yaml and the .env of 0.4."

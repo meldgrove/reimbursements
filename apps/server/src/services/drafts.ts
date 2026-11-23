@@ -151,7 +151,7 @@ function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
  * The participant's draft of an accepting form, or a newly admitted one, with its token.
  *
  * A submitted, expired or outdated draft starts a new one. Never call inside a
- * transaction: a session started for a new draft must persist (participants.ts).
+ * transaction: the new draft, its session and their cookie commit together here.
  */
 export async function openDraft(
   participant: Participant,
@@ -188,9 +188,9 @@ export async function openDraft(
   // One new-draft decision at a time, across processes (the advisory lock):
   // the counts below and the insert must not interleave, or concurrent
   // requests pass the global and per-session limits together. Within a
-  // process they queue before taking a connection, because a new session is
-  // written on a connection of its own (participants.ts) and waiting
-  // transactions must not use up the pool.
+  // process they queue before taking a connection, so waiting requests do
+  // not hold the pool's connections. The new session is written in the same
+  // transaction (auth/session.ts), never on a second connection.
   const { draft, token } = await oneAtATime(() =>
     atomic(async () => {
       await q().execute(sql`select pg_advisory_xact_lock(hashtext('reimbursements.new-draft'))`);

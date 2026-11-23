@@ -87,6 +87,8 @@ const BEFORE_TRANSMISSION = new Set([
   "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
   "ERR_TLS_CERT_ALTNAME_INVALID",
+  // The server's first answer was no TLS record (a plain-HTTP server): the handshake failed first.
+  "ERR_SSL_WRONG_VERSION_NUMBER",
 ]);
 
 /** Whether `error` from fetch is a connection failure known to precede acceptance. */

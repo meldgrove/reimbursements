@@ -24,7 +24,7 @@ import type { GeneralSettings } from "@reimbursements/shared/api/meta";
 import { config } from "../../config";
 import type { AppEnv } from "../../http/env";
 import { badRequest, validationError } from "../../http/errors";
-import { requireTemplateAdmin } from "../../http/middleware";
+import { BodyTooLarge, isBodyTooLarge, requireTemplateAdmin } from "../../http/middleware";
 import { faviconType, loadSettings, MAX_FAVICON_BYTES, saveSettings } from "../../services/app-settings";
 import { body } from "./common";
 
@@ -121,7 +121,8 @@ async function appearanceInput(c: Context<AppEnv>) {
     let form: Record<string, string | File>;
     try {
       form = (await c.req.parseBody()) as Record<string, string | File>;
-    } catch {
+    } catch (error) {
+      if (isBodyTooLarge(error)) throw new BodyTooLarge();
       throw badRequest("The upload could not be read.");
     }
     const file = form.favicon;

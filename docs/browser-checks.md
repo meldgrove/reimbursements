@@ -51,16 +51,22 @@ the additional visual and browser interaction checks.
 
 ## Scripts
 
-The scripts in `tests/browser` run the same checks in Chromium with Playwright
-(`npm ci` in that directory, then `npx playwright install chromium`). They need the app
+The scripts in `tests/browser` automate a subset of this checklist in Chromium with
+Playwright (`npm ci` in that directory, then `npx playwright install chromium`). The
+inspection of the `.eml` files and their attachments (step 8) stays manual. They need the app
 at `BASE_URL` with a worker, local email delivery and the demo form (`cli seed-demo`).
 `node tests/browser/fixtures.cjs DIR` draws the synthetic upload files `train.png`, the
 two-page `hotel.pdf` and `signature.png`; set `FIXTURES_DIR` to that folder and
 `OUTPUT_DIR` to a folder for screenshots.
 
-- `smoke.cjs` verifies desktop/mobile completion, both signature paths, review reset,
-  row/file association, mileage-only claims, totals, delivery, and cross-session
-  receipt denial. Without `FIXTURES_DIR` it draws the files itself. `FORM_SLUG` runs it
+- `smoke.cjs` fills the first claim at desktop width (1440 pixels), then switches to
+  390 pixels and stays there: all three claims (drawn signature, uploaded signature,
+  mileage only) are reviewed, submitted and delivered at mobile width, each checked
+  for horizontal overflow. It verifies both signature paths, review reset, row/file
+  association, mileage-only claims, totals, the reference and delivery status on the
+  receipt page, and that another browser's request to the participant API
+  (`/api/v1/public/received/<id>`) gets 404. Without `FIXTURES_DIR` it draws the
+  files itself. `FORM_SLUG` runs it
   against another synthetic form, such as one with a single fixed purpose.
 - `live-validation.cjs` checks the debounce delay, focus, error clearing, dependent
   fields, stale responses, expense amounts, server expense errors after row
@@ -103,14 +109,22 @@ Keycloak from `compose.dev.yaml`, web and worker from the image in development m
 (local email, no scanner) with the document sandbox and the worker heartbeat on as in
 production, `cli seed-demo`, the scripts, and `cli verify-setup --to
 finance@example.invalid`. To run it locally, follow the job's steps on a Linux host
-with Landlock (Linux 6.2 or later):
+with Landlock (Linux 6.2 or later), in one shell with the job's settings:
 
 ```bash
+export WEB_PORT=8000 RUNNER_TEMP=$(mktemp -d)
+export DEV_POSTGRES_URL=postgresql://reimbursement:reimbursement@localhost:55468/reimbursement
+export BASE_URL=http://localhost:$WEB_PORT
+export OUTPUT_DIR=$RUNNER_TEMP/browser FIXTURES_DIR=$RUNNER_TEMP/fixtures
+export ADMIN_STORAGE_STATE=$RUNNER_TEMP/admin-session.json
 (cd tests/browser && npm ci && npx playwright install chromium)
 docker compose -f compose.dev.yaml up --detach --wait database keycloak
 docker build --tag reimbursements:ci .
 ```
 
-then the steps "Migrate and start web and worker" to "Setup check" with `WEB_PORT=8000`
-and `RUNNER_TEMP` set to a temporary folder. The development Keycloak accepts sign-ins
-for `http://localhost:8000` and `http://localhost:5173` only.
+then the commands of the steps "Migrate and start web and worker" to "Setup check".
+The development Keycloak's client registers the callbacks
+`http://localhost:8000/oidc/callback/`, `http://127.0.0.1:8000/oidc/callback/` and
+`http://localhost:5173/oidc/callback/`, and the web origins `http://localhost:8000` and
+`http://localhost:5173`: keep `WEB_PORT=8000`. Afterwards remove the containers `web`
+and `worker` and the temporary folder (its `private` folder belongs to user 10001).

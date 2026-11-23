@@ -43,8 +43,8 @@ The form starts with no positions. Participants choose "Auslage mit Beleg" or
 need at least one receipt; one file is sufficient and additional files are optional.
 Mileage rows need none.
 
-Form editors set each form's public title and description in the admin area under
-"Für Teilnehmende". Empty values use the standard heading and description. These
+Form editors set each form's public title and description in the form editor's
+"For participants" section. Empty values use the standard heading and description. These
 wording changes do not invalidate open drafts. Entries are checked 650 ms after
 typing stops. Inline messages appear for edited fields and their dependencies;
 the review button validates every field using the same server rules as submission.
@@ -62,7 +62,8 @@ snapshotted with the claim and printed in the PDF's header box. Participants can
 see or edit these internal values or the recipient. The claim UUID
 remains the internal identifier and receipt-page URL key. New claims receive a
 stored, unique bookkeeping reference `Erst/YYYY-MM-DD/form-slug/surname/000001`.
-The date is the Berlin submission date, the surname is the URL-safe last word of
+The date is the submission date in the app timezone (Admin > General; Europe/Berlin
+by default), the surname is the URL-safe last word of
 the full name, and the suffix is a database-locked global sequence. The reference
 never changes after acceptance and is used in confirmation, admin search, PDFs and
 emails. Email filenames replace slashes with underscores. Existing claims keep

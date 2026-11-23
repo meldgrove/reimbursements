@@ -5,6 +5,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { config } from "../config";
 import { sessions, users, type SessionData, type User } from "../db/schema";
 import { getDb } from "../db/client";
+import { inTransaction, onCommit, q } from "../db/tx";
 
 /**
  * Browser sessions of this version (the Django version's sessions end at the
@@ -125,7 +126,7 @@ export async function endSession(c: Context): Promise<string> {
 export async function participantSession(c: Context): Promise<{ token: string; data: SessionData } | null> {
   const token = readToken(c, participantCookie());
   if (!token) return null;
-  const [row] = await getDb()
+  const [row] = await q()
     .select({ data: sessions.data })
     .from(sessions)
     .where(
@@ -138,14 +139,22 @@ export async function participantSession(c: Context): Promise<{ token: string; d
   return row ? { token, data: row.data } : null;
 }
 
-/** Starts a participant session and sets its cookie. Commits at once (never inside a transaction). */
+/**
+ * Starts a participant session and sets its cookie. Inside a transaction (a
+ * new draft's admission) the row is written on that transaction's own
+ * connection, so a request never holds one connection while it waits for
+ * another, and the cookie is set only once it commits: a rolled-back
+ * admission leaves neither row nor cookie behind.
+ */
 export async function startParticipantSession(c: Context): Promise<{ token: string; data: SessionData }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + config().PARTICIPANT_SESSION_SECONDS * 1000);
-  await getDb()
+  await q()
     .insert(sessions)
     .values({ id: tokenHash(token), kind: "participant", expiresAt, data: {} });
-  writeCookie(c, participantCookie(), token, expiresAt);
+  const setIt = () => writeCookie(c, participantCookie(), token, expiresAt);
+  if (inTransaction()) onCommit(setIt);
+  else setIt();
   return { token, data: {} };
 }
 
@@ -157,7 +166,7 @@ export async function startParticipantSession(c: Context): Promise<{ token: stri
  */
 export async function saveParticipantData(token: string, data: SessionData, c?: Context): Promise<void> {
   const expiresAt = new Date(Date.now() + config().PARTICIPANT_SESSION_SECONDS * 1000);
-  const updated = await getDb()
+  const updated = await q()
     .update(sessions)
     .set({ data, expiresAt })
     .where(and(eq(sessions.id, tokenHash(token)), eq(sessions.kind, "participant")))

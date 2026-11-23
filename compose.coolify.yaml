@@ -21,11 +21,14 @@ x-application: &application
   environment:
     DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-production}
     # Signs sessions: a random secret of at least 50 characters. The Django
-    # version's DJANGO_SECRET_KEY stands in.
+    # version's DJANGO_SECRET_KEY stands in; AUTH_SECRET wins when both are set.
     AUTH_SECRET: ${AUTH_SECRET:-${DJANGO_SECRET_KEY:?Set AUTH_SECRET to a random secret of at least 50 characters}}
-    # The public URL, e.g. https://reimbursements.example.invalid. A .env of the
-    # Django version has none: its CSRF_TRUSTED_ORIGINS stands in.
-    APP_URL: ${APP_URL:-${CSRF_TRUSTED_ORIGINS:?Set APP_URL to the public HTTPS address}}
+    # The public URL, e.g. https://reimbursements.example.invalid: sign-in sends the
+    # provider back to it. Without APP_URL, the Django version's CSRF_TRUSTED_ORIGINS
+    # stands in (its first https origin without a wildcard), and every origin it lists
+    # stays trusted for changes. The app does not start without one of the two.
+    APP_URL: ${APP_URL:-}
+    CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
     DATABASE_URL: ${DATABASE_URL:?Use the separate PostgreSQL resource internal URL}
     PRIVATE_STORAGE_ROOT: /app/var/private
     TRUST_PROXY_HEADERS: "1"
@@ -39,6 +42,8 @@ x-application: &application
     KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-}
     KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
     OIDC_ISSUER: ${OIDC_ISSUER:-}
+    # The ID token claim that lists the person's groups.
+    OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
     MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:?Set the verified sender address}
     MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:?Set the reply address}
     OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set the sign-in client ID}
@@ -93,8 +98,8 @@ services:
     <<: *application
     expose:
       - "8000"
-    # Each sync gunicorn worker serves one request at a time, so a slowly sent request
-    # would hold it. Traefik receives the whole request first and forwards it at once.
+    # The app reads at most TOTAL_WEB_WORKERS uploads at a time, so a slowly sent upload
+    # would hold a slot. Traefik receives the whole request first and forwards it at once.
     # Coolify attaches middlewares defined here to the routers it generates for `web`.
     # The limit stays above the upload cap, so the app still answers oversized uploads.
     labels:
@@ -187,7 +192,7 @@ services:
       APP_NAME: reimbursements
       APP_IMAGE: *image
       # Settings a restore needs that are not in the backup (names only).
-      APP_SECRETS: DJANGO_SECRET_KEY
+      APP_SECRETS: AUTH_SECRET,DJANGO_SECRET_KEY
     volumes:
       - private_data:/data/private_data:ro
 

@@ -4,13 +4,22 @@
  * seed_demo, verify_storage and run_jobs; verify-setup is in setup-check.ts).
  * None prints addresses or banking details.
  */
+import { once } from "node:events";
 import os from "node:os";
 import { parseArgs } from "node:util";
-import { and, count, eq, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { config } from "../config";
 import { claims, deliveries, formTemplates, forms, jobs, uploads } from "../db/schema";
 import { atomic, q } from "../db/tx";
-import { annotate, CHOICES, CLAIM_STATE_LABELS, forReference, of, STATUS } from "../services/claim-status";
+import {
+  annotate,
+  CHOICES,
+  CLAIM_STATE_LABELS,
+  forReference,
+  of,
+  STATUS,
+  type AnnotatedClaim,
+} from "../services/claim-status";
 import { reconcile } from "../services/evidence";
 import { claimReference } from "../services/documents";
 import { ActionRefused, retry } from "../services/operations";
@@ -27,6 +36,14 @@ import { CommandError, option, registerCommand } from "./registry";
 export { CommandError };
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
+
+/** Writes a line, waiting while stdout's buffer is full (a pipe to a slow reader). */
+async function write(line: string): Promise<void> {
+  if (!process.stdout.write(`${line}\n`)) await once(process.stdout, "drain");
+}
+
+/** How many claims claim-status reads at once (the Django version iterated in chunks of 100). */
+export const claimStatusPage = { size: 100 };
 
 /** The value of `name` that must be one of `choices`. */
 function choice(args: string[], name: string, choices: readonly string[]): string | undefined {
@@ -69,24 +86,33 @@ registerCommand("claim-status", {
     if (status) conditions.push(sql`${STATUS} = ${status}`);
     if (state) conditions.push(eq(claims.state, state));
     if (deliveryState !== undefined) conditions.push(eq(deliveries.state, deliveryState));
-    for (const claim of await annotate(conditions.length ? and(...conditions) : undefined)) {
-      const current = await of(claim);
-      out(
-        JSON.stringify({
-          reference: claimReference(claim),
-          status: current.code,
-          state: claim.state,
-          submitted_at: claim.submittedAt.toISOString(),
-          delivery_state: claim.delivery ? claim.delivery.state : null,
-          error_code: current.errorCode,
-          resolution_overdue: current.overdue,
-          archived: current.archived,
-        }),
-      );
+    // A page at a time in the list's order, each after the last claim written;
+    // its exact time comes from the database (a Date keeps milliseconds only).
+    let after: SQL | undefined;
+    for (;;) {
+      const page = await q()
+        .select({ id: claims.id, submittedAt: sql<string>`${claims.submittedAt}::text` })
+        .from(claims)
+        .leftJoin(deliveries, eq(deliveries.claimId, claims.id))
+        .where(and(...conditions, after))
+        .orderBy(asc(claims.submittedAt), asc(claims.id))
+        .limit(claimStatusPage.size);
+      if (page.length === 0) break;
+      for (const claim of await annotate(
+        inArray(
+          claims.id,
+          page.map((row) => row.id),
+        ),
+      )) {
+        await writeClaim(claim);
+      }
+      if (page.length < claimStatusPage.size) break;
+      const last = page.at(-1)!;
+      after = sql`(${claims.submittedAt}, ${claims.id}) > (${last.submittedAt}::timestamptz, ${last.id}::uuid)`;
     }
     const jobsIn = async (value: string) =>
       Number((await q().select({ value: count() }).from(jobs).where(eq(jobs.state, value)))[0]?.value ?? 0);
-    out(
+    await write(
       JSON.stringify({
         pending_jobs: await jobsIn(queue.PENDING),
         failed_jobs: await jobsIn(queue.FAILED),
@@ -95,6 +121,23 @@ registerCommand("claim-status", {
     );
   },
 });
+
+/** One claim-status line: no addresses, no banking details. */
+async function writeClaim(claim: AnnotatedClaim): Promise<void> {
+  const current = await of(claim);
+  await write(
+    JSON.stringify({
+      reference: claimReference(claim),
+      status: current.code,
+      state: claim.state,
+      submitted_at: claim.submittedAt.toISOString(),
+      delivery_state: claim.delivery ? claim.delivery.state : null,
+      error_code: current.errorCode,
+      resolution_overdue: current.overdue,
+      archived: current.archived,
+    }),
+  );
+}
 
 registerCommand("purge-expired", {
   usage: "purge-expired [--execute]               preview due deletions, or carry them out",

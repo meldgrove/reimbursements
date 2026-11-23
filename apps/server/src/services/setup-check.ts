@@ -267,18 +267,21 @@ export class SetupCheck {
     const realm = settings.oidcIssuer;
     const keycloak = settings.oidcProviderKind === "keycloak";
     const endpoint = (name: string) => `${realm}/protocol/openid-connect/${name}`;
+    // ID tokens signed with the client secret (HS256 and the like) need no published key, as at sign-in.
+    const hmac = settings.OIDC_SIGN_ALGO.startsWith("HS");
     const expected: Record<string, string | undefined> = {
       issuer: realm,
       authorization_endpoint:
         settings.OIDC_AUTHORIZATION_ENDPOINT ?? (keycloak ? endpoint("auth") : undefined),
       token_endpoint: settings.OIDC_TOKEN_ENDPOINT ?? (keycloak ? endpoint("token") : undefined),
       userinfo_endpoint: settings.OIDC_USERINFO_ENDPOINT ?? (keycloak ? endpoint("userinfo") : undefined),
-      jwks_uri: settings.OIDC_JWKS_ENDPOINT ?? (keycloak ? endpoint("certs") : undefined),
+      // Sign-in never reads the key set with HMAC: its address need not match, nor exist.
+      jwks_uri: hmac
+        ? undefined
+        : (settings.OIDC_JWKS_ENDPOINT ?? (keycloak ? endpoint("certs") : undefined)),
       end_session_endpoint: settings.OIDC_LOGOUT_ENDPOINT ?? (keycloak ? endpoint("logout") : undefined),
     };
     const where = keycloak ? "Check KEYCLOAK_BASE_URL and KEYCLOAK_REALM." : "Check OIDC_ISSUER.";
-    // ID tokens signed with the client secret (HS256 and the like) need no published key, as at sign-in.
-    const hmac = settings.OIDC_SIGN_ALGO.startsWith("HS");
     let discovery: Record<string, unknown>;
     let keys: unknown;
     let differing: string[];

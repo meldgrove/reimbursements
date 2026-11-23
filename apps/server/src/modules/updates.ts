@@ -6,6 +6,7 @@ import {
 } from "@reimbursements/shared/api/updates";
 import { config } from "../config";
 import type { AppEnv } from "../http/env";
+import { BodyTooLarge, isBodyTooLarge } from "../http/middleware";
 import { isTemplateAdmin } from "../auth/roles";
 import { askUpdater, type UpdatesAnswer } from "../updates/updater";
 
@@ -45,7 +46,8 @@ const invalid = (c: Context<AppEnv>, error: string) =>
 async function body(c: Context<AppEnv>): Promise<unknown> {
   try {
     return await c.req.json();
-  } catch {
+  } catch (error) {
+    if (isBodyTooLarge(error)) throw new BodyTooLarge();
     return null;
   }
 }

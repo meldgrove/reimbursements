@@ -235,6 +235,40 @@ describe("the form editor", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("sends nothing more once the person left without saving while a save was running", async () => {
+    const { calls, fetchMock } = mockApi({
+      ...meta,
+      "GET /api/v1/admin/forms/7": {
+        body: { ...EDITOR, form: saved(), settings: { ...EDITOR.settings, name: "Werkstatt" } },
+      },
+      "PUT /api/v1/admin/forms/7": { body: saved() },
+      "GET /api/v1/admin/claims": {
+        body: { rows: [], count: 0, page: 1, pages: 1, forms: [], canDelete: true },
+      },
+    });
+    // The first save hangs until the person has left.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const answer = fetchMock(input, init);
+      if (init?.method === "PUT" && calls.filter((call) => call.method === "PUT").length === 1) await held;
+      return answer;
+    });
+    const user = userEvent.setup();
+    const { router } = renderApp("/admin/forms/7");
+    await user.type(await screen.findByLabelText(/^Name/), " Herbst");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saving …"), { timeout: 3000 });
+    await user.type(screen.getByLabelText(/^Name/), " 2026");
+    await user.click(screen.getByRole("link", { name: "Claims" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Leave without saving" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/claims"));
+    await waitFor(() => expect(screen.queryByLabelText(/^Name/)).toBeNull());
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1);
+  });
+
   it("reads the form again when it is opened again, so a later save keeps the earlier one", async () => {
     const base = { ...EDITOR.settings, name: "Werkstatt", slug: "werkstatt" };
     const { calls } = mockApi({

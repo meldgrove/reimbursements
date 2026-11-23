@@ -253,6 +253,18 @@ async function saveForm(
   target: { form: Form } | { templateId: number; creationKey: string | null },
 ): Promise<FormSaved> {
   return atomic(async () => {
+    if ("form" in target && input.primary === true) {
+      // Every writer locks forms in id order (bulk deletion too), so a handover never
+      // holds its own form while it waits for the current start page.
+      const current = await q().select({ id: forms.id }).from(forms).where(eq(forms.primary, true));
+      const ids = [...new Set([target.form.id, ...current.map((row) => row.id)])];
+      await q()
+        .select({ id: forms.id })
+        .from(forms)
+        .where(inArray(forms.id, ids))
+        .orderBy(asc(forms.id))
+        .for("update");
+    }
     const existing = "form" in target ? await managedForm(user, target.form.id, { forUpdate: true }) : null;
     let status: FormStatus;
     try {
@@ -331,6 +343,7 @@ async function deleteForms(user: User, ids: number[]) {
     .select()
     .from(forms)
     .where(and(inArray(forms.id, ids), await managedForms(user)))
+    .orderBy(asc(forms.id))
     .for("update");
   for (const form of selected)
     if (!(await publication.mayDelete(user, form)))

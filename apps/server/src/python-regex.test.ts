@@ -1,7 +1,7 @@
 /**
- * Template field patterns keep their Python meaning (review I4/A7). The
- * expected results are what Python 3.13's re.fullmatch answers, as the
- * Django version matched them.
+ * Template field patterns keep their Python meaning (reviews I4, I15, A7).
+ * The expected results are what Python's re.fullmatch answers (computed with
+ * python3), as the Django version matched them.
  */
 import { describe, expect, it } from "vitest";
 import { pythonFullmatch } from "./python-regex";
@@ -82,12 +82,101 @@ describe("pythonFullmatch", () => {
     ["\\W", "a", false],
     ["\\S+", "ab", true],
     ["\\S+", "a b", false],
+    // (?a) with (?i): only ASCII letters fold
+    ["(?ai)[A-Z]{3}-\\d{4}", "KST-1234", true],
+    ["(?ai)[A-Z]{3}-\\d{4}", "kst-1234", true],
+    ["(?ai)[A-Z]{3}-\\d{4}", "İST-1234", false],
+    ["(?ai)kst", "KST", true],
+    ["(?ai)k", "\u212a", false],
+    ["(?ai)s", "ſ", false],
+    ["(?ai)[^a-z]", "A", false],
+    ["(?ia)[a-z]+", "ÄB", false],
+    ["(?ai)[\\u0131]", "I", false],
+    // Python's own case-insensitive matches
+    ["(?i)[A-Z]{3}-\\d{4}", "İST-1234", true],
+    ["(?i)[A-Z]{3}-\\d{4}", "ıST-1234", true],
+    ["(?i)i", "İ", true],
+    ["(?i)i", "ı", true],
+    ["(?i)I", "ı", true],
+    ["(?i)ı", "İ", true],
+    ["(?i)İ", "i", true],
+    ["(?i)[h-j]", "İ", true],
+    ["(?i)[^i]", "İ", false],
+    ["(?i)[^A-Z]", "ı", false],
+    ["(?i)[\\u0131]", "I", true],
+    ["i", "I", false],
+    ["(?i)k", "\u212a", true],
+    ["(?i)[a-z]", "\u212a", true],
+    ["(?i)[^k]", "\u212a", false],
+    ["(?i)s", "ſ", true],
+    ["(?i)[r-t]", "ſ", true],
+    ["(?i)\\u03c3", "ς", true],
+    ["(?i)\\u00b5", "μ", true],
+    ["(?i)\\u0390", "ΐ", true],
+    ["(?i)\\ufb05", "ﬆ", true],
+    ["(?i)\\u01c5", "Ǆ", true],
+    ["(?i)\\u13a0", "ꭰ", true],
+    ["(?i)\\u1e9e", "ß", true],
+    ["(?i)İ", "i\u0307", false],
+    ["(?i)[\\u0100-\\u017f]", "\u212a", false],
+    ["(?i)(a)\\1", "aA", true],
+    ["(?i:(a))\\1", "aA", false],
+    // class escapes inside classes
+    ["[\\W_]+", "-", true],
+    ["[\\W_]+", "_", true],
+    ["[\\W_]+", "!", true],
+    ["[\\W_]+", "a", false],
+    ["[^\\W\\d_]+", "Kostenträger", true],
+    ["[^\\W\\d_]+", "a1", false],
+    ["[^\\W\\d_]+", "a_", false],
+    ["[\\s\\d]+", " 1\t2", true],
+    ["[\\S]+", "a b", false],
+    ["(?a)[\\w]+", "ä", false],
+    ["(?a)[\\W]", "ä", true],
+    ["[\\w.-]+", "a.b-c", true],
+    ["[A-Z\\d]{2}", "A1", true],
+    // scoped flags
+    ["(?m:^KST$)", "KST", true],
+    ["(?m:^KST$)", "KST\n", false],
+    ["(?i:a(?-i:b))", "Ab", true],
+    ["(?i:a(?-i:b))", "AB", false],
+    ["(?s:.)", "\n", true],
+    ["(?x:a b) c", "ab c", true],
+    ["(?a:\\d)", "١", false],
+    ["(?i)a(?a:k)", "AK", true],
+    ["(?i)a(?a:k)", "A\u212a", false],
+    ["(?i)a(?-i:k)", "AK", false],
+    ["a(?i:k)", "a\u212a", true],
+    ["(?i:i)I", "İI", true],
+    // back-references to groups that always take part
+    ["(?P<prefix>KST)-(?P=prefix)", "KST-KST", true],
+    ["(a)(b)\\2", "abb", true],
+    ["(a)(b)\\2", "aba", false],
+    ["((a)b)\\2", "aba", true],
+    ["(a)+\\1", "aaa", true],
   ] as const)("%s on %j is %s, as in Python", (pattern, value, expected) => {
     expect(pythonFullmatch(pattern)?.test(value)).toBe(expected);
   });
 
   // Invalid in Python, or without a JavaScript form: refused at template save.
-  it.each(["a++", "(?>a)", "\\q", "(?L)a", "[", "a)"])("%s has no translation", (pattern) => {
+  // A back-reference to a group that may not take part fails in Python and
+  // matches empty in JavaScript, so it is refused too.
+  it.each([
+    "a++",
+    "(?>a)",
+    "\\q",
+    "(?L)a",
+    "[",
+    "a)",
+    "(a\\1)",
+    "(?P<prefix>KST)?(?P=prefix)-\\d{4}",
+    "(a)|\\1",
+    "(a)?\\1",
+    "(a)*\\1",
+    "(a){0,2}\\1",
+    "(?:(a)|b)\\1",
+    "(?=(a))\\1a",
+  ])("%s has no translation", (pattern) => {
     expect(pythonFullmatch(pattern)).toBeNull();
   });
 });

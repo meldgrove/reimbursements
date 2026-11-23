@@ -129,6 +129,26 @@ describe("TLS when the URL leaves it to PostgreSQL's default (prefer), as the Dj
     }
   });
 
+  it("lets every connection refused on its way fall back, not only the first", async () => {
+    const server = await serverWithoutTls();
+    const pool = withTlsFallback(new pg.Pool({ ...connectionOptions(server.url), max: 5 }));
+    try {
+      const results = await Promise.allSettled(Array.from({ length: 5 }, () => pool.query("select 1")));
+      // The fake server then ends each plain connection; none may fail on the refused TLS.
+      for (const result of results) {
+        expect(result.status).toBe("rejected");
+        expect((result as PromiseRejectedResult).reason.message).not.toBe(
+          "The server does not support SSL connections",
+        );
+      }
+      expect(server.seen.filter((step) => step === "tls")).toHaveLength(5);
+      expect(server.seen.filter((step) => step === "startup")).toHaveLength(5);
+    } finally {
+      await pool.end();
+      await server.close();
+    }
+  });
+
   it("never falls back with sslmode=require, and never asks with sslmode=disable", async () => {
     const server = await serverWithoutTls();
     try {

@@ -1,11 +1,21 @@
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { overrideConfigForTests } from "../config";
 import { getDb } from "../db/client";
 import { sessions } from "../db/schema";
 import { saveSettings, setFavicon } from "../services/app-settings";
 import { RequestParticipant } from "../participants";
-import { CookieJar, peer, request, resetDatabase, testApp } from "../test/helpers";
+import { TEMPLATE_ADMIN } from "../auth/roles";
+import { createClaim, createForm } from "../test/fixtures";
+import {
+  CookieJar,
+  createUser,
+  peer,
+  request,
+  resetDatabase,
+  signInWithTestHeader,
+  testApp,
+} from "../test/helpers";
 import { legacyAdminPath } from "../modules/assets";
 import { applySettings } from "./middleware";
 import type { AppEnv } from "./env";
@@ -229,5 +239,150 @@ describe("participant sessions", () => {
     expect(cookie).toContain("reimbursements_participant=");
     const expires = new Date(/Expires=([^;]+)/i.exec(cookie)![1]!);
     expect(Math.round((expires.getTime() - Date.now()) / 86_400_000)).toBe(7);
+  });
+});
+
+// Review I16/F15: a body too large gets the same 413 from every reader, whether
+// the client declared its length or sent it in chunks.
+describe("a body too large", () => {
+  let restore: () => void;
+  beforeAll(() => {
+    restore = signInWithTestHeader();
+  });
+  afterAll(() => restore());
+
+  const TOO_LARGE = { error: { code: "request_too_large", message: "The file or request is too large." } };
+  const json = (size: number) => new TextEncoder().encode(JSON.stringify({ text: "x".repeat(size) }));
+  const multipart = (name: string, size: number) =>
+    new Uint8Array(
+      Buffer.concat([
+        Buffer.from(
+          `--b\r\ncontent-disposition: form-data; name="${name}"; filename="a.png"\r\n` +
+            "content-type: application/octet-stream\r\n\r\n",
+        ),
+        Buffer.alloc(size, 1),
+        Buffer.from("\r\n--b--\r\n"),
+      ]),
+    );
+  const MULTIPART = "multipart/form-data; boundary=b";
+
+  /** Sends `bytes` with its length declared, or in chunks without one. */
+  async function send(
+    path: string,
+    bytes: Uint8Array,
+    type: string,
+    declared: boolean,
+    headers: Record<string, string> = {},
+  ) {
+    const half = Math.floor(bytes.length / 2);
+    const body = declared
+      ? bytes
+      : new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes.subarray(0, half));
+            controller.enqueue(bytes.subarray(half));
+            controller.close();
+          },
+        });
+    const response = await testApp().request(
+      path,
+      {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:8000",
+          "content-type": type,
+          ...(declared ? { "content-length": String(bytes.length) } : {}),
+          ...headers,
+        },
+        body,
+        duplex: "half",
+      } as RequestInit,
+      peer(),
+    );
+    return { status: response.status, body: (await response.json()) as unknown };
+  }
+
+  const cases: [string, () => Promise<{ path: string; bytes: Uint8Array; type: string; admin?: boolean }>][] =
+    [
+      [
+        "a participant's upload",
+        async () => {
+          overrideConfigForTests({ MAX_RECEIPT_BYTES: 1000 });
+          return {
+            path: "/api/v1/public/forms/test/uploads",
+            bytes: multipart("file", 200_000),
+            type: MULTIPART,
+          };
+        },
+      ],
+      [
+        "a participant's JSON",
+        async () => ({
+          path: "/api/v1/public/forms/test/validate",
+          bytes: json(200_000),
+          type: "application/json",
+        }),
+      ],
+      [
+        "admin JSON",
+        async () => ({
+          path: "/api/v1/admin/forms",
+          bytes: json(200_000),
+          type: "application/json",
+          admin: true,
+        }),
+      ],
+      [
+        "the Appearance settings as JSON",
+        async () => ({
+          path: "/api/v1/admin/settings/appearance",
+          bytes: json(1_100_000),
+          type: "application/json",
+          admin: true,
+        }),
+      ],
+      [
+        "the Appearance settings with a favicon",
+        async () => ({
+          path: "/api/v1/admin/settings/appearance",
+          bytes: multipart("favicon", 1_100_000),
+          type: MULTIPART,
+          admin: true,
+        }),
+      ],
+      [
+        "an optional body (archiving one claim)",
+        async () => {
+          const claim = await createClaim(await createForm());
+          return {
+            path: `/api/v1/admin/claims/${claim.id}/archive`,
+            bytes: json(200_000),
+            type: "application/json",
+            admin: true,
+          };
+        },
+      ],
+      [
+        "an update request",
+        async () => ({
+          path: "/api/v1/admin/updates/install",
+          bytes: json(200_000),
+          type: "application/json",
+          admin: true,
+        }),
+      ],
+      [
+        "a MailerSend webhook",
+        async () => ({ path: "/webhooks/mailersend/", bytes: json(200_000), type: "application/json" }),
+      ],
+    ];
+
+  it.each(cases)("is refused alike for %s, declared or in chunks", async (_, setUp) => {
+    await saveSettings({ language: "en" });
+    const { path, bytes, type, admin } = await setUp();
+    const headers: Record<string, string> = {};
+    if (admin) headers["x-test-user"] = String((await createUser("admin", [TEMPLATE_ADMIN])).id);
+    expect(await send(path, bytes, type, true, headers)).toEqual({ status: 413, body: TOO_LARGE });
+    expect(await send(path, bytes, type, false, headers)).toEqual({ status: 413, body: TOO_LARGE });
   });
 });

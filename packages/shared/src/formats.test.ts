@@ -6,10 +6,12 @@ import {
   formatShortDateTime,
   isDateFormat,
   parseDate,
+  timezoneNames,
   zoneName,
   zonedInstant,
   zonedInstants,
 } from "./dates";
+import { DJANGO_TIMEZONES } from "./timezones";
 import { example, formatAmount, fromCents, NUMBER_FORMATS, toCents, toFixedDecimal } from "./numbers";
 
 describe("dates", () => {
@@ -27,6 +29,12 @@ describe("dates", () => {
     expect(formatDateTime(closes, "m/d/Y", "Europe/Berlin")).toBe("12/31/2099, 23:30");
     expect(formatShortDateTime(closes, "d.m.Y", "Europe/Berlin")).toBe("31.12.2099 23:30");
     expect(formatDate("2099-10-20", "m/d/Y")).toBe("10/20/2099");
+  });
+
+  it("offers every timezone 0.4 offered (Australia/ACT, Asia/Macao, Europe/Kyiv among them)", () => {
+    const offered = new Set(timezoneNames());
+    expect(DJANGO_TIMEZONES).toHaveLength(490);
+    expect(DJANGO_TIMEZONES.filter((name) => !offered.has(name))).toEqual([]);
   });
 
   it("reads dates in the app date format or ISO", () => {

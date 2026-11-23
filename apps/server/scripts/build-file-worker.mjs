@@ -2,7 +2,8 @@
 // <outdir>/file-worker.mjs, on its own: it shares no chunk with the server.
 // Its parsers (sharp, pdf-lib, PDFium, pdfmake) must load only after the
 // child's lockdown(), through the dynamic import in file-worker.ts; the build
-// fails when one of them would load with the entry itself.
+// fails when one of them would load with the entry itself, or when a module
+// loaded with it could load one through createRequire().
 //
 // scripts/build.mjs calls it for dist/; the sandbox tests for a bundle of their own.
 import { build } from "esbuild";
@@ -12,6 +13,9 @@ import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
 const PARSERS = ["sharp", "pdf-lib", "@embedpdf/pdfium", "pdfmake"];
+// createRequire() loads modules the metafile does not list (it records only
+// node:module): before lockdown() only the add-on's loader may use it.
+const REQUIRE_LOADERS = new Set([path.join(root, "src/documents/sandbox.ts")]);
 
 export async function buildFileWorker(outdir, options = {}) {
   const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
@@ -56,6 +60,26 @@ export async function buildFileWorker(outdir, options = {}) {
   };
   if (!entry) throw new Error("The document child's entry is missing from its build.");
   visit(entry[0]);
+  // The same walk over the source modules (metafile paths are relative to the working directory).
+  const seen = new Set();
+  const visitInput = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const imported of result.metafile.inputs[file]?.imports ?? []) {
+      if (imported.kind === "dynamic-import") continue;
+      if (!imported.external) visitInput(imported.path);
+      else if (
+        (imported.path === "node:module" || imported.path === "module") &&
+        !REQUIRE_LOADERS.has(path.resolve(file))
+      )
+        early.add(`${imported.path} (createRequire in ${path.relative(root, path.resolve(file))})`);
+    }
+  };
+  const entryInput = Object.keys(result.metafile.inputs).find(
+    (file) => path.resolve(file) === path.resolve(entryPoint),
+  );
+  if (!entryInput) throw new Error("The document child's entry is missing from its build inputs.");
+  visitInput(entryInput);
   if (early.size > 0) {
     throw new Error(`The document child would load parsers before its lockdown: ${[...early].join(", ")}`);
   }

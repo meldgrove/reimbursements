@@ -6,6 +6,7 @@ import { SERVER_ROOT } from "../paths";
 import { connectClient } from "./client";
 import { adoptDjangoDatabase, endDjangoSessions } from "./django";
 import { logger } from "../logger";
+import { pythonFullmatch } from "../python-regex";
 
 export function migrationsFolder(): string {
   return config().MIGRATIONS_DIR ?? path.join(SERVER_ROOT, "drizzle");
@@ -24,10 +25,33 @@ export async function runMigrations() {
   try {
     await client.query("select pg_advisory_lock(hashtext('reimbursements.migrations'))");
     await migrateWith(client, migrationsFolder());
+    const refused = await untranslatablePatterns(client);
+    if (refused.length > 0)
+      logger.warn(
+        { fields: refused },
+        "template fields whose patterns have no JavaScript translation: their forms stay closed until the template is changed",
+      );
   } finally {
     // Ending the session also releases the lock.
     await client.end().catch(() => undefined);
   }
+}
+
+/**
+ * The template fields whose stored pattern (written for Python's re by the
+ * Django version) has no JavaScript translation (python-regex.ts). Their
+ * values never validate, so their forms stay closed until the template is
+ * changed: each migration lists them once, before participants meet them.
+ */
+export async function untranslatablePatterns(
+  client: pg.Client,
+): Promise<{ template: string; field: string; pattern: string }[]> {
+  const { rows } = await client.query<{ template: string; field: string; pattern: string }>(`
+    select t.name as template, f.key as field, f.pattern
+    from portal_templatefield f join portal_formtemplate t on t.id = f.template_id
+    where f.pattern <> '' order by t.name, f.key
+  `);
+  return rows.filter((row) => !pythonFullmatch(row.pattern));
 }
 
 /**

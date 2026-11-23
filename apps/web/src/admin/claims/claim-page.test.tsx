@@ -303,4 +303,33 @@ describe("processing a claim again", () => {
     expect(screen.getByText("Duplicate delivery possible")).toBeInTheDocument();
     expect(screen.getByLabelText(/^Reason/)).toHaveValue("Finance asked again");
   });
+
+  it("asks again for another claim: an acknowledgment belongs to one claim and its plan", async () => {
+    const OTHER = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    mockApi({
+      ...meta,
+      [`GET /api/v1/admin/claims/${ID}/retry`]: {
+        body: { claim: SUMMARY, plan: { action: "resend", duplicateRisk: true }, refused: "" },
+      },
+      [`GET /api/v1/admin/claims/${OTHER}/retry`]: {
+        body: {
+          claim: { ...SUMMARY, id: OTHER, reference: OTHER },
+          plan: { action: "resend", duplicateRisk: true },
+          refused: "",
+        },
+      },
+    });
+    const user = userEvent.setup();
+    // Both plans are loaded once, so the second page shows at once from the cache.
+    const { router } = renderApp(`/admin/claims/${OTHER}/retry`);
+    const name = { name: /accept that Finance may receive the claim twice/ };
+    await screen.findByRole("checkbox", name);
+    await router.navigate({ to: "/admin/claims/$claimId/retry", params: { claimId: ID } });
+    await waitFor(() => expect(screen.getByText(ID)).toBeInTheDocument());
+    await user.click(screen.getByRole("checkbox", name));
+    expect(screen.getByRole("checkbox", name)).toBeChecked();
+    await router.navigate({ to: "/admin/claims/$claimId/retry", params: { claimId: OTHER } });
+    await waitFor(() => expect(screen.getByText(OTHER)).toBeInTheDocument());
+    expect(screen.getByRole("checkbox", name)).not.toBeChecked();
+  });
 });

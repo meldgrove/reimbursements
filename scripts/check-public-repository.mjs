@@ -87,7 +87,9 @@ const PRIVATE_SUFFIXES = new Set([
 const REVIEWED_BINARIES = ["docs/screenshots/", "apps/server/assets/", "apps/web/public/"];
 const TOKEN =
   /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|\bgh[pousr]_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}|\bAKIA[A-Z0-9]{16}\b|\bxox[baprs]-[A-Za-z0-9-]{20,}/;
-const URL_PATTERN = /\b(?:https?|postgresql|postgres):\/\/[^\s"'<>`)]+/g;
+// Stops at "," and ";", which no host contains: origin lists such as
+// CSRF_TRUSTED_ORIGINS separate URLs with them.
+const URL_PATTERN = /\b(?:https?|postgresql|postgres):\/\/[^\s"'<>`),;]+/g;
 const EMAIL = /\b[\w.+-]+@([\w.-]+\.[A-Za-z]{2,})\b/g;
 
 function allowedHost(host) {

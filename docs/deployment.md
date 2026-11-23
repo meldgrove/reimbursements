@@ -61,11 +61,14 @@ eight hours.
 
 Create `.env` from `.env.production.example` and replace all placeholder values
 ([set up](#set-up), step 4). Set the public HTTPS origin in `CSRF_TRUSTED_ORIGINS`
-(or `APP_URL`, its new name), such as `https://reimbursements.example.invalid`, and the
+(or in `APP_URL`), such as `https://reimbursements.example.invalid`, and the
 address Caddy's requests come from in `TRUSTED_PROXY_CIDRS` ([set up](#set-up),
-step 6). Sign-in sends the provider back to that origin, so it must name exactly one
-address; origins with a wildcard are ignored. `DJANGO_SECRET_KEY` (or `AUTH_SECRET`)
-signs the sessions: a random secret of at least 50 characters.
+step 6). Sign-in sends the provider back to the app's address: `APP_URL` when it is
+set (exactly one address), else the first `https` origin of `CSRF_TRUSTED_ORIGINS`
+without a wildcard. Every origin `CSRF_TRUSTED_ORIGINS` lists, wildcards included,
+may send changes, as in 0.4. With several addresses, set `APP_URL` to the one
+registered as the redirect URI. `DJANGO_SECRET_KEY` (or `AUTH_SECRET`, which wins when
+both are set) signs the sessions: a random secret of at least 50 characters.
 
 Set `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app language, timezone and date
 format are set after the first sign-in under Admin > General, the accent color and
@@ -192,9 +195,10 @@ While `BACKUP_URL` is empty, it idles.
 3. Let the backup end before the update window (`UPDATE_WINDOW`): automatic
    updates run migrations without anyone present.
 
-Keep `DJANGO_SECRET_KEY` apart from the backups (sessions and the open drafts of
-participants are tied to it): a restore needs it, the backups do not hold it, and
-Backups shows the name on the source page.
+Keep the session secret apart from the backups: `AUTH_SECRET` if `.env` sets it, else
+`DJANGO_SECRET_KEY` (sessions, the open drafts of participants and the upload budgets
+of client networks are tied to it). A restore needs it, the backups do not hold it,
+and Backups shows both names on the source page.
 
 With [automatic updates](updates.md), run the updater's host setup again once
 the app's folder has updater 0.2.2 or later (`git pull`): its deploy script
@@ -221,16 +225,22 @@ and 0.4 runs on the database again if you go back. The private files stay where 
 are. An older installation (0.1, 0.2) installs 0.4 first; 0.5's migration job refuses
 its database and changes nothing.
 
-1. Back up the database and the private files together, and keep `.env`.
-2. In `/srv/reimbursements`, run `git pull` for 0.5's `compose.yaml` (on Coolify, the
-   new `compose.coolify.yaml` comes from `stable`).
-3. Keep `.env`: `DJANGO_SECRET_KEY` and `CSRF_TRUSTED_ORIGINS` still work, as
-   `AUTH_SECRET` and `APP_URL` do. `CSRF_TRUSTED_ORIGINS` must name exactly one address
-   besides origins with a wildcard; otherwise set `APP_URL` to the public URL.
-   `ALLOWED_HOSTS` is no longer read and can go.
-4. Set `REIMBURSEMENTS_VERSION=0.5`, stop web and worker
+1. Back up the database and the private files together. Keep a copy of `.env` and of
+   the folder's `compose*.yaml` files as they are: going back to 0.4 needs them.
+2. In `/srv/reimbursements`, run `git pull` for 0.5's `compose.yaml`.
+3. Keep `.env`: `DJANGO_SECRET_KEY` and `CSRF_TRUSTED_ORIGINS` still work, next to their
+   new names `AUTH_SECRET` and `APP_URL`. The first `https` origin of
+   `CSRF_TRUSTED_ORIGINS` without a wildcard becomes the app's address, which sign-in
+   sends the provider back to; when it lists several, set `APP_URL` to the one
+   registered as the redirect URI. `ALLOWED_HOSTS` is no longer read; keep it while you
+   may go back, since 0.4's `compose.yaml` requires it.
+4. Scheduled or scripted operator commands become `cli` commands of the same name:
+   `python manage.py reconcile_deliveries` becomes `cli reconcile-deliveries`, with the
+   same options ([operations](operations.md#recovery-commands)). The old form keeps
+   working through the `python` stand-in described below, so switch when convenient.
+5. Set `REIMBURSEMENTS_VERSION=0.5`, stop web and worker
    (`docker compose stop web worker`), and run `docker compose up -d --pull always`.
-5. Sign in at `/admin/` and run the [setup check](operations.md#setup-check).
+6. Sign in at `/admin/` and run the [setup check](operations.md#setup-check).
 
 What changes:
 
@@ -238,6 +248,10 @@ What changes:
   drafts were tied to the sessions of 0.4, which end. Participants open the form again
   and start over. Submitted claims are kept, and their queued processing and sending
   continue in the new worker.
+- Participants who submitted a claim before the switch can no longer open its
+  confirmation page (`/received/<id>/`): it belonged to their 0.4 session. The claim is
+  processed and sent as usual, and their confirmation email still arrives. Tell
+  support to answer such questions from the admin area, so that nobody submits again.
 - Everyone in the admin area signs in once more.
 - The admin area is the app frame of the other Meldgrove apps. Its pages have new
   addresses (`/admin/claims`, `/admin/forms`, ...); links to the pages of 0.4 lead to
@@ -248,14 +262,30 @@ What changes:
   `cli verify-setup` instead of `python manage.py verify_setup`
   ([operations](operations.md#recovery-commands)).
 
-The image also starts with the `compose.yaml` of 0.4, whose commands and health
-checks still call `python`. A server on the Preview channel therefore installs it by
-itself; run `git pull` there afterwards for the new file.
+The image also starts with the `compose.yaml` of 0.4, whose commands and health checks
+call `python`: a stand-in named `python` runs them, and the operator commands of 0.4
+(`claim_status`, `purge_expired`, `reconcile_deliveries`, `retry_claim`,
+`verify_setup`, `verify_storage`) as their `cli` commands. A server on the Preview
+channel therefore installs 0.5 by itself; run `git pull` there afterwards for the new
+file, and take steps 3 and 4.
 
-To go back to 0.4, take its Compose files and version:
-`git checkout v0.4.0 -- compose.yaml compose.coolify.yaml compose.postgres.yaml`,
-`REIMBURSEMENTS_VERSION=0.4.0` in `.env`, and `docker compose up -d`. 0.4 runs on the
-database again; everyone signs in again, and open drafts are lost again.
+To go back to 0.4:
+
+1. Stop automatic installs, or the updater installs 0.5 again: `docker compose stop
+   updater`. Then stop web and worker: `docker compose stop web worker`.
+2. Put back the `.env` and `compose*.yaml` files kept before the upgrade (or
+   `git checkout v0.4.0 -- compose.yaml compose.coolify.yaml compose.postgres.yaml`
+   and the 0.4 settings: `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`
+   and the Keycloak settings under their old names), with
+   `REIMBURSEMENTS_VERSION=0.4.0`.
+3. Run `docker compose up -d web worker` (their database, scanner and migration job
+   start with them; the updater stays stopped). 0.4 runs on the database again;
+   everyone signs in again, and open drafts are lost again. Change scheduled `cli`
+   commands back to `python manage.py`.
+4. Start the updater again (`docker compose up -d updater`) only once you want
+   updates again. On the Preview channel, choose Stable under Admin > Updates right
+   after: Preview installs 0.5 again within the hour, while Stable never installs a
+   new series by itself.
 
 ## Upgrades
 
