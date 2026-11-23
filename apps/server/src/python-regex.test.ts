@@ -154,6 +154,8 @@ describe("pythonFullmatch", () => {
     ["(a)(b)\\2", "aba", false],
     ["((a)b)\\2", "aba", true],
     ["(a)+\\1", "aaa", true],
+    ["(?x)(a) # c\n \\1 b", "aab", true],
+    ["(a)(?#x)\\1b", "aab", true],
   ] as const)("%s on %j is %s, as in Python", (pattern, value, expected) => {
     expect(pythonFullmatch(pattern)?.test(value)).toBe(expected);
   });
@@ -176,6 +178,13 @@ describe("pythonFullmatch", () => {
     "(a){0,2}\\1",
     "(?:(a)|b)\\1",
     "(?=(a))\\1a",
+    // A comment between a group and its quantifier: the group is still optional.
+    "(?x)(a)# comment\n?\\1b",
+    "(a)(?#x)?\\1b",
+    // Python compares these by ASCII case only ((?ai)(a)\1 matches aA, not a\u212a).
+    "(?ai)(a)\\1",
+    "(?i)(a)(?a:\\1)",
+    "(?ai)(?P<p>a)(?P=p)",
   ])("%s has no translation", (pattern) => {
     expect(pythonFullmatch(pattern)).toBeNull();
   });

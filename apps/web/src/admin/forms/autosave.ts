@@ -105,6 +105,8 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
   const primaryTouched = useRef(false);
   /** False once the editor is gone: a save that ends later changes nothing on the page. */
   const mounted = useRef(true);
+  /** True once the person confirmed leaving without saving, also while the next page loads. */
+  const left = useRef(false);
   const onCreated = useRef(options.onCreated);
   onCreated.current = options.onCreated;
 
@@ -116,7 +118,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
   const save = useCallback(async () => {
     clearTimeout(timer.current);
     // Once the person left the editor (also by "Leave without saving"), nothing queued is sent.
-    if (!mounted.current) return;
+    if (!mounted.current || left.current) return;
     if (saving.current || (!dirty.current && !publication.current)) return;
     const action = publication.current;
     publication.current = null;
@@ -191,7 +193,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
     } finally {
       saving.current = false;
       setPublishing(Boolean(publication.current));
-      if (mounted.current && (publication.current || revision.current !== startedAt))
+      if (mounted.current && !left.current && (publication.current || revision.current !== startedAt))
         timer.current = setTimeout(() => void save(), 0);
     }
   }, [editor.template.id, show]);
@@ -199,6 +201,7 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
   /** Changes settings; they save shortly after the last change. */
   const update = useCallback(
     (changes: Partial<FormSettings>) => {
+      left.current = false;
       const next = { ...settingsRef.current, ...changes };
       settingsRef.current = next;
       setSettingsState(next);
@@ -266,6 +269,13 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
     };
   }, [save]);
 
+  /** "Leave without saving": nothing queued or following is sent any more. */
+  const discard = useCallback(() => {
+    left.current = true;
+    clearTimeout(timer.current);
+    publication.current = null;
+  }, []);
+
   /** Whether leaving now would lose something. */
   const unsaved = useCallback(
     () =>
@@ -287,5 +297,6 @@ export function useFormAutosave(editor: FormEditor, options: { onCreated?: (form
     retry,
     saveNow,
     unsaved,
+    discard,
   };
 }

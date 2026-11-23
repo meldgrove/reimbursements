@@ -99,10 +99,14 @@ registerCommand("claim-status", {
         .orderBy(asc(claims.submittedAt), asc(claims.id))
         .limit(claimStatusPage.size);
       if (page.length === 0) break;
+      // The filter again: a claim whose status changed since the page was read is left out.
       for (const claim of await annotate(
-        inArray(
-          claims.id,
-          page.map((row) => row.id),
+        and(
+          inArray(
+            claims.id,
+            page.map((row) => row.id),
+          ),
+          ...conditions,
         ),
       )) {
         await writeClaim(claim);

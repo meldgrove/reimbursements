@@ -35,6 +35,12 @@ export function RetryPage() {
   const [busy, setBusy] = useState(false);
   const reference = query.data?.claim.reference;
   const planKey = query.data?.plan?.duplicateRisk ? `${claimId}:${JSON.stringify(query.data.plan)}` : null;
+  // Another claim or plan on screen ends the acknowledgment, also on the way back (A, B, A).
+  const [shownFor, setShownFor] = useState(planKey);
+  if (shownFor !== planKey) {
+    setShownFor(planKey);
+    setAcknowledgedFor(null);
+  }
   const acknowledged = planKey !== null && acknowledgedFor === planKey;
   useRecordName(
     pathname,

@@ -131,6 +131,10 @@ old_commands_run() {
   preview=$(compose exec -T web python manage.py purge_expired)
   grep -q '^{' <<< "$preview"
   compose exec -T web python manage.py claim_status --state ready > /dev/null
+  # --option=value as argparse took it: an unknown state is refused, not ignored.
+  status=0
+  compose exec -T web python manage.py claim_status --state=unknown > /dev/null 2>&1 || status=$?
+  test "$status" = 1
   compose exec -T web python manage.py verify_storage > /dev/null
   status=0
   compose exec -T web python manage.py shell -c 'print(1)' > /dev/null 2>&1 || status=$?
@@ -167,10 +171,10 @@ django_session() {
 django_runs() {
   curl -fsS -H "X-Forwarded-Proto: https" "http://127.0.0.1:$port/" | grep -q "Auslagen einreichen"
 }
-# Whether the app refuses a change sent from the browser origin $1.
-origin_refused() {
-  curl -sS -X POST -H "$proxied" -H "Origin: $1" -H "content-type: application/json" --data '{}' \
-    "http://127.0.0.1:$port/api/v1/public/forms/upgrade/validate" | grep -q '"Cross-site request rejected"'
+# The answer to a change sent from the browser origin $1: its body, a space and its status.
+origin_answer() {
+  curl -sS -w ' %{http_code}' -X POST -H "$proxied" -H "Origin: $1" -H "content-type: application/json" \
+    --data '{}' "http://127.0.0.1:$port/api/v1/public/forms/upgrade/validate"
 }
 checked() {
   # Healthy by the compose file's health checks (0.4's call Python).
@@ -188,11 +192,20 @@ checked() {
     http://sso.example.invalid:8080/realms/reimbursements/protocol/openid-connect/auth\?*redirect_uri=https%3A%2F%2Freimbursements.example.invalid%2Foidc%2Fcallback%2F*) ;;
     *) echo "Sign-in redirects to: $location" >&2 && return 1 ;;
   esac
-  # Every origin of CSRF_TRUSTED_ORIGINS stays trusted for changes, as in 0.4; others are not.
+  # Every origin of CSRF_TRUSTED_ORIGINS stays trusted for changes, as in 0.4: the request
+  # reaches the form, which knows no draft without one (404). Other origins are refused (403).
   for origin in https://other.example.invalid https://forms.apps.example.invalid; do
-    if origin_refused "$origin"; then echo "Refused the trusted origin $origin" >&2 && return 1; fi
+    answer=$(origin_answer "$origin")
+    case "$answer" in
+      *'"code":"intake_error"'*' 404') ;;
+      *) echo "The trusted origin $origin got: $answer" >&2 && return 1 ;;
+    esac
   done
-  origin_refused https://attacker.example.invalid
+  answer=$(origin_answer https://attacker.example.invalid)
+  case "$answer" in
+    *'"Cross-site request rejected"'*' 403') ;;
+    *) echo "The origin https://attacker.example.invalid got: $answer" >&2 && return 1 ;;
+  esac
   test "$(sql "select count(*) from django_session")" = 0
   test "$(sql "select count(*) from drizzle.__drizzle_migrations")" -gt 0
   curl -fsS -H "X-Health-Token: $token" "http://127.0.0.1:$port/-/readyz" | grep -q '"status":"OK"'

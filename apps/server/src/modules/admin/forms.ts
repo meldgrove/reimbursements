@@ -256,6 +256,10 @@ async function saveForm(
   target: { form: Form } | { templateId: number; creationKey: string | null },
 ): Promise<FormSaved> {
   return atomic(async () => {
+    // Start-page assignments (handovers and new start pages) run one at a time, so
+    // the start page read below stays the start page until this one commits.
+    if (input.primary === true)
+      await q().execute(sql`select pg_advisory_xact_lock(hashtext('reimbursements.primary-form'))`);
     if ("form" in target && input.primary === true) {
       // Every writer locks forms in id order (bulk deletion too), so a handover never
       // holds its own form while it waits for the current start page.

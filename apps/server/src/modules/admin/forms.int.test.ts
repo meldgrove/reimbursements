@@ -608,6 +608,46 @@ describe("saves that race", () => {
     }
   });
 
+  it("hands the start page over twice at once without deadlocking a bulk deletion", async () => {
+    // Ids in this order: the bulk deletion locks the new start page, then the second form.
+    const next = await createForm({ slug: "next", name: "Next" });
+    const second = await createForm({ slug: "second", name: "Second" });
+    const current = await createForm({ slug: "current", name: "Current", primary: true });
+    const editorSave = await holdTransaction("select id from portal_form where id = $1 for update", [
+      second.id,
+    ]);
+    const deletion = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await deletion.connect();
+    try {
+      // A handover to the second form reads the start page, then waits for its own form.
+      const toSecond = request("PUT", `/api/v1/admin/forms/${second.id}`, {
+        user: admin,
+        body: formSettings(second, { primary: true }),
+      });
+      await settle();
+      // Another handover moves the start page meanwhile, if nothing holds it back …
+      const toNext = request("PUT", `/api/v1/admin/forms/${next.id}`, {
+        user: admin,
+        body: formSettings(next, { primary: true }),
+      });
+      await settle();
+      // … and a bulk deletion locks the forms in id order: whichever is the start page now first.
+      await deletion.query("begin");
+      await deletion.query("select id from portal_form where id = $1 for update", [next.id]);
+      await editorSave.commit();
+      await settle();
+      await deletion.query("select id from portal_form where id = $1 for update", [second.id]);
+      await deletion.query("rollback");
+      expect((await toSecond).status).toBe(200);
+      expect((await toNext).status).toBe(200);
+      expect((await reload(next)).primary).toBe(true);
+      expect((await reload(second)).primary).toBe(false);
+      expect((await reload(current)).primary).toBe(false);
+    } finally {
+      await deletion.end();
+    }
+  });
+
   it("keeps the start page when a template admin's save does not send it", async () => {
     const form = await createForm({ primary: true });
     const response = await request("PUT", `/api/v1/admin/forms/${form.id}`, {

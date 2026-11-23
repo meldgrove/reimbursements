@@ -28,8 +28,15 @@ export function registerCommand(name: string, command: Command) {
   COMMANDS.set(name, command);
 }
 
-/** The value after `name` in the arguments, e.g. option(args, "--to"). */
+/**
+ * The value of option `name` in the arguments, given as `--to value` or
+ * `--to=value` (as Django's argparse took them), e.g. option(args, "--to").
+ */
 export function option(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index === -1 ? undefined : args[index + 1];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
+    if (argument === name) return args[index + 1];
+    if (argument.startsWith(`${name}=`)) return argument.slice(name.length + 1);
+  }
+  return undefined;
 }

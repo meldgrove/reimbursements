@@ -331,5 +331,9 @@ describe("processing a claim again", () => {
     await router.navigate({ to: "/admin/claims/$claimId/retry", params: { claimId: OTHER } });
     await waitFor(() => expect(screen.getByText(OTHER)).toBeInTheDocument());
     expect(screen.getByRole("checkbox", name)).not.toBeChecked();
+    // Back on the first claim, the earlier acknowledgment does not come back.
+    await router.navigate({ to: "/admin/claims/$claimId/retry", params: { claimId: ID } });
+    await waitFor(() => expect(screen.getByText(ID)).toBeInTheDocument());
+    expect(screen.getByRole("checkbox", name)).not.toBeChecked();
   });
 });

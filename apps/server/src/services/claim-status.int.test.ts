@@ -175,6 +175,31 @@ describe("claim status", () => {
     expect(rows.map((row) => row.archived)).toEqual([false, false]);
   });
 
+  it("the claim-status command leaves out a claim whose status changed after its page was read", async () => {
+    const form = await createForm();
+    const unknown = await claimIn(form, CLAIM_STATES.READY, "send_unknown");
+    const settled = await claimIn(form, CLAIM_STATES.READY, "send_unknown");
+    const annotate = claimStatus.annotate;
+    // Between the page's query and its annotation, the second claim's delivery is settled.
+    const spy = vi.spyOn(claimStatus, "annotate").mockImplementation(async (where) => {
+      await getDb().update(deliveries).set({ state: "delivered" }).where(eq(deliveries.claimId, settled.id));
+      return annotate(where);
+    });
+    try {
+      const output = await callCommand("claim-status", ["--status", "send_unknown"]);
+      const rows = output
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { reference?: string; status?: string })
+        .filter((row) => row.reference);
+      expect(rows.map((row) => [row.reference, row.status])).toEqual([
+        [claimReference(unknown), "send_unknown"],
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("the claim-status command reads a page at a time and waits while stdout is full", async () => {
     const form = await createForm();
     const first: Claim[] = [];

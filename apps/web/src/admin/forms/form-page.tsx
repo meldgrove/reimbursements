@@ -512,7 +512,10 @@ function Editor({ editor, editorKey: key }: { editor: FormEditor; editorKey: str
         description="Your latest changes are not saved yet. If you leave this page now, they are lost."
         confirmLabel="Leave without saving"
         destructive
-        onConfirm={() => blocker.proceed?.()}
+        onConfirm={() => {
+          autosave.discard();
+          blocker.proceed?.();
+        }}
       />
     </Page>
   );

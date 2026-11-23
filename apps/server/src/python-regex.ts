@@ -14,7 +14,8 @@
  *   own pairs (İ and ı match i and I); with (?a) only ASCII letters fold;
  * - (?P<name>…), (?P=name) and \1 when the group takes part in every match
  *   that reaches the reference (JavaScript matches a missing group as empty,
- *   Python fails); (?#…) comments, verbose mode (?x);
+ *   Python fails), except under (?a) with (?i): Python compares them by ASCII
+ *   case only, which JavaScript cannot; (?#…) comments, verbose mode (?x);
  * - Python's escapes (\a, \U, octal) and its literal braces;
  * - possessive quantifiers, atomic groups, conditionals, \N{…}, (?L) and
  *   other backreferences have no translation (null).
@@ -157,11 +158,25 @@ class Translator {
     if (this.chars[this.at] !== ")") throw new Untranslatable("unterminated group");
     this.at += 1;
     // A quantifier that allows no repetition makes the group optional.
-    let next = this.at;
-    while (this.flags.verbose && next < this.chars.length && /\s/.test(this.chars[next]!)) next += 1;
+    const next = this.ignoredFrom(this.at);
     const rest = this.chars.slice(next, next + 12).join("");
     if (/^[?*]/.test(rest) || /^\{(0*,|,|0+\}|0+,)/.test(rest)) frame.optional = true;
     return out;
+  }
+
+  /** Where the pattern goes on after the whitespace and comments Python skips from `from`. */
+  private ignoredFrom(from: number): number {
+    let next = from;
+    for (;;) {
+      if (this.flags.verbose && next < this.chars.length && /\s/.test(this.chars[next]!)) next += 1;
+      else if (this.flags.verbose && this.chars[next] === "#") {
+        while (next < this.chars.length && this.chars[next] !== "\n") next += 1;
+      } else if (this.chars.slice(next, next + 3).join("") === "(?#") {
+        const end = this.chars.indexOf(")", next);
+        if (end < 0) return next;
+        next = end + 1;
+      } else return next;
+    }
   }
 
   private atom(sequence: Sequence): string {
@@ -257,6 +272,10 @@ class Translator {
   }
 
   private reference(target: number | string): void {
+    // Python compares the text by ASCII case only; JavaScript's i also folds
+    // other letters (K and ſ to k and s, é to É), so it has no equivalent.
+    if (this.flags.ignoreCase && this.flags.ascii)
+      throw new Untranslatable("ASCII case-insensitive back-reference");
     const index = typeof target === "number" ? target : this.names.get(target);
     const capture = index === undefined ? undefined : this.captures[index - 1];
     this.references.push({ target, closedThen: capture?.closed ?? false });
