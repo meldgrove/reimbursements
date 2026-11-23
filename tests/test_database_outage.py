@@ -2,6 +2,7 @@
 
 import logging
 import socket
+import sqlite3
 import time
 from types import SimpleNamespace
 
@@ -67,7 +68,7 @@ def test_errors_of_a_restarting_database_mean_a_lost_connection(cause):
         django_error(IntegrityError, psycopg.errors.UniqueViolation("duplicate key")),
         django_error(ProgrammingError, psycopg.errors.UndefinedTable("no such relation")),
         django_error(InterfaceError, psycopg.InterfaceError("the cursor is closed")),
-        django_error(OperationalError, ValueError("SQLite: database is locked")),
+        django_error(OperationalError, sqlite3.OperationalError("database is locked")),
         psycopg.errors.AdminShutdown("not wrapped by Django"),
         RuntimeError("not a database error"),
     ],
@@ -186,6 +187,10 @@ def test_real_database_errors_still_fail_the_job(accepted, monkeypatch, caplog, 
     assert errors(caplog) == [f"job_failed job={job.pk} kind=render"]
 
 
+# The worker closes and checks its connections, outside any test transaction.
+worker_database = pytest.mark.django_db(transaction=True)
+
+
 def scripted(*outcomes):
     """`Command.work` that raises or returns each outcome in turn."""
     outcomes, calls = list(outcomes), []
@@ -220,6 +225,7 @@ def raising_from(exception, cause):
         return exc
 
 
+@worker_database
 def test_worker_waits_out_a_lost_connection_with_backoff(monkeypatch, caplog):
     work, calls = scripted(lost(), lost(), lost(), True)
     monkeypatch.setattr(Command, "work", work)
@@ -230,6 +236,7 @@ def test_worker_waits_out_a_lost_connection_with_backoff(monkeypatch, caplog):
     assert "database_available seconds=0" in caplog.messages
 
 
+@worker_database
 def test_worker_hands_on_an_interrupted_job_before_the_next_one(monkeypatch):
     abandoned = []
     lease = SimpleNamespace(job=SimpleNamespace(pk=1))
@@ -249,6 +256,7 @@ def test_worker_hands_on_an_interrupted_job_before_the_next_one(monkeypatch):
     assert (abandoned, len(calls), sleeps) == ([1, 1], 2, [1, 2])
 
 
+@worker_database
 def test_worker_still_stops_on_a_real_database_error(monkeypatch):
     error = django_error(OperationalError, psycopg.errors.DiskFull("could not extend file"))
     work, _ = scripted(error)
