@@ -99,12 +99,13 @@ have.
 
 In the resource's terminal, choose the web container and run `cli <command>`, such as
 `cli settings list`. `cli settings apply <name>` reads the JSON body of the admin page
-on stdin, so a secret never becomes an argument:
+on stdin, so a secret never becomes an argument. In the terminal it asks for the body
+and does not show what is pasted: paste it, then press Enter and Ctrl-D. Do not type the
+body into the shell itself (for example as a heredoc): the shell's history would keep
+the secret.
 
 ```sh
-cli settings apply email << 'BODY'
-{ "provider": "mailersend", "fromAddress": "no-reply@your-org.example.invalid", … }
-BODY
+cli settings apply email
 cli settings test email --to finance@your-org.example.invalid
 ```
 

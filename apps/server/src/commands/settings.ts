@@ -11,6 +11,7 @@
  * Like every process, the command first copies the variables of earlier versions into
  * the settings (services/environment-import.ts), once its arguments and body are read.
  */
+import { spawnSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { config } from "../config";
 import { AppError } from "../http/errors";
@@ -161,19 +162,47 @@ async function list(args: string[]) {
   }
 }
 
-/** The JSON body on stdin, at most as large as the page may send. */
+/** Turns the terminal's echo off while a body is pasted, so its secret is not shown. True when it worked. */
+const echo = (on: boolean) =>
+  spawnSync("stty", [on ? "echo" : "-echo"], { stdio: ["inherit", "ignore", "ignore"] }).status === 0;
+
+function restoreEchoAndExit() {
+  echo(true);
+  process.exit(130);
+}
+
+/**
+ * The JSON body on stdin, at most as large as the page may send. A body pasted into a
+ * terminal (Coolify's) is not shown: a heredoc would put the secret into the shell's
+ * history.
+ */
 async function readBody(): Promise<unknown> {
-  if (process.stdin.isTTY) {
-    throw new UsageError("Pipe the JSON body into the command, e.g. cli settings apply email < body.json.");
+  const terminal = process.stdin.isTTY;
+  if (terminal) {
+    // Echo goes off before the prompt: nothing pasted after the prompt is shown.
+    if (!echo(false)) {
+      throw new UsageError(
+        "The terminal's echo cannot be turned off: pipe the body in, e.g. cli settings apply email < body.json.",
+      );
+    }
+    process.once("SIGINT", restoreEchoAndExit);
+    process.stderr.write("Paste the JSON body (it is not shown), then press Enter and Ctrl-D.\n");
   }
   const limit = config().MAX_REQUEST_BODY_BYTES;
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
-    size += chunk.length;
-    if (size > limit)
-      throw new CommandError(`The body is larger than the ${limit / 1024} KB the page may send.`);
-    chunks.push(chunk);
+  try {
+    for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
+      size += chunk.length;
+      if (size > limit)
+        throw new CommandError(`The body is larger than the ${limit / 1024} KB the page may send.`);
+      chunks.push(chunk);
+    }
+  } finally {
+    if (terminal) {
+      process.off("SIGINT", restoreEchoAndExit);
+      echo(true);
+    }
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
