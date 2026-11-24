@@ -30,10 +30,9 @@ import { formatDateTime } from "../i18n";
 import { logger } from "../logger";
 import * as confirmations from "./confirmations";
 import * as emailConnection from "./email-connection";
-import { environmentNote } from "./moved-variables";
 import { configuredTransport } from "./outbound";
 import { lockSettings, recordSettingsChange, type SettingsActor } from "./settings-audit";
-import { SmtpTransport } from "./smtp";
+import { smtpReply, SmtpTransport } from "./smtp";
 import { ACCEPTED, DELIVERED, FAILED, PAUSED, sendResult, type Message, type SendResult } from "./transport";
 
 const TEST_TIMEOUT_SECONDS = 10;
@@ -128,7 +127,6 @@ export async function emailPage(saved: EmailSettingsRow, testRecipient: string):
       ),
     },
     secrets: secretStates(saved),
-    environmentNote: environmentNote("email"),
     status: status(connection),
     webhook: {
       url,
@@ -158,7 +156,7 @@ const tooLong = (value: string, max: number) =>
 const choiceError = (value: string) => `Select a valid choice. ${value} is not one of the available choices.`;
 
 /** A CharField's value: stripped (unless `strip` is false) and checked, or its first error. */
-export function charField(value: string, max: number, strip = true): { value: string; error: string } {
+function charField(value: string, max: number, strip = true): { value: string; error: string } {
   const cleaned = strip ? confirmations.stripSpaces(value) : value;
   if (cleaned.includes("\0")) return { value: cleaned, error: "Null characters are not allowed." };
   return { value: cleaned, error: tooLong(cleaned, max) };
@@ -177,11 +175,6 @@ function portField(raw: string | number): { value: number; error: string } {
   if (number > 65535) return { value: number, error: "Ensure this value is less than or equal to 65535." };
   return { value: number, error: "" };
 }
-
-/** The longest secret the page takes. */
-export const MAX_SECRET_LENGTH = 1000;
-/** The longest address the page takes. */
-export const MAX_ADDRESS_LENGTH = 254;
 
 /**
  * Checks and saves the page's form (PUT /admin/settings/email): the body is validated
@@ -203,7 +196,7 @@ export async function saveEmail(body: unknown, actor: SettingsActor): Promise<Em
       provider = input.provider as emailConnection.SavedProvider;
     } else fail("provider", choiceError(input.provider));
     const address = (field: "fromAddress" | "replyToAddress") => {
-      const { value, error } = charField(input[field], MAX_ADDRESS_LENGTH);
+      const { value, error } = charField(input[field], 254);
       if (value && !isEmail(value)) fail(field, "Enter a valid email address.");
       fail(field, error);
       return value;
@@ -226,7 +219,7 @@ export async function saveEmail(body: unknown, actor: SettingsActor): Promise<Em
     const secrets = {} as Record<EmailSecretName, string>;
     for (const name of emailConnection.SECRETS) {
       // A password may begin or end with a space.
-      const field = charField(input[name], MAX_SECRET_LENGTH, name !== "smtpPassword");
+      const field = charField(input[name], 1000, name !== "smtpPassword");
       fail(name, field.error);
       secrets[name] = field.error ? "" : field.value;
     }
@@ -313,14 +306,17 @@ function ownTexts(texts: Record<string, { subject: string; body: string }>) {
 // -- The test email --------------------------------------------------------------------
 
 /**
- * Sends a test email to `recipient` with the saved connection. No record keeps the
- * email: it belongs to no claim.
+ * Sends a test email to `recipient` with the saved connection; the last value is the
+ * SMTP server's answer when it refused (`smtpReply`). No record keeps the email: it
+ * belongs to no claim.
  */
-export async function sendTest(recipient: string): Promise<[emailConnection.Connection, SendResult]> {
+export async function sendTest(
+  recipient: string,
+): Promise<[emailConnection.Connection, SendResult, string | null]> {
   const connection = await emailConnection.current();
   const allowlist = config().TEST_RECIPIENT_ALLOWLIST;
   if (allowlist.length && !allowlist.includes(recipient.toLowerCase())) {
-    return [connection, sendResult(FAILED, { errorCode: "test_recipient_blocked" })];
+    return [connection, sendResult(FAILED, { errorCode: "test_recipient_blocked" }), null];
   }
   const message: Message = {
     attemptId: randomUUID(),
@@ -330,19 +326,24 @@ export async function sendTest(recipient: string): Promise<[emailConnection.Conn
     subject: `Test email from ${APP_NAME}`,
     text: `This is a test email from ${APP_NAME}, sent from Admin > Email.\n\nIt came through ${connection.name} from ${connection.sender}. Participants and Finance receive their emails the same way.\n`,
   };
-  // Within the admin's request, so a slow SMTP server cannot hold it for long.
-  const transport =
-    connection.ready && connection.provider === emailConnection.SMTP
-      ? new SmtpTransport(connection.smtp, TEST_TIMEOUT_SECONDS)
-      : await configuredTransport(connection);
-  return [connection, await transport.send(message)];
+  if (connection.ready && connection.provider === emailConnection.SMTP) {
+    // Within the admin's request, so a slow SMTP server cannot hold it for long.
+    const transport = new SmtpTransport(connection.smtp, TEST_TIMEOUT_SECONDS);
+    const result = await transport.send(message);
+    return [connection, result, smtpReply(transport.lastReply, connection.smtp)];
+  }
+  return [connection, await (await configuredTransport(connection)).send(message), null];
 }
 
-/** What to tell the admin about a test email's `result`, and whether it reached the provider. */
+/**
+ * What to tell the admin about a test email's `result`, with the SMTP server's `reply` if
+ * it refused, and whether it reached the provider.
+ */
 export function testOutcome(
   connection: emailConnection.Connection,
   recipient: string,
   result: SendResult,
+  reply: string | null,
 ): EmailTestAnswer {
   if (result.state === DELIVERED && connection.provider === emailConnection.LOCAL) {
     return {
@@ -365,7 +366,8 @@ export function testOutcome(
   if (result.errorCode === "email_not_set_up" && connection.missing.length) {
     return { reached: false, message: `Email is not set up yet. Missing: ${connection.missing.join(", ")}.` };
   }
-  return { reached: false, message: emailConnection.problem(result.errorCode, connection.provider) };
+  const problem = emailConnection.problem(result.errorCode, connection.provider);
+  return { reached: false, message: reply ? `${problem} The mail server answered "${reply}".` : problem };
 }
 
 /**
@@ -381,8 +383,8 @@ export async function testEmail(to: unknown): Promise<EmailTestAnswer> {
     );
   }
   try {
-    const [connection, result] = await sendTest(recipient);
-    return testOutcome(connection, recipient, result);
+    const [connection, result, reply] = await sendTest(recipient);
+    return testOutcome(connection, recipient, result, reply);
   } catch (error) {
     logger.error({ err: error }, "email_test_failed");
     return { reached: false, message: "Sending failed unexpectedly; the email may still arrive." };

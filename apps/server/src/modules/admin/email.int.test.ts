@@ -119,7 +119,7 @@ describe("the email connection", () => {
     expect(response.body.message).toBe("Das Formular ist derzeit nicht verfügbar.");
   });
 
-  it("reads the saved settings only, not the variables of earlier versions", async () => {
+  it("reads the saved settings", async () => {
     await unset();
     await saveEmailSettings(
       withSecret(
@@ -134,17 +134,7 @@ describe("the email connection", () => {
         "saved-token",
       ),
     );
-    let connection = await current();
-    expect([connection.provider, connection.sender, connection.mailersendToken]).toEqual([
-      "smtp",
-      "admin@example.invalid",
-      "saved-token",
-    ]);
-    overrideConfigForTests({
-      MAILERSEND_API_TOKEN: "environment-token",
-      MAIL_FROM_ADDRESS: "env@example.invalid",
-    });
-    connection = await current();
+    const connection = await current();
     expect([connection.provider, connection.sender, connection.replyTo]).toEqual([
       "smtp",
       "admin@example.invalid",
@@ -295,34 +285,6 @@ describe("the Email page", () => {
     expect(secretOf(await loadEmailSettings(), "smtpPassword")).toBe("first");
   });
 
-  it("names variables of earlier versions that are still set, and changes every field", async () => {
-    await unset();
-    expect((await page()).environmentNote).toBe("");
-    overrideConfigForTests({
-      MAILERSEND_API_TOKEN: "environment-token",
-      MAIL_FROM_ADDRESS: "env@example.invalid",
-    });
-    const shown = await page();
-    expect(shown.environmentNote).toBe(
-      "MAILERSEND_API_TOKEN and MAIL_FROM_ADDRESS are still set in the environment. The app no longer reads them: this page holds the setting. Delete them from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.",
-    );
-    expect(shown).not.toHaveProperty("locked");
-    expect([shown.settings.provider, shown.settings.fromAddress]).toEqual(["", ""]);
-    expect(JSON.stringify(shown)).not.toContain("environment-token");
-    const response = await save(
-      smtpForm({ fromAddress: "other@example.invalid", replyToAddress: "reply@example.invalid" }),
-    );
-    expect(response.status, JSON.stringify(response.body)).toBe(200);
-    const saved = await loadEmailSettings();
-    expect([saved.provider, saved.fromAddress, secretOf(saved, "mailersendToken")]).toEqual([
-      "smtp",
-      "other@example.invalid",
-      "",
-    ]);
-    const connection = await current();
-    expect([connection.provider, connection.sender]).toEqual(["smtp", "other@example.invalid"]);
-  });
-
   it("logs each save with the admin who made it", async () => {
     await unset();
     expect((await save(mailersendForm({ mailersendToken: "token" }))).status).toBe(200);
@@ -467,12 +429,35 @@ describe("the test email", () => {
     const response = await save(smtpForm({ smtpPort: String(server.port), smtpSecurity: "none" }));
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     server.rcptReply = "550 No such user";
-    expect(await test()).toBe("The SMTP server refused the recipient.");
+    expect(await test()).toBe(
+      'The SMTP server refused the recipient. The mail server answered "550 No such user".',
+    );
     server.rcptReply = "250 OK";
+    server.greeting = "HTTP/1.1 400 Bad Request";
+    expect(await test()).toBe(
+      "The SMTP server could not be reached. Check the server, the port and the encryption.",
+    );
+    server.greeting = "220 fake.example.invalid ESMTP";
     expect(await test()).toBe("The SMTP server accepted the test email to kim@example.invalid.");
     localSettings({ MAIL_DELIVERY_MODE: "send", TEST_RECIPIENT_ALLOWLIST: ["finance@example.invalid"] });
     expect(await test()).toBe("TEST_RECIPIENT_ALLOWLIST does not include the recipient.");
     expect(server.received).toHaveLength(1);
+  });
+
+  it("answers with the mail server's words, without the login", async () => {
+    await unset();
+    server = await new FakeSmtpServer().start();
+    server.credentials = ["kim", "other"];
+    const plain = Buffer.from("\0kim\0s3cret-7f3a").toString("base64");
+    server.authRefusal = `535-5.7.8 kim: s3cret-7f3a is wrong\r\n535 5.7.8 AUTH PLAIN ${plain}`;
+    const changes = { smtpPort: String(server.port), smtpSecurity: "none", smtpUsername: "kim" };
+    expect((await save(smtpForm({ ...changes, smtpPassword: "s3cret-7f3a" }))).status).toBe(200);
+    const response = await request("POST", TEST_URL, { user: admin, body: { to: "kim@example.invalid" } });
+    expect(response.body).toEqual({
+      reached: false,
+      message:
+        'The SMTP server refused the username or the password. The mail server answered "535-5.7.8 ***: *** is wrong 535 5.7.8 AUTH PLAIN ***".',
+    });
   });
 });
 

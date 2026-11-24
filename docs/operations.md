@@ -27,10 +27,8 @@ sets, requires `TRUSTED_PROXY_CIDRS`. Configure:
 - Email under Admin > Email, or with `cli settings apply email`
   ([operator commands](deployment.md#operator-commands)): MailerSend or an SMTP server,
   the sender address on a verified sender domain, and the reply address for Finance
-  emails. Up to 0.5.0, `.env` could set them; later versions copy those variables there
-  once ([settings from earlier versions](deployment.md#settings-from-earlier-versions)).
-  `MAIL_DELIVERY_MODE` is `send` (the default) outside development, where `local` keeps
-  emails as files.
+  emails. `MAIL_DELIVERY_MODE` is `send` (the default) outside development, where `local`
+  keeps emails as files.
 - `APPROVED_DELIVERY_RECIPIENTS`, comma-separated approved Buchhaltung inboxes.
   Admins choose a form's recipient from this list.
 - `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM` (or `OIDC_ISSUER`), `OIDC_CLIENT_ID` and
@@ -112,7 +110,8 @@ capacity before launch.
 
 Admin > Email shows whether email is set up, with which provider and sender, and when
 the last signed MailerSend webhook arrived; its test email sends one message with the
-saved settings. Forms take no claims while email is not set up, and an email that waits
+saved settings. When an SMTP server refuses it, the page quotes the server's answer
+without the login. Forms take no claims while email is not set up, and an email that waits
 for a provider is retried with the usual backoff. The participant confirmation can be
 turned off there, and its subject and text written per language with placeholders such
 as `{reference}`; text left as the standard text follows later changes to it.

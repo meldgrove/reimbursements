@@ -3,7 +3,6 @@ import {
   redactErrorReport,
   scrubPath,
   scrubSpan,
-  scrubText,
 } from "@reimbursements/shared/error-reports";
 
 /**
@@ -72,11 +71,9 @@ export async function startErrorReporting(currentRoute: () => string | undefined
     tracePropagationTargets: [/^\/api\//],
     dataCollection: NO_DATA_COLLECTION,
     maxBreadcrumbs: 0,
+    // Spans are streamed (the SDK's default): every span, the page load's
+    // included, passes here; there are no transaction events.
     beforeSendSpan: (span) => scrubSpan(span),
-    beforeSendTransaction: (event) => ({
-      ...event,
-      transaction: event.transaction ? scrubText(event.transaction) : event.transaction,
-    }),
     beforeSend: (event) => {
       // The server reports failed API requests itself.
       if (event.exception?.values?.some((value) => value.type === "ApiError")) return null;

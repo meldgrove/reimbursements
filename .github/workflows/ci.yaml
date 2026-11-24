@@ -130,18 +130,15 @@ jobs:
             -e KEYCLOAK_BASE_URL=https://sso.example.invalid -e KEYCLOAK_REALM=reimbursements
             -e OIDC_CLIENT_ID=reimbursements -e OIDC_CLIENT_SECRET=ci
             -e HEALTHCHECK_TOKEN=ci-token
-            -e MAILERSEND_API_TOKEN=ci -e MAILERSEND_WEBHOOK_SIGNING_SECRET=ci
             -e APPROVED_DELIVERY_RECIPIENTS=finance@example.invalid
-            -e MAIL_FROM_ADDRESS=no-reply@example.invalid -e MAIL_REPLY_TO_ADDRESS=finance@example.invalid
           )
           # The document workspace as compose.yaml mounts it: a private tmpfs. Without
           # it (or without the sandbox) migrate, web and worker refuse to start.
           docker run --rm --network host "${env_args[@]}" "${workspace[@]}" reimbursements:ci migrate
-          # The operator command through the image's `cli` on the PATH: the migration
-          # copied the email variables above into Admin > Email once.
+          # The operator command through the image's `cli` on the PATH.
           docker run --rm --network host "${env_args[@]}" --entrypoint cli reimbursements:ci settings list \
             | tee "$RUNNER_TEMP/settings.txt"
-          grep -q '^email  *set  *MailerSend, sender set, reply address set' "$RUNNER_TEMP/settings.txt"
+          grep -q '^email  *not set' "$RUNNER_TEMP/settings.txt"
           docker run -d --name web --network host "${env_args[@]}" "${workspace[@]}" reimbursements:ci web
           for _ in $(seq 1 30); do
             curl -fsS -H "X-Health-Token: ci-token" "http://localhost:$WEB_PORT/-/healthz" && break

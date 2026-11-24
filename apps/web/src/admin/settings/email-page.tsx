@@ -287,11 +287,6 @@ function EmailSettings({ page }: { page: EmailSettingsPage }) {
             {page.status.unreadable ? (
               <span className="text-destructive">{page.status.unreadable}</span>
             ) : null}
-            {page.environmentNote ? (
-              <span className="text-muted-foreground" data-testid="environment-note">
-                {page.environmentNote}
-              </span>
-            ) : null}
           </div>
         </Section>
 
@@ -540,7 +535,7 @@ function TestEmail({ recipient }: { recipient: string }) {
           {outcome && !outcome.reached ? (
             <Alert variant="destructive" role="alert">
               <CircleAlert />
-              <AlertDescription>{outcome.message}</AlertDescription>
+              <AlertDescription className="wrap-anywhere">{outcome.message}</AlertDescription>
             </Alert>
           ) : null}
           {outcome?.reached ? (

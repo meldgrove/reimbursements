@@ -4,7 +4,7 @@ Use `compose.yaml` for the web process, worker, scanner, migration job and updat
 Linux server with Debian 13 or later, or a similar system with systemd and apt such as
 Ubuntu 24.04. The document sandbox needs Linux 6.2 or later (Landlock ABI 3); Debian 12
 runs Linux 6.1. The file runs the published release image; `REIMBURSEMENTS_VERSION`
-names the release series, such as `0.5`, and automatic updates set it to the exact
+names the release series, such as `0.6`, and automatic updates set it to the exact
 version they install (see [automatic updates](updates.md)). The branch `stable` is at
 the newest release; `main` has changes that are not released yet. Caddy on the same
 server terminates HTTPS and routes the public hostname to the web service only. Keep
@@ -247,7 +247,8 @@ its database and changes nothing.
 
 1. Back up the database and the private files together. Keep a copy of `.env` and of
    the folder's `compose*.yaml` files as they are: going back to 0.4 needs them.
-2. In `/srv/reimbursements`, run `git pull` for 0.5's `compose.yaml`.
+2. In `/srv/reimbursements`, run `git fetch --tags` and `git checkout v0.5.1` for
+   0.5.1's `compose.yaml`.
 3. Keep `.env`: `DJANGO_SECRET_KEY` and `CSRF_TRUSTED_ORIGINS` still work, next to their
    new names `AUTH_SECRET` and `APP_URL`. The first `https` origin of
    `CSRF_TRUSTED_ORIGINS` without a wildcard becomes the app's address, which sign-in
@@ -258,9 +259,10 @@ its database and changes nothing.
    `python manage.py reconcile_deliveries` becomes `cli reconcile-deliveries`, with the
    same options ([operations](operations.md#recovery-commands)). The old form keeps
    working through the `python` stand-in described below, so switch when convenient.
-5. Set `REIMBURSEMENTS_VERSION=0.5`, stop web and worker
+5. Set `REIMBURSEMENTS_VERSION=0.5.1`, stop web and worker
    (`docker compose stop web worker`), and run `docker compose up -d --pull always`.
 6. Sign in at `/admin/` and run the [setup check](operations.md#setup-check).
+7. Run `git checkout stable` and go on to the newest release ([upgrades](#upgrades)).
 
 What changes:
 
@@ -273,13 +275,12 @@ What changes:
   processed and sent as usual, and their confirmation email still arrives. Tell
   support to answer such questions from the admin area, so that nobody submits again.
 - Everyone in the admin area signs in once more.
-- Email keeps working as it did: at its first start, the app copies the MailerSend
+- Email keeps working as it did: at its first start, 0.5.1 copies the MailerSend
   variables and the addresses from `.env` into Admin > Email, which 0.5 adds
-  (MailerSend or an SMTP server, and the participant confirmation's text), and
-  `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL` into Admin > General
-  ([settings from earlier versions](#settings-from-earlier-versions)). A server that ran
-  a 0.4 preview with Admin > Email keeps its settings there; keep `DJANGO_SECRET_KEY` in
-  `.env`, so the secrets entered there still open when `AUTH_SECRET` differs. 0.4
+  (MailerSend or an SMTP server, and the participant confirmation's text), and the
+  operator and the legal page into Admin > General. Later versions do not. A server that
+  ran a 0.4 preview with Admin > Email keeps its settings there; keep `DJANGO_SECRET_KEY`
+  in `.env`, so the secrets entered there still open when `AUTH_SECRET` differs. 0.4
   ignores the page's table if you go back.
 - The admin area is the app frame of the other Meldgrove apps. Its pages have new
   addresses (`/admin/claims`, `/admin/forms`, ...); links to the pages of 0.4 lead to
@@ -294,8 +295,8 @@ The image also starts with the `compose.yaml` of 0.4, whose commands and health 
 call `python`: a stand-in named `python` runs them, and the operator commands of 0.4
 (`claim_status`, `purge_expired`, `reconcile_deliveries`, `retry_claim`,
 `verify_setup`, `verify_storage`) as their `cli` commands. A server on the Preview
-channel therefore installs 0.5 by itself; run `git pull` there afterwards for the new
-file, and take steps 3 and 4.
+channel therefore installs the newest version by itself, past 0.5.1: choose Stable under
+Admin > Updates before.
 
 To go back to 0.4:
 
@@ -304,10 +305,8 @@ To go back to 0.4:
 2. Put back the `.env` and `compose*.yaml` files kept before the upgrade (or
    `git checkout v0.4.0 -- compose.yaml compose.coolify.yaml compose.postgres.yaml`
    and the 0.4 settings: `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`,
-   the Keycloak settings under their old names, and `MAILERSEND_API_TOKEN`,
-   `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS`, `MAIL_REPLY_TO_ADDRESS`,
-   `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`, which 0.4 reads), with
-   `REIMBURSEMENTS_VERSION=0.4.0`.
+   the Keycloak settings under their old names, and the email, operator and legal page
+   variables of 0.4's `.env.production.example`), with `REIMBURSEMENTS_VERSION=0.4.0`.
 3. Run `docker compose up -d web worker` (their database, scanner and migration job
    start with them; the updater stays stopped). 0.4 runs on the database again;
    everyone signs in again, and open drafts are lost again. Change scheduled `cli`
@@ -409,26 +408,6 @@ AI with access to the server sets a key the same way: the key arrives as a file,
 writes the body with it, pipes the body into `cli settings apply`, runs
 `cli settings test` and deletes both files.
 
-### Settings from earlier versions
-
-Up to 0.5.0, `.env` could set `MAILERSEND_API_TOKEN` (which chose MailerSend),
-`MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS` and `MAIL_REPLY_TO_ADDRESS`,
-which won over Admin > Email, and `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL` for the
-footer. Later versions keep these settings in the database. Nothing needs doing on
-upgrade: each process copies each variable it sees into Admin > Email or Admin > General
-once, when the page has no value for it yet, and writes an audit entry with the actor
-`environment`. A value the page would refuse, such as a legal page that is no web
-address, is not copied; the log names the variable. From then on the pages win, and the
-app ignores the variables, also after a field is cleared.
-
-Admin > Email, Admin > General, `cli settings list` and a warning at each start name the
-variables that are still set. Keep them in `.env` while you may go back to 0.5.0 or
-0.4: both read them (0.5.0 shows the operator and the legal page only from there), and
-0.4's `compose.yaml` requires the MailerSend ones and the addresses. The
-same holds while the server still starts this version with 0.4's `compose.yaml` (the
-updater installs images, not files): take this version's file first
-([upgrade from 0.4](#upgrade-from-04), step 2). Then delete them.
-
 ## Upgrades
 
 Before a manual upgrade, read the GitHub release notes of every version since the
@@ -446,6 +425,12 @@ the releases of the series without these steps and rely on scheduled backups ins
 see [automatic updates](updates.md). With them, take steps 1 and 2 without changing
 `REIMBURSEMENTS_VERSION`, then install the release with **Install anyway…** in the
 update button in the admin header.
+
+A server that still has its email settings, operator or legal page only in `.env` (0.5.0
+or older) first runs 0.5.1 once with 0.5.1's Compose file (`git fetch --tags` and
+`git checkout v0.5.1`, afterwards `git checkout stable`). It copies them into the
+database, and Admin > Email and Admin > General then name the lines that can go from
+`.env`. Later versions do not read them.
 
 Servers set up before `compose.yaml` published the port have a `compose.override.yaml`
 that publishes `127.0.0.1:8000:8000`. It does no harm: Docker Compose merges the

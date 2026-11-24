@@ -11,7 +11,6 @@ import {
   redactErrorReport,
   redactLog,
   scrubSpan,
-  scrubText,
 } from "@reimbursements/shared/error-reports";
 
 const env = (name: string) => process.env[name]?.trim() || undefined;
@@ -71,16 +70,14 @@ if (dsn && !Sentry.isInitialized()) {
     tracesSampleRate,
     dataCollection: NO_DATA_COLLECTION,
     maxBreadcrumbs: 0,
-    // Traces keep route patterns only.
+    // Traces keep route patterns only. Spans are streamed (the SDK's default),
+    // so every span, the root span included, passes here; there are no
+    // transaction events.
     beforeSendSpan: (span) => {
       const scrubbed = scrubSpan(span);
       for (const key of RAW_PATHS) delete scrubbed.attributes[key];
       return scrubbed;
     },
-    beforeSendTransaction: (event) => ({
-      ...event,
-      transaction: event.transaction ? scrubText(event.transaction) : event.transaction,
-    }),
     beforeSend: (event) => {
       const report = redactErrorReport(event);
       // Failed requests log their route pattern, e.g. `PUT /api/v1/pages/:id`.

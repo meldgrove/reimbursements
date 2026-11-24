@@ -1,8 +1,8 @@
 /**
  * Who changes the settings of Admin > General, Appearance and Email, for the audit log:
- * an admin on the page, the operator command (`cli settings`), or the import of earlier
- * versions' environment (services/environment-import.ts). Each change is an operation
- * without a claim (portal_operation), as the retention's purges are.
+ * an admin on the page or the operator command (`cli settings`). Each change is an
+ * operation without a claim (portal_operation), as the retention's purges are. Entries
+ * with the actor `environment` are 0.5.1's copies of variables it moved here.
  */
 import { sql } from "drizzle-orm";
 import { operations } from "../db/schema";
@@ -13,7 +13,7 @@ export const SETTING_NAMES = ["email", "general", "appearance"] as const;
 export type SettingName = (typeof SETTING_NAMES)[number];
 
 export type SettingsActor = {
-  /** The admin's email or username, `operator` for the command, `environment` for the import. */
+  /** The admin's email or username, `operator` for the command. */
   name: string;
   /** Where the change came from, e.g. "Admin > Email" or "cli settings apply email". */
   via: string;
@@ -25,9 +25,9 @@ export function adminActor(name: string, page: string): SettingsActor {
 }
 
 /**
- * Serializes changes to the settings rows until the transaction ends: a save of Admin >
- * Email or General and the import of the environment each read the row after the other
- * committed, so neither writes back a value the other just replaced.
+ * Serializes changes to the settings rows until the transaction ends: each save of Admin >
+ * Email or General reads the row after the other committed, so neither writes back a
+ * value the other just replaced.
  */
 export async function lockSettings(): Promise<void> {
   await q().execute(sql`select pg_advisory_xact_lock(hashtext('reimbursements.settings'))`);

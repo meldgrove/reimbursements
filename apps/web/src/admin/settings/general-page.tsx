@@ -166,11 +166,6 @@ function General({ page }: { page: GeneralSettingsPage }) {
           </CardHeader>
           <CardContent>
             <FieldGroup>
-              {page.environmentNote ? (
-                <p className="text-muted-foreground text-sm" data-testid="environment-note">
-                  {page.environmentNote}
-                </p>
-              ) : null}
               <FormRow
                 label="Operator"
                 help="Who runs this app, shown in the footer of public forms, e.g. the name of your organization."

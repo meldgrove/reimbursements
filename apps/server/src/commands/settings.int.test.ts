@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../db/client";
-import { appSettings, emailSettings, environmentImports, operations } from "../db/schema";
+import { emailSettings, operations } from "../db/schema";
 import { loadSettings } from "../services/app-settings";
 import * as confirmations from "../services/confirmations";
 import { loadEmailSettings, secretOf } from "../services/email-connection";
@@ -202,28 +202,6 @@ describe("cli settings apply, show and list", () => {
     expect(listed.stdout).toMatch(/^general +set +operator set, legal page set$/m);
     expect(listed.stdout).toMatch(/^appearance +set +own accent color, standard favicon$/m);
   }, 60_000);
-
-  it("names the variables of earlier versions that are still set", async () => {
-    const listed = await cli(["settings", "list"], "", { MAIL_FROM_ADDRESS: "no-reply@example.invalid" });
-    expect(listed.code).toBe(0);
-    // Every process imports them first; the command says so on stderr.
-    expect(listed.stderr).toContain("Settings copied from the environment: MAIL_FROM_ADDRESS.");
-    // And names it in the warning of every start, on stderr.
-    expect(listed.stderr).toContain('"variables":["MAIL_FROM_ADDRESS"]');
-    expect(listed.stderr).toContain("variables no longer read");
-    expect(listed.stdout).toContain("also still in the environment, no longer read: MAIL_FROM_ADDRESS");
-    expect(listed.stdout).toContain(
-      "Delete the variables still in the environment from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.",
-    );
-    expect((await loadEmailSettings()).fromAddress).toBe("no-reply@example.invalid");
-    const json = JSON.parse((await cli(["settings", "list", "--json"], "", { PORTAL_OPERATOR: "X" })).stdout);
-    expect(json.map((row: { environment: string[] }) => row.environment)).toEqual([
-      [],
-      ["PORTAL_OPERATOR"],
-      [],
-    ]);
-    expect(await getDb().select().from(appSettings)).toHaveLength(1);
-  }, 60_000);
 });
 
 describe("cli settings test", () => {
@@ -239,7 +217,10 @@ describe("cli settings test", () => {
     expect(server.received).toHaveLength(1);
     server.rcptReply = "550 No such user";
     const refused = await cli(["settings", "test", "email", "--to=kim@example.invalid"]);
-    expect([refused.code, refused.stderr]).toEqual([1, "The SMTP server refused the recipient.\n"]);
+    expect([refused.code, refused.stderr]).toEqual([
+      1,
+      'The SMTP server refused the recipient. The mail server answered "550 No such user".\n',
+    ]);
     // The recipient rules of the page.
     const blocked = await cli(["settings", "test", "email", "--to", "kim@example.invalid"], "", {
       TEST_RECIPIENT_ALLOWLIST: "finance@example.invalid",
@@ -300,12 +281,6 @@ describe("cli settings called the wrong way", () => {
     expect(run.code).toBe(1);
     expect(run.stderr).toContain("Check the highlighted fields");
     expect(await getDb().select().from(emailSettings)).toEqual([]);
-  }, 60_000);
-
-  it("checks the arguments before it copies variables of earlier versions", async () => {
-    const run = await cli(["settings", "show"], "", { MAIL_FROM_ADDRESS: "no-reply@example.invalid" });
-    expect(run.code).toBe(2);
-    expect(await getDb().select().from(environmentImports)).toEqual([]);
   }, 60_000);
 
   it("lists the setting names in cli help", async () => {

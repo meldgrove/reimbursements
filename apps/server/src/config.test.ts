@@ -47,16 +47,12 @@ describe("production settings", () => {
     DATABASE_URL: "postgresql://test:test@localhost/test",
     ALLOWED_HOSTS: "reimbursements.example.invalid",
     CSRF_TRUSTED_ORIGINS: "https://reimbursements.example.invalid",
-    MAILERSEND_API_TOKEN: "synthetic",
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: "synthetic",
     APPROVED_DELIVERY_RECIPIENTS: "test@example.invalid",
     HEALTHCHECK_TOKEN: "synthetic",
     OIDC_CLIENT_ID: "synthetic-client",
     OIDC_CLIENT_SECRET: "synthetic-secret",
     KEYCLOAK_BASE_URL: "https://auth.example.invalid",
     KEYCLOAK_REALM: "reimbursements",
-    MAIL_FROM_ADDRESS: "no-reply@example.invalid",
-    MAIL_REPLY_TO_ADDRESS: "finance@example.invalid",
   };
 
   it.each([
@@ -69,19 +65,10 @@ describe("production settings", () => {
     [{ KEYCLOAK_BASE_URL: "" }],
     [{ KEYCLOAK_REALM: "" }],
     [{ MAIL_DELIVERY_MODE: "postcard" }],
+    // Email needs no variable: admins set it up under Admin > Email.
     [{}],
-    // Admins can set up email under Admin > Email instead.
-    [
-      {
-        MAILERSEND_API_TOKEN: "",
-        MAILERSEND_WEBHOOK_SIGNING_SECRET: "",
-        MAIL_FROM_ADDRESS: "",
-        MAIL_REPLY_TO_ADDRESS: "",
-      },
-    ],
   ])("unsafe production settings refuse to start (%o)", (override) => {
-    const accepted = Object.keys(override).length === 0 || "MAILERSEND_API_TOKEN" in override;
-    expect(starts({ ...BASE, ...override })).toBe(accepted);
+    expect(starts({ ...BASE, ...override })).toBe(Object.keys(override).length === 0);
   });
 
   it("names AUTH_SECRET when compose.yaml passes it empty: neither name is in .env", () => {

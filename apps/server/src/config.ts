@@ -11,12 +11,13 @@ import { OperatorError } from "./operator-error";
  * and so does everything about outside services: the environment keeps what
  * the app needs before it can read its database, and limits on admins.
  *
- * Every variable of the Django version (0.1 to 0.4) still works, so an
- * existing `.env` needs no change: DJANGO_SECRET_KEY for AUTH_SECRET,
+ * The app starts with an unchanged `.env` of the Django version (0.1 to 0.4):
+ * DJANGO_SECRET_KEY for AUTH_SECRET,
  * CSRF_TRUSTED_ORIGINS for APP_URL (`publicUrl`) and the origins it trusts, DJANGO_DEBUG=1 for a
  * development deployment, KEYCLOAK_BASE_URL and KEYCLOAK_REALM for the
  * sign-in provider. ALLOWED_HOSTS is no longer read: every address the app
- * builds comes from APP_URL.
+ * builds comes from APP_URL. Neither are its email, operator and legal page
+ * variables: 0.5.1 copied those into the database.
  *
  * The limits that were Django settings without a variable are here too, as
  * fixed values, so tests can change them (`overrideConfigForTests`).
@@ -68,12 +69,6 @@ const schema = z
     MIGRATIONS_DIR: optional(z.string()),
     /** Receipts, PDFs and the worker heartbeat: a private volume. */
     PRIVATE_STORAGE_ROOT: optional(z.string()),
-    /**
-     * Up to 0.5.0, the footer of public pages. Now set under Admin > General: each process
-     * copies them there once and never reads them again (services/environment-import.ts).
-     */
-    PORTAL_OPERATOR: optional(z.string()),
-    PORTAL_LEGAL_URL: optional(z.string()),
     /** Sign-in: Keycloak by base URL and realm, or any OpenID Connect provider (OIDC_ISSUER). */
     KEYCLOAK_BASE_URL: optional(z.string()),
     /** The name IAM uses for KEYCLOAK_BASE_URL. */
@@ -150,15 +145,6 @@ const schema = z
     MAIL_DELIVERY_MODE: optional(
       z.enum(["local", "send", "mailersend"], { message: "MAIL_DELIVERY_MODE must be local or send." }),
     ),
-    /**
-     * Up to 0.5.0, these won over their fields under Admin > Email, and the API token
-     * chose MailerSend. Each process now copies them there once and never reads them
-     * again (services/environment-import.ts).
-     */
-    MAILERSEND_API_TOKEN: optional(z.string()),
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: optional(z.string()),
-    MAIL_FROM_ADDRESS: optional(z.string()),
-    MAIL_REPLY_TO_ADDRESS: optional(z.string()),
     /** The accounting inboxes forms may send claims to, comma-separated. */
     APPROVED_DELIVERY_RECIPIENTS: optional(z.string()),
     /** Staging: the only addresses that receive email. */

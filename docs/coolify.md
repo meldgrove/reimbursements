@@ -46,12 +46,7 @@ differences:
 
 Email, the operator's name and the legal page are not environment variables: set them
 in the app (Admin > Email, Admin > General) or with `cli settings` in the terminal
-([operator commands](#operator-commands)). A resource of 0.5.0 or older may still have
-`MAILERSEND_API_TOKEN`, `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS`,
-`MAIL_REPLY_TO_ADDRESS`, `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app copies them
-into its settings once and then ignores them
-([settings from earlier versions](deployment.md#settings-from-earlier-versions)). Keep
-them while you may go back to 0.5.0 or 0.4, which read them, then delete them.
+([operator commands](#operator-commands)).
 
 ## First launch and upgrades
 
@@ -78,10 +73,13 @@ reads `compose.coolify.yaml` from `stable`, which is at the newest release.
    the one registered as the redirect URI. Keep `ALLOWED_HOSTS` while you may go back.
 3. Scheduled tasks that run `python manage.py <command>` keep working; their new form
    is `cli <command>`, such as `cli reconcile-deliveries`.
-4. Set `REIMBURSEMENTS_VERSION` to `0.5` and redeploy. The deploy reads 0.5's
-   `compose.coolify.yaml` from `stable`.
+4. Point the resource's source at the commit of the tag `v0.5.1` (Git Commit SHA under
+   the resource's source settings), set `REIMBURSEMENTS_VERSION` to `0.5.1` and deploy:
+   later versions do not copy the email settings, the operator and the legal page from
+   the environment.
 5. Sign in at `/admin/` and run the setup check in the web container's terminal:
    `cli verify-setup --to …`.
+6. Set the source back to the newest commit of `stable` and upgrade to the newest release.
 
 To go back to 0.4, the resource must read 0.4's `compose.coolify.yaml` again: a redeploy
 from `stable` reads 0.5's file, whose commands and health checks 0.4's image does not

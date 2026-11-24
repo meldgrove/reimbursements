@@ -54,7 +54,7 @@ const BASE = {
   LOG_LEVEL: "info",
 };
 
-/** Runs the child in `mode` with `environment`: its answer and its log lines. */
+/** Runs the child in `mode` with `environment`: its answer, its log lines and the SDK's console warnings. */
 async function child(mode: string, environment: Record<string, string>) {
   events = [];
   traces = [];
@@ -64,7 +64,11 @@ async function child(mode: string, environment: Record<string, string>) {
     { cwd: SERVER_ROOT, env: { ...BASE, ...environment }, timeout: 60_000 },
   );
   const line = stderr.split("\n").find((entry) => entry.startsWith("RESULT "));
-  return { answer: line ? (JSON.parse(line.slice(7)) as unknown) : undefined, logs: stdout };
+  return {
+    answer: line ? (JSON.parse(line.slice(7)) as unknown) : undefined,
+    logs: stdout,
+    warnings: stderr.split("\n").filter((entry) => entry.startsWith("[Sentry]")),
+  };
 }
 
 describe("error reporting", () => {
@@ -167,13 +171,14 @@ describe("error reporting", () => {
       { environment: "staging", release: "abc123" },
     ],
   ])(
-    "starts only with a DSN (%o)",
+    "starts only with a DSN, without SDK warnings (%o)",
     async (variables, expected) => {
       const environment = Object.fromEntries(
         Object.entries(variables).map(([name, value]) => [name, value === "DSN" ? dsn : value]),
       );
-      const { answer } = await child("options", environment);
+      const { answer, warnings } = await child("options", environment);
       expect(answer).toEqual(expected);
+      expect(warnings).toEqual([]);
     },
     90_000,
   );

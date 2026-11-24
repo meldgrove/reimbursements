@@ -141,8 +141,7 @@ export const appSettings = pgTable("portal_appsettings", {
   numberFormat: varchar("number_format", { length: 8 }).notNull(),
   /**
    * Who runs the app, and the address of their legal page: the footer of public pages.
-   * Versions up to 0.5.0 read them from PORTAL_OPERATOR and PORTAL_LEGAL_URL. Defaults in
-   * the database, so 0.4 still writes the row after a rollback.
+   * Defaults in the database, so 0.4 still writes the row after a rollback.
    */
   operator: varchar("operator", { length: 200 }).notNull().default(""),
   legalUrl: varchar("legal_url", { length: 500 }).notNull().default(""),
@@ -182,9 +181,9 @@ export const emailSettings = pgTable(
 );
 
 /**
- * The variables of earlier versions' environment that each process copies into the
- * settings once (services/environment-import.ts), one row per variable: a variable with
- * a row is never read again, so the settings win from then on.
+ * 0.5.1 copied variables of earlier versions' environment into the settings and kept one
+ * row per variable here. Nothing reads or writes the table any more; it stays, so 0.5.1
+ * still runs after a rollback and copies nothing again.
  */
 export const environmentImports = pgTable("portal_environmentimport", {
   variable: varchar("variable", { length: 64 }).primaryKey(),
