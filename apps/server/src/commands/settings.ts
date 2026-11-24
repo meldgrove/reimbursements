@@ -11,7 +11,7 @@
  * Like every process, the command first copies the variables of earlier versions into
  * the settings (services/environment-import.ts), once its arguments and body are read.
  */
-import { spawnSync } from "node:child_process";
+import type { ReadStream } from "node:tty";
 import { parseArgs } from "node:util";
 import { config } from "../config";
 import { AppError } from "../http/errors";
@@ -162,50 +162,68 @@ async function list(args: string[]) {
   }
 }
 
-/** Turns the terminal's echo off while a body is pasted, so its secret is not shown. True when it worked. */
-const echo = (on: boolean) =>
-  spawnSync("stty", [on ? "echo" : "-echo"], { stdio: ["inherit", "ignore", "ignore"] }).status === 0;
+/**
+ * A body pasted into a terminal (Coolify's): read in raw mode, so the terminal shows
+ * nothing and does not cut a line at its 4 KiB limit. Ctrl-D ends the body; Ctrl-C
+ * stops the command. Node restores the terminal's mode when the process exits.
+ */
+function readPasted(limit: number): Promise<Buffer> {
+  const stdin = process.stdin as ReadStream;
+  process.stderr.write("Paste the JSON body (it is not shown), then press Ctrl-D.\n");
+  stdin.setRawMode(true);
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const finish = (error?: Error) => {
+      stdin.off("data", onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+      process.stderr.write("\n");
+      if (error) reject(error);
+      else resolve(Buffer.concat(chunks));
+    };
+    const onData = (chunk: Buffer) => {
+      const end = chunk.indexOf(0x04);
+      const cancel = chunk.indexOf(0x03);
+      if (cancel !== -1 && (end === -1 || cancel < end)) {
+        finish();
+        process.exit(130);
+      }
+      const part = end === -1 ? chunk : chunk.subarray(0, end);
+      size += part.length;
+      if (size > limit) {
+        finish(new CommandError(`The body is larger than the ${limit / 1024} KB the page may send.`));
+        return;
+      }
+      chunks.push(part);
+      if (end !== -1) finish();
+    };
+    stdin.on("data", onData);
+    stdin.resume();
+  });
+}
 
-function restoreEchoAndExit() {
-  echo(true);
-  process.exit(130);
+async function readPiped(limit: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > limit)
+      throw new CommandError(`The body is larger than the ${limit / 1024} KB the page may send.`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 /**
  * The JSON body on stdin, at most as large as the page may send. A body pasted into a
- * terminal (Coolify's) is not shown: a heredoc would put the secret into the shell's
- * history.
+ * terminal is not shown: a heredoc would put the secret into the shell's history.
  */
 async function readBody(): Promise<unknown> {
-  const terminal = process.stdin.isTTY;
-  if (terminal) {
-    // Echo goes off before the prompt: nothing pasted after the prompt is shown.
-    if (!echo(false)) {
-      throw new UsageError(
-        "The terminal's echo cannot be turned off: pipe the body in, e.g. cli settings apply email < body.json.",
-      );
-    }
-    process.once("SIGINT", restoreEchoAndExit);
-    process.stderr.write("Paste the JSON body (it is not shown), then press Enter and Ctrl-D.\n");
-  }
   const limit = config().MAX_REQUEST_BODY_BYTES;
-  const chunks: Buffer[] = [];
-  let size = 0;
+  const body = process.stdin.isTTY ? await readPasted(limit) : await readPiped(limit);
   try {
-    for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
-      size += chunk.length;
-      if (size > limit)
-        throw new CommandError(`The body is larger than the ${limit / 1024} KB the page may send.`);
-      chunks.push(chunk);
-    }
-  } finally {
-    if (terminal) {
-      process.off("SIGINT", restoreEchoAndExit);
-      echo(true);
-    }
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+    return JSON.parse(body.toString("utf8")) as unknown;
   } catch {
     throw new UsageError("The body on stdin is not JSON.");
   }
