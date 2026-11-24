@@ -22,10 +22,13 @@ import { withApplied, type Applied } from "../i18n";
  * its participant saw. Every page, email and PDF shows times in the app
  * timezone, dates in the app date format and amounts in the app number
  * format. The Appearance settings (accent color, favicon) apply to pages only.
+ * The operator's name and legal page appear in the footer of public pages.
  */
 
 export const SETTINGS_ID = 1;
 export const MAX_FAVICON_BYTES = 100_000;
+export const MAX_OPERATOR_LENGTH = 200;
+export const MAX_LEGAL_URL_LENGTH = 500;
 /** Paths that are always English, whatever the app language. */
 export const ADMIN_PATHS = ["/admin/", "/admin", "/oidc/", "/api/v1/admin/"];
 
@@ -37,6 +40,8 @@ export const DEFAULT_SETTINGS: GeneralSettings = {
   accentColor: "",
   faviconDigest: "",
   faviconType: "",
+  operator: "",
+  legalUrl: "",
 };
 
 /** The saved settings, or the defaults while none are saved. The favicon image loads only when used. */
@@ -50,6 +55,8 @@ export async function loadSettings(): Promise<GeneralSettings> {
       accentColor: appSettings.accentColor,
       faviconDigest: appSettings.faviconDigest,
       faviconType: appSettings.faviconType,
+      operator: appSettings.operator,
+      legalUrl: appSettings.legalUrl,
     })
     .from(appSettings)
     .where(eq(appSettings.id, SETTINGS_ID));
@@ -62,12 +69,31 @@ export async function loadSettings(): Promise<GeneralSettings> {
     accentColor: row.accentColor,
     faviconDigest: row.faviconDigest,
     faviconType: row.faviconType,
+    operator: row.operator,
+    legalUrl: row.legalUrl,
   };
 }
 
-export type SettingsChanges = Partial<
-  Pick<GeneralSettings, "language" | "timezone" | "dateFormat" | "numberFormat" | "accentColor">
->;
+/** Whether the settings row exists, that is, whether anything was ever saved. */
+export async function settingsSaved(): Promise<boolean> {
+  const [row] = await q()
+    .select({ id: appSettings.id })
+    .from(appSettings)
+    .where(eq(appSettings.id, SETTINGS_ID));
+  return Boolean(row);
+}
+
+const CHANGEABLE = [
+  "language",
+  "timezone",
+  "dateFormat",
+  "numberFormat",
+  "accentColor",
+  "operator",
+  "legalUrl",
+] as const;
+
+export type SettingsChanges = Partial<Pick<GeneralSettings, (typeof CHANGEABLE)[number]>>;
 
 /** A new favicon (`content` empty: back to the standard one). */
 export type FaviconChange = { content: Buffer; type?: string };
@@ -83,7 +109,7 @@ export async function saveSettings(
   favicon?: FaviconChange,
 ): Promise<GeneralSettings> {
   const set: Partial<typeof appSettings.$inferInsert> = {};
-  for (const key of ["language", "timezone", "dateFormat", "numberFormat", "accentColor"] as const)
+  for (const key of CHANGEABLE)
     if (changes[key] !== undefined) (set as Record<string, unknown>)[key] = changes[key];
   if (favicon) {
     const { content } = favicon;
@@ -101,6 +127,8 @@ export async function saveSettings(
       dateFormat: DEFAULT_SETTINGS.dateFormat,
       numberFormat: DEFAULT_SETTINGS.numberFormat,
       accentColor: DEFAULT_SETTINGS.accentColor,
+      operator: DEFAULT_SETTINGS.operator,
+      legalUrl: DEFAULT_SETTINGS.legalUrl,
       favicon: Buffer.alloc(0),
       faviconType: "",
       faviconDigest: "",
@@ -108,6 +136,26 @@ export async function saveSettings(
     })
     .onConflictDoUpdate({ target: appSettings.id, set: { ...set, updatedAt: new Date() } });
   return loadSettings();
+}
+
+/** The operator's name as the General page takes it: one line, stripped, or its error. */
+export function operatorProblem(value: string): string {
+  if (/[\r\n\0]/.test(value)) return "Write the name on one line.";
+  const length = [...value].length;
+  if (length > MAX_OPERATOR_LENGTH)
+    return `Ensure this value has at most ${MAX_OPERATOR_LENGTH} characters (it has ${length}).`;
+  return "";
+}
+
+/** The legal page's address as the General page takes it (an http or https URL), or its error. */
+export function legalUrlProblem(value: string): string {
+  if (!value) return "";
+  if (value.length > MAX_LEGAL_URL_LENGTH)
+    return `Ensure this value has at most ${MAX_LEGAL_URL_LENGTH} characters (it has ${value.length}).`;
+  if (!/^https?:\/\/[^\s]+$/i.test(value) || !URL.canParse(value) || !new URL(value).hostname) {
+    return "Enter a full address such as https://example.invalid/imprint.";
+  }
+  return "";
 }
 
 /** Uses `content` as the favicon; empty content restores the standard one. */

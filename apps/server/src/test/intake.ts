@@ -17,7 +17,7 @@ import { imageBytes } from "../documents/test-files";
 import type { Participant } from "../participants";
 import { pathFor } from "../services/storage";
 import { createForm } from "./fixtures";
-import { CookieJar, request, resetDatabase, type TestResponse } from "./helpers";
+import { CookieJar, request, resetDatabase, useEmailSettings, type TestResponse } from "./helpers";
 
 /** An in-memory participant: a browser session and its remembered drafts. */
 export class TestParticipant implements Participant {
@@ -54,11 +54,6 @@ export function intakeSettings(values: Partial<Config> = {}) {
     MAIL_DELIVERY_MODE: "local",
     APPROVED_DELIVERY_RECIPIENTS: ["finance@example.invalid"],
     TEST_RECIPIENT_ALLOWLIST: [],
-    MAIL_FROM_ADDRESS: "no-reply@example.invalid",
-    MAIL_REPLY_TO_ADDRESS: "finance@example.invalid",
-    // As set in the environment; tests that send with "mailersend" mode use it. Tests of
-    // Admin > Email clear it.
-    MAILERSEND_API_TOKEN: "synthetic-test-token",
     ...values,
   });
 }
@@ -69,6 +64,8 @@ export async function freshIntake(values: Partial<Config> = {}) {
   root = undefined;
   intakeSettings(values);
   await resetDatabase();
+  // Tests that send with "mailersend" mode use them; tests of Admin > Email clear them.
+  await useEmailSettings();
 }
 
 export function storageDirectory(): string {

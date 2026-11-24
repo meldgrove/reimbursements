@@ -6,8 +6,10 @@ import { OperatorError } from "./operator-error";
 /**
  * Settings from the environment. Read them only through `config()`; blank
  * values count as unset (compose.yaml passes optional variables as empty
- * strings). Everything an admin changes while the app runs (General and
- * Appearance settings, templates, forms) lives in the database.
+ * strings). Everything an admin changes while the app runs (General,
+ * Appearance and Email settings, templates, forms) lives in the database,
+ * and so does everything about outside services: the environment keeps what
+ * the app needs before it can read its database, and limits on admins.
  *
  * Every variable of the Django version (0.1 to 0.4) still works, so an
  * existing `.env` needs no change: DJANGO_SECRET_KEY for AUTH_SECRET,
@@ -66,9 +68,12 @@ const schema = z
     MIGRATIONS_DIR: optional(z.string()),
     /** Receipts, PDFs and the worker heartbeat: a private volume. */
     PRIVATE_STORAGE_ROOT: optional(z.string()),
-    /** Shown in the footer of public pages. */
-    PORTAL_OPERATOR: withDefault(z.string(), ""),
-    PORTAL_LEGAL_URL: withDefault(z.string(), ""),
+    /**
+     * Up to 0.5.0, the footer of public pages. Now set under Admin > General: each process
+     * copies them there once and never reads them again (services/environment-import.ts).
+     */
+    PORTAL_OPERATOR: optional(z.string()),
+    PORTAL_LEGAL_URL: optional(z.string()),
     /** Sign-in: Keycloak by base URL and realm, or any OpenID Connect provider (OIDC_ISSUER). */
     KEYCLOAK_BASE_URL: optional(z.string()),
     /** The name IAM uses for KEYCLOAK_BASE_URL. */
@@ -136,12 +141,12 @@ const schema = z
       z.enum(["local", "send", "mailersend"], { message: "MAIL_DELIVERY_MODE must be local or send." }),
     ),
     /**
-     * Optional: each value set here wins over its field under Admin > Email, and the API
-     * token chooses MailerSend (services/email-connection.ts).
+     * Up to 0.5.0, these won over their fields under Admin > Email, and the API token
+     * chose MailerSend. Each process now copies them there once and never reads them
+     * again (services/environment-import.ts).
      */
-    MAILERSEND_API_TOKEN: withDefault(z.string(), ""),
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: withDefault(z.string(), ""),
-    /** Shared by all forms; with MailerSend, verify the sender domain there. */
+    MAILERSEND_API_TOKEN: optional(z.string()),
+    MAILERSEND_WEBHOOK_SIGNING_SECRET: optional(z.string()),
     MAIL_FROM_ADDRESS: optional(z.string()),
     MAIL_REPLY_TO_ADDRESS: optional(z.string()),
     /** The accounting inboxes forms may send claims to, comma-separated. */
@@ -245,8 +250,6 @@ type Derived =
   | "REQUIRE_WORKER_HEARTBEAT"
   | "UPLOAD_SCANNER"
   | "MAIL_DELIVERY_MODE"
-  | "MAIL_FROM_ADDRESS"
-  | "MAIL_REPLY_TO_ADDRESS"
   | "APPROVED_DELIVERY_RECIPIENTS"
   | "TEST_RECIPIENT_ALLOWLIST";
 
@@ -266,8 +269,6 @@ export type Config = Omit<Parsed, Derived> & {
   UPLOAD_SCANNER: "clamav" | "disabled";
   /** "send" (or its former name "mailersend") sends; "local" keeps every email as a file. */
   MAIL_DELIVERY_MODE: "local" | "send" | "mailersend";
-  MAIL_FROM_ADDRESS: string;
-  MAIL_REPLY_TO_ADDRESS: string;
   /** Lower case. */
   APPROVED_DELIVERY_RECIPIENTS: string[];
   /** Lower case. */
@@ -386,8 +387,6 @@ export function config(): Config {
   const sandbox = value.DOCUMENT_SANDBOX_ENABLED ?? true;
   const scanner = value.UPLOAD_SCANNER ?? (isDevelopment ? "disabled" : "clamav");
   const mailMode = value.MAIL_DELIVERY_MODE ?? (isDevelopment ? "local" : "send");
-  // Placeholders only for the local outbox: they would lock the admin's fields otherwise.
-  const localMail = isDevelopment && mailMode === "local";
   const trustedProxies = splitList(value.TRUSTED_PROXY_CIDRS);
   const trustProxyHeaders = value.TRUST_PROXY_HEADERS ?? false;
   const approved = splitList(
@@ -450,8 +449,6 @@ export function config(): Config {
     REQUIRE_WORKER_HEARTBEAT: requireHeartbeat,
     UPLOAD_SCANNER: scanner,
     MAIL_DELIVERY_MODE: mailMode,
-    MAIL_FROM_ADDRESS: value.MAIL_FROM_ADDRESS ?? (localMail ? "no-reply@example.invalid" : ""),
-    MAIL_REPLY_TO_ADDRESS: value.MAIL_REPLY_TO_ADDRESS ?? (localMail ? "finance@example.invalid" : ""),
     APPROVED_DELIVERY_RECIPIENTS: approved,
     TEST_RECIPIENT_ALLOWLIST: testRecipients,
     isDevelopment,

@@ -31,7 +31,7 @@ import { disk } from "../services/capacity";
 import { outboxKey, pathFor } from "../services/storage";
 import * as terms from "../services/terms";
 import { createForm } from "./fixtures";
-import { resetDatabase } from "./helpers";
+import { resetDatabase, useEmailSettings } from "./helpers";
 
 /**
  * Fixtures of the back-office tests (the Django version's conftest.py:
@@ -51,11 +51,6 @@ export function localSettings(values: Partial<Config> = {}) {
     MAIL_DELIVERY_MODE: "local",
     APPROVED_DELIVERY_RECIPIENTS: ["finance@example.invalid"],
     TEST_RECIPIENT_ALLOWLIST: [],
-    MAIL_FROM_ADDRESS: "no-reply@example.invalid",
-    MAIL_REPLY_TO_ADDRESS: "finance@example.invalid",
-    // As set in the environment; tests that send with "mailersend" mode use it. Tests of
-    // Admin > Email clear it.
-    MAILERSEND_API_TOKEN: "synthetic-test-token",
     ...values,
   });
 }
@@ -66,6 +61,8 @@ export async function freshState() {
   root = undefined;
   localSettings();
   await resetDatabase();
+  // Tests that send with "mailersend" mode use them; tests of Admin > Email clear them.
+  await useEmailSettings();
 }
 
 export function storageDirectory(): string {

@@ -39,24 +39,28 @@ x-application: &application
     DOCUMENT_SANDBOX_ENABLED: "1"
     REQUIRE_WORKER_HEARTBEAT: "1"
     HEALTHCHECK_TOKEN: ${HEALTHCHECK_TOKEN:?Set a random health check token}
-    PORTAL_OPERATOR: ${PORTAL_OPERATOR:-}
-    PORTAL_LEGAL_URL: ${PORTAL_LEGAL_URL:-}
     # Sign-in: KEYCLOAK_BASE_URL and KEYCLOAK_REALM, or OIDC_ISSUER for any OpenID Connect provider.
     KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-}
     KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
     OIDC_ISSUER: ${OIDC_ISSUER:-}
     # The ID token claim that lists the person's groups.
     OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
-    # Email is set up under Admin > Email; values set here win over it.
-    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
-    MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:-}
     OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set the sign-in client ID}
     OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set the sign-in client secret}
     KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP:-/reimbursements/admins}
     KEYCLOAK_EDITOR_GROUP: ${KEYCLOAK_EDITOR_GROUP:-/reimbursements/editors}
+    # Email, the operator and the legal page are set under Admin > Email and General, or
+    # with `cli settings` (docs/deployment.md). Versions up to 0.5.0 read these six from
+    # .env: each process copies them there once and ignores them afterwards. They stay
+    # here for servers that start this file before the copy; delete them from .env once
+    # a rollback to 0.5.0 or older, which reads them, is no longer planned.
     MAIL_DELIVERY_MODE: send
     MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
     MAILERSEND_WEBHOOK_SIGNING_SECRET: ${MAILERSEND_WEBHOOK_SIGNING_SECRET:-}
+    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+    MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:-}
+    PORTAL_OPERATOR: ${PORTAL_OPERATOR:-}
+    PORTAL_LEGAL_URL: ${PORTAL_LEGAL_URL:-}
     APPROVED_DELIVERY_RECIPIENTS: ${APPROVED_DELIVERY_RECIPIENTS:?Set the approved accounting inboxes}
     TEST_RECIPIENT_ALLOWLIST: ${TEST_RECIPIENT_ALLOWLIST:-}
     UPLOAD_SCANNER: clamav

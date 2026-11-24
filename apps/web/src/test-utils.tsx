@@ -18,6 +18,8 @@ export function testMeta(overrides: Partial<Meta> = {}): Meta {
       accentColor: "",
       faviconDigest: "",
       faviconType: "",
+      operator: "",
+      legalUrl: "",
     },
     operator: "",
     legalUrl: "",

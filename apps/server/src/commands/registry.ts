@@ -1,6 +1,7 @@
 /**
  * Commands for operators (the Django version's management commands,
- * docs/operations.md). In the image: `docker compose run --rm web cli <command>`.
+ * docs/operations.md). In the image: `docker compose run --rm -T migrate cli <command>`,
+ * or `cli <command>` in a terminal of a running container.
  * Each command module registers its commands here; commands/index.ts imports them.
  */
 export type Command = {
@@ -19,6 +20,14 @@ export class CommandError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CommandError";
+  }
+}
+
+/** A command called the wrong way, or given a body that is not JSON: the CLI exits with 2. */
+export class UsageError extends CommandError {
+  constructor(message: string) {
+    super(message);
+    this.name = "UsageError";
   }
 }
 

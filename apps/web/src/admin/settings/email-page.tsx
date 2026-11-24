@@ -29,8 +29,8 @@ import { FormRow, ToneBadge, fieldErrors } from "../parts";
  * Admin › Email (template admins): the provider that sends email to Finance and to
  * participants, its credentials, the participant confirmation, and a test email
  * (portal/admin_email.py of the Django version). A saved secret is never shown again:
- * its field stays empty, and typing a new one replaces it. A field the environment sets
- * is shown but cannot be changed here.
+ * its field stays empty, and typing a new one replaces it. The operator sets the same
+ * settings with `cli settings apply email`.
  */
 export function EmailPage() {
   const query = useQuery(emailQuery);
@@ -233,17 +233,15 @@ function EmailSettings({ page }: { page: EmailSettingsPage }) {
   const secretField = (name: EmailSecretName) => {
     const state = page.secrets[name];
     const [label, deleteLabel] = SECRET_LABELS[name];
-    const locked = page.locked[name];
     return (
       <div key={name} className="grid gap-3">
-        <FormRow label={label} help={locked} error={errors[name]}>
+        <FormRow label={label} error={errors[name]}>
           {(props) => (
             <SecretInput
               {...props}
               name={name}
               autoComplete="new-password"
               maxLength={1000}
-              disabled={Boolean(locked)}
               placeholder={state.placeholder || undefined}
               value={secrets[name]}
               onChange={(event) => setSecrets((current) => ({ ...current, [name]: event.target.value }))}
@@ -289,25 +287,25 @@ function EmailSettings({ page }: { page: EmailSettingsPage }) {
             {page.status.unreadable ? (
               <span className="text-destructive">{page.status.unreadable}</span>
             ) : null}
+            {page.environmentNote ? (
+              <span className="text-muted-foreground" data-testid="environment-note">
+                {page.environmentNote}
+              </span>
+            ) : null}
           </div>
         </Section>
 
         <Section title="Sending">
           <Select
             label="Send email with"
-            help={page.locked.provider}
             error={errors.provider}
             value={values.provider}
             options={page.choices.providers}
-            disabled={Boolean(page.locked.provider)}
             onChange={(provider) => set({ provider })}
           />
           <FormRow
             label="Sender address"
-            help={
-              page.locked.fromAddress ??
-              "Every email comes from this address. With MailerSend, it must be on a verified domain."
-            }
+            help="Every email comes from this address. With MailerSend, it must be on a verified domain."
             error={errors.fromAddress}
           >
             {(props) => (
@@ -315,7 +313,6 @@ function EmailSettings({ page }: { page: EmailSettingsPage }) {
                 {...props}
                 type="email"
                 maxLength={254}
-                disabled={Boolean(page.locked.fromAddress)}
                 value={values.fromAddress}
                 onChange={(event) => set({ fromAddress: event.target.value })}
               />
@@ -323,10 +320,7 @@ function EmailSettings({ page }: { page: EmailSettingsPage }) {
           </FormRow>
           <FormRow
             label="Reply address for Finance"
-            help={
-              page.locked.replyToAddress ??
-              "Replies to claim emails sent to Finance go here. Replies to participant confirmations go to each form's contact."
-            }
+            help="Replies to claim emails sent to Finance go here. Replies to participant confirmations go to each form's contact."
             error={errors.replyToAddress}
           >
             {(props) => (
@@ -334,7 +328,6 @@ function EmailSettings({ page }: { page: EmailSettingsPage }) {
                 {...props}
                 type="email"
                 maxLength={254}
-                disabled={Boolean(page.locked.replyToAddress)}
                 value={values.replyToAddress}
                 onChange={(event) => set({ replyToAddress: event.target.value })}
               />

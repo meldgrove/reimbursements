@@ -203,15 +203,28 @@ export type PrivacyNoticeRow = {
 
 // -- Settings -------------------------------------------------------------------------
 
+/**
+ * PUT /api/v1/admin/settings/general, also `cli settings apply general`. `operator` and
+ * `legalUrl` left out keep their saved values.
+ */
 export type GeneralSettingsForm = {
   language: "de" | "en";
   timezone: string;
   dateFormat: string;
   numberFormat: string;
+  /** Who runs the app, shown in the footer of public pages; "" for none. */
+  operator?: string;
+  /** The address of the operator's legal page (imprint), http or https; "" for none. */
+  legalUrl?: string;
 };
 
 export type GeneralSettingsPage = {
-  settings: GeneralSettingsForm;
+  settings: Required<GeneralSettingsForm>;
+  /**
+   * Variables of earlier versions' environment that are still set although the app no
+   * longer reads them (PORTAL_OPERATOR, PORTAL_LEGAL_URL), with what to do; "" for none.
+   */
+  environmentNote: string;
   choices: {
     languages: FilterOption[];
     timezones: FilterOption[];
@@ -220,6 +233,17 @@ export type GeneralSettingsPage = {
   };
   /** The running version, or "Built from source". */
   version: string;
+};
+
+/**
+ * POST /api/v1/admin/settings/appearance as JSON, also `cli settings apply appearance`.
+ * The page sends the same fields as a multipart form, with a new favicon as `favicon`.
+ */
+export type AppearanceForm = {
+  /** A hex code such as #0f766e; "" for the standard colors. */
+  accentColor: string;
+  /** true: back to the standard favicon. */
+  removeFavicon?: boolean;
 };
 
 export type AppearancePage = {
@@ -240,7 +264,7 @@ export type EmailSecretName = "mailersendToken" | "webhookSecret" | "smtpPasswor
 const formText = z.string().default("");
 
 /**
- * PUT /api/v1/admin/settings/email. A secret field left empty keeps the saved secret, a
+ * PUT /api/v1/admin/settings/email, also `cli settings apply email`. A secret field left empty keeps the saved secret, a
  * new value replaces it, `delete…` removes it. A confirmation subject or text left empty,
  * or equal to the standard one, follows the standard text. Field errors (422) are keyed
  * by these names, the confirmation's as `confirmation.<code>.subject` and `….body`.
@@ -271,9 +295,7 @@ export type EmailSecretState = {
   saved: boolean;
   /** Saved, but the app's secret no longer opens it: it counts as missing until entered again. */
   unreadable: boolean;
-  /** Set in the environment: the field cannot change it. */
-  environment: boolean;
-  /** Deleting is offered: saved, and the environment does not replace it. */
+  /** Deleting is offered: a value is saved. */
   deletable: boolean;
   /** The field's placeholder, e.g. "Saved · type a new one to replace it"; "" when nothing is saved. */
   placeholder: string;
@@ -294,8 +316,11 @@ export type EmailSettingsPage = {
     confirmation: Record<string, { subject: string; body: string }>;
   };
   secrets: Record<EmailSecretName, EmailSecretState>;
-  /** Fields the environment sets, with the help text that says so; they cannot be changed here. */
-  locked: Partial<Record<"provider" | "fromAddress" | "replyToAddress" | EmailSecretName, string>>;
+  /**
+   * Variables of earlier versions' environment that are still set although the app no
+   * longer reads them (MAILERSEND_API_TOKEN …), with what to do; "" for none.
+   */
+  environmentNote: string;
   /** The Status block. */
   status: {
     state: "local" | "ready" | "not_set_up";

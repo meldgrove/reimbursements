@@ -14,6 +14,7 @@ import { PDFDocument } from "pdf-lib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { translate } from "@reimbursements/shared/i18n";
 import { config } from "../config";
+import { TEST_EMAIL } from "../test/helpers";
 import { PAYMENT_TIMING } from "../constants";
 import { getDb } from "../db/client";
 import {
@@ -195,7 +196,7 @@ describe("the participant's confirmation", () => {
       const payload = (await request.json()) as Record<string, unknown>;
       calls.push(payload);
       expect(payload.to).toEqual([{ email: claim.email }]);
-      expect((payload.from as { email: string }).email).toBe(config().MAIL_FROM_ADDRESS);
+      expect((payload.from as { email: string }).email).toBe(TEST_EMAIL.fromAddress);
       expect((payload.reply_to as { email: string }).email).toBe(claim.snapshot.support_email);
       expect(String(payload.text)).toContain(claimReference(claim));
       expect(payload).not.toHaveProperty("attachments");

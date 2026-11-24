@@ -3,6 +3,7 @@
 // environment names it as 0.4's compose.yaml did (CSRF_TRUSTED_ORIGINS).
 import { afterEach, describe, expect, it } from "vitest";
 import { config, originAllowed, publicUrl, resetConfigForTests } from "./config";
+import { current, defaultEmailSettings } from "./services/email-connection";
 
 const saved = { ...process.env };
 
@@ -86,11 +87,12 @@ describe("production settings", () => {
   it.each([
     ["local", "no-reply@example.invalid", "finance@example.invalid"],
     ["send", "", ""],
-  ])("placeholder addresses are only for the local outbox (%s)", (mode, sender, replyTo) => {
+  ])("placeholder addresses are only for the local outbox (%s)", async (mode, sender, replyTo) => {
     expect(
       starts({ PRIVATE_STORAGE_ROOT: "/tmp/private", DJANGO_DEBUG: "1", MAIL_DELIVERY_MODE: mode }),
     ).toBe(true);
-    expect([config().MAIL_FROM_ADDRESS, config().MAIL_REPLY_TO_ADDRESS]).toEqual([sender, replyTo]);
+    const connection = await current(defaultEmailSettings());
+    expect([connection.sender, connection.replyTo]).toEqual([sender, replyTo]);
   });
 });
 

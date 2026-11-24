@@ -35,12 +35,13 @@ const router = new Hono<AppEnv>();
 router.get("/meta", async (c) => {
   const settings = config();
   const user = await meUser(c.get("user"));
+  const general = c.get("settings") ?? (await loadSettings());
   const body: Meta = {
     appName: APP_NAME,
     version: settings.APP_VERSION ?? "",
-    settings: c.get("settings") ?? (await loadSettings()),
-    operator: settings.PORTAL_OPERATOR,
-    legalUrl: settings.PORTAL_LEGAL_URL,
+    settings: general,
+    operator: general.operator,
+    legalUrl: general.legalUrl,
     user,
     updatesButton: Boolean(user?.isTemplateAdmin && settings.UPDATER_URL),
     accountUrl: user ? accountUrl() : "",

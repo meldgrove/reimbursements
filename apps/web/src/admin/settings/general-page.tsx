@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@meldgrove/ui/alert";
 import { Button } from "@meldgrove/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@meldgrove/ui/card";
 import { FieldGroup } from "@meldgrove/ui/field";
+import { Input } from "@meldgrove/ui/input";
 import { NativeSelect, NativeSelectOption } from "@meldgrove/ui/native-select";
 import { Page, PageHeader } from "@meldgrove/ui/page";
 import { ErrorState, LoadingState } from "@meldgrove/ui/states";
@@ -19,7 +20,11 @@ import { metaQuery } from "@/lib/meta";
 import { generalQuery } from "../api";
 import { DetailList, FormRow, fieldErrors } from "../parts";
 
-/** Admin › General (template admins): the app language, timezone, date and number format. */
+/**
+ * Admin › General (template admins): the app language, timezone, date and number format,
+ * and the operator and legal page in the footer of public pages. The operator sets the
+ * same settings with `cli settings apply general`.
+ */
 export function GeneralPage() {
   const query = useQuery(generalQuery);
   if (query.isPending) return <LoadingState />;
@@ -59,7 +64,7 @@ function Select({
 
 function General({ page }: { page: GeneralSettingsPage }) {
   const queryClient = useQueryClient();
-  const [values, setValues] = useState<GeneralSettingsForm>(page.settings);
+  const [values, setValues] = useState<Required<GeneralSettingsForm>>(page.settings);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,6 +155,52 @@ function General({ page }: { page: GeneralSettingsPage }) {
                 options={page.choices.numberFormats}
                 onChange={(numberFormat) => set({ numberFormat })}
               />
+            </FieldGroup>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Operator</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              {page.environmentNote ? (
+                <p className="text-muted-foreground text-sm" data-testid="environment-note">
+                  {page.environmentNote}
+                </p>
+              ) : null}
+              <FormRow
+                label="Operator"
+                help="Who runs this app, shown in the footer of public forms, e.g. the name of your organization."
+                error={errors.operator}
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    maxLength={200}
+                    value={values.operator}
+                    onChange={(event) => set({ operator: event.target.value })}
+                  />
+                )}
+              </FormRow>
+              <FormRow
+                label="Legal page"
+                help="The address of your imprint or legal notice, linked in the footer of public forms."
+                error={errors.legalUrl}
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="url"
+                    maxLength={500}
+                    placeholder="https://example.invalid/imprint"
+                    value={values.legalUrl}
+                    onChange={(event) => set({ legalUrl: event.target.value })}
+                  />
+                )}
+              </FormRow>
             </FieldGroup>
           </CardContent>
         </Card>
