@@ -1,27 +1,29 @@
 import { Hono, type Context } from "hono";
-import {
-  updateChannelInputSchema,
-  updateInstallSchema,
-  type UpdatesResponse,
-} from "@reimbursements/shared/api/updates";
+import { createUpdatesHandler } from "@meldgrove/ui/updates/server";
 import { config } from "../config";
 import type { AppEnv } from "../http/env";
 import { BodyTooLarge, isBodyTooLarge } from "../http/middleware";
 import { isTemplateAdmin } from "../auth/roles";
-import { askUpdater, type UpdatesAnswer } from "../updates/updater";
+import { logger } from "../logger";
 
 /**
- * The update button's routes and the Updates page (portal/admin_updates.py of
- * the Django version, docs/updates.md): the status, a check, an installation
- * and the channel, through the Meldgrove Updater. Only template admins use
- * them; everyone else gets 404, marked `signedOut`, so the button stops its
- * automatic requests when the session ends.
+ * The update button's routes and the Updates page (docs/updates.md): the
+ * status, a check, an installation and the channel, through the Meldgrove
+ * Updater. `@meldgrove/ui` asks the updater and answers; this module decides
+ * who may ask. Only template admins use them; everyone else gets 404, marked
+ * `signedOut`, so the button stops its automatic requests when the session
+ * ends. The API's origin check guards the POSTs.
  */
 const router = new Hono<AppEnv>();
 
-const SIGNED_OUT = { error: "Sign in as a template admin to manage updates.", signedOut: true };
+const updates = createUpdatesHandler(() => ({
+  url: config().UPDATER_URL,
+  token: config().UPDATER_TOKEN,
+  appVersion: config().APP_VERSION ?? null,
+  logger,
+}));
 
-const answer = (c: Context<AppEnv>, result: UpdatesAnswer) => c.json(result.body, result.status);
+const SIGNED_OUT = { error: "Sign in as a template admin to manage updates.", signedOut: true };
 
 router.use("/admin/updates", adminsOnly);
 router.use("/admin/updates/*", adminsOnly);
@@ -31,56 +33,29 @@ async function adminsOnly(c: Context<AppEnv>, next: () => Promise<void>) {
   await next();
 }
 
-/** A request the routes refuse: 400 with the status envelope the update button reads (Django's `_invalid`). */
-const invalid = (c: Context<AppEnv>, error: string) =>
-  c.json(
-    {
-      app: { version: config().APP_VERSION ?? null },
-      reachable: Boolean(config().UPDATER_URL),
-      updater: null,
-      error,
-    } satisfies UpdatesResponse,
-    400,
-  );
-
-async function body(c: Context<AppEnv>): Promise<unknown> {
+/**
+ * The request with its body read here: a body over the size limit is the
+ * app's 413, as on every route, where the handler would take it for no body.
+ */
+async function withBody(c: Context<AppEnv>): Promise<Request> {
+  let body = "";
   try {
-    return await c.req.json();
+    body = await c.req.text();
   } catch (error) {
     if (isBodyTooLarge(error)) throw new BodyTooLarge();
-    return null;
   }
+  return new Request(c.req.url, { method: "POST", body });
 }
 
-router.get("/admin/updates", async (c) => answer(c, await askUpdater({ call: "status" })));
+/** The handler's answer through Hono, which keeps the headers middleware set before the route (`x-request-id`). */
+async function answer(c: Context<AppEnv>, pending: Promise<Response>) {
+  const response = await pending;
+  return c.newResponse(response.body, response);
+}
 
-router.post("/admin/updates/check", async (c) => answer(c, await askUpdater({ call: "check" })));
-
-router.post("/admin/updates/install", async (c) => {
-  const parsed = updateInstallSchema.safeParse(await body(c));
-  if (!parsed.success) return invalid(c, "Name the version to install, such as 0.2.1.");
-  const { version } = parsed.data;
-  return answer(c, await askUpdater({ call: "install", version }));
-});
-
-router.post("/admin/updates/channel", async (c) => {
-  const parsed = updateChannelInputSchema.safeParse(await body(c));
-  if (!parsed.success) return invalid(c, "The channel is stable or preview.");
-  const { channel } = parsed.data;
-  const result = await askUpdater({ call: "channel", channel });
-  // Saved only when the updater's status names the chosen channel (as in the Django version).
-  if (
-    result.status < 300 &&
-    result.body.reachable &&
-    !result.body.error &&
-    result.body.updater?.channel !== channel
-  ) {
-    return answer(c, {
-      status: 409,
-      body: { ...result.body, error: "The update service did not switch the channel." },
-    });
-  }
-  return answer(c, result);
-});
+router.get("/admin/updates", (c) => answer(c, updates.respond("status")));
+router.post("/admin/updates/check", (c) => answer(c, updates.respond("check")));
+router.post("/admin/updates/install", async (c) => answer(c, updates.respond("install", await withBody(c))));
+router.post("/admin/updates/channel", async (c) => answer(c, updates.respond("channel", await withBody(c))));
 
 export default router;

@@ -106,7 +106,10 @@ commands. See
 The `updater` service installs new versions once the server's host setup runs, and
 template admins can install them from the update button in the admin header.
 [Automatic updates](updates.md#switch-it-on) explains the setup and the backups to set
-up first.
+up first. Set `UPDATER_TOKEN` to a random value (`openssl rand -hex 32`): the app sends
+it, and the updater then takes requests only with it. It is recommended, not required.
+A server set up before the token existed can add it later, as
+[protect the update service](updates.md#protect-the-update-service) describes.
 
 ## Set up
 

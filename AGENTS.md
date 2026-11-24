@@ -31,7 +31,9 @@ Versions up to 0.4 were a Django app.
 - The image must keep starting with the Compose files of earlier versions
   (`docker-django-compat.sh` answers their `python` commands); `tests/upgrade/` checks it.
 - The web app shows the admin pages in the app frame of `@meldgrove/ui`; the update
-  button and the Updates card come from the package too.
+  button and the Updates card come from the package too, and so do the server's update
+  routes (`@meldgrove/ui/updates/server`). The server build bundles it from the root
+  devDependency: in the server's dependencies, npm would put React into the image.
 - The repository is public and Apache 2.0. Use only `example.invalid` in examples;
   `scripts/check-public-repository.mjs` must pass.
 

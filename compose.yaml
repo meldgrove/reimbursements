@@ -83,6 +83,9 @@ x-application: &application
     # The updater's API for the admins' update button. An empty value falls back to the
     # default here, so it cannot switch the button off.
     UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
+    # Sent with every request to the updater, which then requires it (API_TOKEN below).
+    # Recommended: a random value such as `openssl rand -hex 32`. Empty: no token.
+    UPDATER_TOKEN: ${UPDATER_TOKEN:-}
   volumes:
     - private_data:/app/var/private
   tmpfs:
@@ -159,8 +162,8 @@ services:
   # Automatic updates and the admins' update button (docs/updates.md). It checks for new
   # versions always, and installs them once the server runs `updater host-setup`: the
   # server then sets REIMBURSEMENTS_VERSION to the version, pulls it, runs
-  # `docker compose up --wait`, and rolls back if it fails. Its API on port 8080 has no
-  # authentication: never publish the port.
+  # `docker compose up --wait`, and rolls back if it fails. Only the app reaches its API
+  # on port 8080: never publish the port.
   updater:
     image: ghcr.io/meldgrove/updater:0.2
     restart: unless-stopped
@@ -168,6 +171,8 @@ services:
     environment:
       IMAGE: *image
       VERSION_VARIABLE: REIMBURSEMENTS_VERSION
+      # With UPDATER_TOKEN, the API takes only requests that carry it (updater 0.2.1 and later).
+      API_TOKEN: ${UPDATER_TOKEN:-}
       # A release installs once it has been out this long, and only inside the window,
       # if one is set (e.g. 02:00-05:00, in the time zone TZ).
       COOLDOWN: ${UPDATE_COOLDOWN:-3d}

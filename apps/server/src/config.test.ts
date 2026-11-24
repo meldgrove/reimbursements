@@ -94,6 +94,21 @@ describe("production settings", () => {
     const connection = await current(defaultEmailSettings());
     expect([connection.sender, connection.replyTo]).toEqual([sender, replyTo]);
   });
+
+  it.each([
+    [undefined, undefined],
+    ["", undefined],
+    ["  ", undefined],
+    ["0f3a9c41d2e8b7a6", "0f3a9c41d2e8b7a6"],
+    ["c29tZS10b2tlbg==/+", "c29tZS10b2tlbg==/+"],
+    ["two words", null],
+    ["tökén", null],
+  ])("the updater's token is optional and plain ASCII (%j)", (token, expected) => {
+    const environment: Record<string, string> = { ...BASE };
+    if (token !== undefined) environment.UPDATER_TOKEN = token;
+    expect(starts(environment)).toBe(expected !== null);
+    if (expected !== null) expect(config().UPDATER_TOKEN).toBe(expected);
+  });
 });
 
 describe("the public URL from the Django version's CSRF_TRUSTED_ORIGINS", () => {

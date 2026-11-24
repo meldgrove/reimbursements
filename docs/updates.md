@@ -56,7 +56,29 @@ automatically and the last check. The button and Admin > Updates come from
 a reachable updater, the icon is grey and Admin > Updates says so. `UPDATER_URL` is where the app reaches the updater, `http://updater:8080` by
 default. Under `compose.yaml` an empty value falls back to that default; empty hides
 the icon only where the app reads its environment directly, as in the local setup.
-The updater's port has no authentication: never publish it.
+Never publish the updater's port.
+
+`UPDATER_TOKEN` (recommended) protects the updater's API: the app sends it with every
+request, and `compose.yaml` gives the updater the same value, which then refuses
+requests without it. Without it, anything on the app's Docker network can ask the
+updater to check, install or switch the channel. Make one with `openssl rand -hex 32`.
+Admin > Updates warns while the updater runs without a token (updater 0.2.4 and
+later).
+
+## Protect the update service
+
+Recommended, not required: without `UPDATER_TOKEN`, everything works as before. Do
+it once the server runs the release that brings `UPDATER_TOKEN` or a newer one: an
+older app sends no token, and its update button would be refused (automatic updates
+go on). On a server, as root in `/srv/reimbursements`:
+
+1. Add `UPDATER_TOKEN=` with a value from `openssl rand -hex 32` to `.env`.
+2. Run `git pull` for the `compose.yaml` that passes it on.
+3. Run `docker compose up -d --pull always`: it pulls the newest updater 0.2.x and
+   recreates web, worker and the updater with the token.
+
+Admin > Updates no longer warns. On Coolify, see
+[its step](coolify.md#protect-the-update-service).
 
 ## When a release installs
 
