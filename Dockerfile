@@ -3,7 +3,7 @@
 #   web      web app and API (port 8000)
 #   worker   jobs: upload checks, claim PDFs, email, retention
 #   migrate  apply database migrations (taking over a database of the Django version), then exit
-#   cli      operator commands, e.g. `cli verify-setup --to finance@example.invalid` (apps/server/src/commands)
+#   cli      operator commands, e.g. `cli settings list` (apps/server/src/commands); also on the PATH
 
 FROM node:26.13.1-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS base
 WORKDIR /app
@@ -81,6 +81,8 @@ COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # A server that the updater moves from the Django version (0.4) still has its
 # compose.yaml, which runs `python manage.py ...` and Python health checks.
 COPY --chmod=755 docker-django-compat.sh /usr/local/bin/python
+# `cli <command>` in a running container: `docker compose exec web cli settings list`.
+COPY --chmod=755 docker-cli.sh /usr/local/bin/cli
 # The release workflow sets the version; images built from source have none.
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}

@@ -18,6 +18,7 @@ import {
   deliveryAttempts,
   emailSettings,
   jobs,
+  operations,
   type User,
 } from "../../db/schema";
 import * as confirmationService from "../../services/confirmations";
@@ -64,15 +65,10 @@ afterEach(async () => {
   server = null;
 });
 
-/** A deployment that sends email and sets none of it in the environment. */
-function unset() {
-  localSettings({
-    MAIL_DELIVERY_MODE: "send",
-    MAILERSEND_API_TOKEN: "",
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: "",
-    MAIL_FROM_ADDRESS: "",
-    MAIL_REPLY_TO_ADDRESS: "",
-  });
+/** A deployment that sends email and has saved none of its settings. */
+async function unset() {
+  localSettings({ MAIL_DELIVERY_MODE: "send" });
+  await getDb().delete(emailSettings);
 }
 
 function emailForm(changes: Record<string, unknown> = {}) {
@@ -112,7 +108,7 @@ const page = async () => (await request("GET", URL, { user: admin })).body;
 
 describe("the email connection", () => {
   it("without settings sends nothing, and forms refuse claims", async () => {
-    unset();
+    await unset();
     const connection = await current();
     expect([connection.provider, connection.ready]).toEqual(["", false]);
     expect(connection.missing).toEqual(["a provider", "a sender address", "a reply address for Finance"]);
@@ -123,8 +119,8 @@ describe("the email connection", () => {
     expect(response.body.message).toBe("Das Formular ist derzeit nicht verfügbar.");
   });
 
-  it("takes values from the environment over the admin settings", async () => {
-    unset();
+  it("reads the saved settings only, not the variables of earlier versions", async () => {
+    await unset();
     await saveEmailSettings(
       withSecret(
         {
@@ -150,15 +146,15 @@ describe("the email connection", () => {
     });
     connection = await current();
     expect([connection.provider, connection.sender, connection.replyTo]).toEqual([
-      "mailersend",
-      "env@example.invalid",
+      "smtp",
+      "admin@example.invalid",
       "reply@example.invalid",
     ]);
-    expect([connection.mailersendToken, connection.ready]).toEqual(["environment-token", true]);
+    expect([connection.mailersendToken, connection.ready]).toEqual(["saved-token", true]);
   });
 
   it("counts a secret the app's secret cannot open as missing", async () => {
-    unset();
+    await unset();
     await saveEmailSettings(
       withSecret(
         {
@@ -199,7 +195,7 @@ describe("the Email page", () => {
   });
 
   it("takes a MailerSend token that is never shown again", async () => {
-    unset();
+    await unset();
     let shown = await page();
     expect(shown.status.label).toBe("Not set up");
     expect(shown.status.text).toContain("Forms take no claims until email is set up");
@@ -263,7 +259,7 @@ describe("the Email page", () => {
       { "confirmation.en.body": "Write a single brace as {{ or }}; braces otherwise enclose a placeholder." },
     ],
   ])("needs the settings of the chosen provider (%#)", async (data, fields) => {
-    unset();
+    await unset();
     const response = await save(data);
     expect(response.status).toBe(422);
     expect(response.body.error.fields).toEqual(fields);
@@ -271,13 +267,13 @@ describe("the Email page", () => {
   });
 
   it("keeps the spaces of an SMTP password", async () => {
-    unset();
+    await unset();
     await save(smtpForm({ smtpUsername: "kim", smtpPassword: " s3cret " }));
     expect(secretOf(await loadEmailSettings(), "smtpPassword")).toBe(" s3cret ");
   });
 
   it("says what MailerSend misses without a signing secret", async () => {
-    unset();
+    await unset();
     await save(mailersendForm({ mailersendToken: "mlsn.synthetic-token" }));
     let shown = await page();
     expect(shown.status.label).toBe("Ready");
@@ -288,7 +284,7 @@ describe("the Email page", () => {
   });
 
   it("refuses entering and deleting a secret at once", async () => {
-    unset();
+    await unset();
     await save(smtpForm({ smtpUsername: "kim", smtpPassword: "first" }));
     const response = await save(
       smtpForm({ smtpUsername: "kim", smtpPassword: "second", deleteSmtpPassword: true }),
@@ -299,34 +295,41 @@ describe("the Email page", () => {
     expect(secretOf(await loadEmailSettings(), "smtpPassword")).toBe("first");
   });
 
-  it("shows settings from the environment, but does not change them", async () => {
-    unset();
+  it("names variables of earlier versions that are still set, and changes every field", async () => {
+    await unset();
+    expect((await page()).environmentNote).toBe("");
     overrideConfigForTests({
       MAILERSEND_API_TOKEN: "environment-token",
       MAIL_FROM_ADDRESS: "env@example.invalid",
     });
     const shown = await page();
-    expect(shown.locked.fromAddress).toBe("Set by MAIL_FROM_ADDRESS in the environment.");
-    expect(shown.locked.provider).toBe("MAILERSEND_API_TOKEN in the environment chooses MailerSend.");
-    expect([shown.settings.provider, shown.settings.fromAddress]).toEqual([
-      "mailersend",
-      "env@example.invalid",
-    ]);
+    expect(shown.environmentNote).toBe(
+      "MAILERSEND_API_TOKEN and MAIL_FROM_ADDRESS are still set in the environment. The app no longer reads them: this page holds the setting. Delete them from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.",
+    );
+    expect(shown).not.toHaveProperty("locked");
+    expect([shown.settings.provider, shown.settings.fromAddress]).toEqual(["", ""]);
     expect(JSON.stringify(shown)).not.toContain("environment-token");
     const response = await save(
-      smtpForm({
-        fromAddress: "other@example.invalid",
-        mailersendToken: "ignored",
-        replyToAddress: "reply@example.invalid",
-      }),
+      smtpForm({ fromAddress: "other@example.invalid", replyToAddress: "reply@example.invalid" }),
     );
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     const saved = await loadEmailSettings();
-    // The environment's values stay out of the database.
-    expect([saved.provider, saved.fromAddress, secretOf(saved, "mailersendToken")]).toEqual(["", "", ""]);
-    expect(saved.replyToAddress).toBe("reply@example.invalid");
+    expect([saved.provider, saved.fromAddress, secretOf(saved, "mailersendToken")]).toEqual([
+      "smtp",
+      "other@example.invalid",
+      "",
+    ]);
     const connection = await current();
-    expect([connection.provider, connection.sender]).toEqual(["mailersend", "env@example.invalid"]);
+    expect([connection.provider, connection.sender]).toEqual(["smtp", "other@example.invalid"]);
+  });
+
+  it("logs each save with the admin who made it", async () => {
+    await unset();
+    expect((await save(mailersendForm({ mailersendToken: "token" }))).status).toBe(200);
+    const logged = await getDb().select().from(operations);
+    expect(logged.map((row) => [row.action, row.actor, row.reason, row.claimId])).toEqual([
+      ["settings_email", "admin@example.invalid", "Admin > Email", null],
+    ]);
   });
 
   it("does not save unchanged standard texts", async () => {
@@ -351,7 +354,7 @@ describe("the Email page", () => {
     await createForm();
     let row = (await request("GET", "/api/v1/admin/forms", { user: admin })).body.rows[0];
     expect([row.openNow, row.unavailable]).toEqual([true, ""]);
-    unset();
+    await unset();
     row = (await request("GET", "/api/v1/admin/forms", { user: admin })).body.rows[0];
     expect([row.openNow, row.unavailable]).toEqual([false, "Email not set up"]);
   });
@@ -403,7 +406,7 @@ describe("the confirmation", () => {
 describe("sending", () => {
   it("waits and retries without a provider", async () => {
     const { delivery } = await readyDelivery();
-    unset();
+    await unset();
     const [attempt] = await getDb().insert(deliveryAttempts).values({ deliveryId: delivery.id }).returning();
     const result = await outbound.send(deliveryService.compose, attempt!);
     expect([result.state, result.errorCode, result.retryAfter]).toEqual([PENDING, "email_not_set_up", 900]);
@@ -411,7 +414,7 @@ describe("sending", () => {
 
   it("sends claims to Finance and participants through an SMTP server", async () => {
     const { claim } = await readyDelivery();
-    unset();
+    await unset();
     server = await new FakeSmtpServer().start();
     await saveEmailSettings({
       ...defaultEmailSettings(),
@@ -456,7 +459,7 @@ describe("the test email", () => {
   });
 
   it("explains what is wrong", async () => {
-    unset();
+    await unset();
     server = await new FakeSmtpServer().start();
     const test = async () =>
       (await request("POST", TEST_URL, { user: admin, body: { to: "kim@example.invalid" } })).body.message;
@@ -467,13 +470,7 @@ describe("the test email", () => {
     expect(await test()).toBe("The SMTP server refused the recipient.");
     server.rcptReply = "250 OK";
     expect(await test()).toBe("The SMTP server accepted the test email to kim@example.invalid.");
-    localSettings({
-      MAIL_DELIVERY_MODE: "send",
-      MAILERSEND_API_TOKEN: "",
-      MAIL_FROM_ADDRESS: "",
-      MAIL_REPLY_TO_ADDRESS: "",
-      TEST_RECIPIENT_ALLOWLIST: ["finance@example.invalid"],
-    });
+    localSettings({ MAIL_DELIVERY_MODE: "send", TEST_RECIPIENT_ALLOWLIST: ["finance@example.invalid"] });
     expect(await test()).toBe("TEST_RECIPIENT_ALLOWLIST does not include the recipient.");
     expect(server.received).toHaveLength(1);
   });
@@ -481,7 +478,7 @@ describe("the test email", () => {
 
 describe("the webhook", () => {
   it("is signed with the saved secret, and its last event is shown", async () => {
-    unset();
+    await unset();
     await saveEmailSettings(
       withSecret(
         { ...defaultEmailSettings(), provider: "mailersend" },

@@ -1,8 +1,10 @@
 import { closeDb } from "./db/client";
-import { CommandError, COMMANDS } from "./commands";
+import { CommandError, COMMANDS, UsageError } from "./commands";
 import { flushErrorReports, tagRole } from "./error-reporting";
-import { logger } from "./logger";
+import { logger, logToStderr } from "./logger";
 import { OperatorError } from "./operator-error";
+import { importForCommand } from "./services/environment-import";
+import { SETTING_NAMES } from "./services/settings-audit";
 
 /** Runs an operator command (commands/): `cli <command> [arguments]`, `cli help` lists them. */
 export async function runCli(argv: string[]): Promise<number> {
@@ -12,9 +14,14 @@ export async function runCli(argv: string[]): Promise<number> {
   if (command) tagRole(name!);
   if (!command) {
     const lines = [...COMMANDS.values()].map((entry) => `  ${entry.usage}`).join("\n");
-    process.stdout.write(`Commands:\n${lines}\n`);
+    process.stdout.write(
+      `Commands:\n${lines}\n\nSettings: ${SETTING_NAMES.join(", ")}. See \`cli settings help\` and docs/deployment.md (Operator commands).\n`,
+    );
     return name && name !== "help" ? 2 : 0;
   }
+  // As every process does at start; `migrate` does it after migrating, `settings` after
+  // checking its arguments and reading its body.
+  if (name !== "migrate" && name !== "settings") await importForCommand();
   return (await command.run(args)) ?? 0;
 }
 
@@ -31,11 +38,14 @@ async function exit(code: number): Promise<never> {
   process.exit(code);
 }
 
+// Stdout is the command's answer, such as the JSON of `cli settings show`.
+logToStderr();
 runCli(process.argv.slice(2))
   .then(exit)
   .catch(async (error: unknown) => {
     if (error instanceof CommandError || error instanceof OperatorError) {
       process.stderr.write(`${error.message}\n`);
+      if (error instanceof UsageError) return exit(2);
     } else {
       // Its message can quote stored values (a query's parameters): the log keeps type and code only.
       logger.error({ err: error }, "command_failed");

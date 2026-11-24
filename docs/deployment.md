@@ -71,9 +71,9 @@ registered as the redirect URI. `DJANGO_SECRET_KEY` (or `AUTH_SECRET`, which win
 both are set) signs the sessions and seals the secrets entered under Admin > Email: a
 random secret of at least 50 characters.
 
-Set `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app language, timezone and date
-format are set after the first sign-in under Admin > General, the accent color and
-favicon under Admin > Appearance. `APPROVED_DELIVERY_RECIPIENTS` lists every inbox a
+After the first sign-in, set the operator's name and legal page (the footer of public
+pages), the app language, timezone and date format under Admin > General, and the accent
+color and favicon under Admin > Appearance. `APPROVED_DELIVERY_RECIPIENTS` lists every inbox a
 form may send to. For staging, also set a nonempty `TEST_RECIPIENT_ALLOWLIST`; it
 restricts accounting and participant messages. Do not make production receipts
 available to staging.
@@ -95,10 +95,8 @@ there. Forms take no claims until it is set up. Choose one provider:
 Also enter the reply address for Finance emails, a monitored inbox. Tokens, signing
 secrets and passwords entered there are stored encrypted with a key derived from
 `AUTH_SECRET` (or `DJANGO_SECRET_KEY`); after changing that secret, enter them again.
-Instead of entering them, you can set `MAILERSEND_API_TOKEN` (which chooses
-MailerSend), `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS` and
-`MAIL_REPLY_TO_ADDRESS` in the environment; a value set there wins and the admin area
-shows it without letting anyone change it. See [operations](operations.md) for
+`cli settings` sets the same settings without a browser
+([operator commands](#operator-commands)). See [operations](operations.md) for
 ambiguous delivery outcomes and retry controls.
 
 Optionally set `SENTRY_DSN` for error reports from web, worker, migrations and `cli`
@@ -174,7 +172,7 @@ Run the commands as root (`sudo -i`).
    in the web container, with one of your approved inboxes in place of the example:
 
    ```sh
-   docker compose run --rm web cli verify-setup --to finance@your-org.example.invalid
+   docker compose run --rm -T migrate cli verify-setup --to finance@your-org.example.invalid
    ```
 
 9. **Automatic updates:** [switch them on](updates.md#switch-it-on).
@@ -184,8 +182,9 @@ Run the commands as root (`sudo -i`).
 Deploy, then sign in at `/admin/`. Replace the initial privacy setup text with your
 operator's notice, review the template declaration, and create a form with an
 approved recipient, support address and required internal values. Set up email under
-Admin > Email ([above](#application-settings)). Then run
-`docker compose run --rm web cli verify-setup --to <an approved inbox>`.
+Admin > Email ([above](#application-settings)) or with
+[`cli settings`](#operator-commands). Then run
+`docker compose run --rm -T migrate cli verify-setup --to <an approved inbox>`.
 It sends a synthetic claim through the scanner, document sandbox, the email provider
 and, with MailerSend, the signed delivery webhook, and deletes it again; see
 [setup check](operations.md#setup-check). Publish your form and send a synthetic claim
@@ -271,20 +270,22 @@ What changes:
   processed and sent as usual, and their confirmation email still arrives. Tell
   support to answer such questions from the admin area, so that nobody submits again.
 - Everyone in the admin area signs in once more.
-- Email keeps working as it did: the MailerSend variables in `.env` still choose
-  MailerSend and win over Admin > Email, which 0.5 adds (MailerSend or an SMTP server,
-  and the participant confirmation's text). A server that ran a 0.4 preview with
-  Admin > Email keeps its settings there; keep `DJANGO_SECRET_KEY` in `.env`, so the
-  secrets entered there still open when `AUTH_SECRET` differs. 0.4 ignores the page's
-  table if you go back.
+- Email keeps working as it did: at its first start, the app copies the MailerSend
+  variables and the addresses from `.env` into Admin > Email, which 0.5 adds
+  (MailerSend or an SMTP server, and the participant confirmation's text), and
+  `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL` into Admin > General
+  ([settings from earlier versions](#settings-from-earlier-versions)). A server that ran
+  a 0.4 preview with Admin > Email keeps its settings there; keep `DJANGO_SECRET_KEY` in
+  `.env`, so the secrets entered there still open when `AUTH_SECRET` differs. 0.4
+  ignores the page's table if you go back.
 - The admin area is the app frame of the other Meldgrove apps. Its pages have new
   addresses (`/admin/claims`, `/admin/forms`, ...); links to the pages of 0.4 lead to
   the new ones. Participant links (`/f/<form>/`, `/received/<id>/`) stay.
 - The claim PDF's summary page is drawn directly instead of rendered from an HTML page
   (WeasyPrint): the same content and layout, not the same bytes.
-- Operator commands run as `docker compose run --rm web cli <command>`, such as
+- Operator commands run as `docker compose run --rm -T migrate cli <command>`, such as
   `cli verify-setup` instead of `python manage.py verify_setup`
-  ([operations](operations.md#recovery-commands)).
+  ([operator commands](#operator-commands)).
 
 The image also starts with the `compose.yaml` of 0.4, whose commands and health checks
 call `python`: a stand-in named `python` runs them, and the operator commands of 0.4
@@ -299,8 +300,10 @@ To go back to 0.4:
    updater`. Then stop web and worker: `docker compose stop web worker`.
 2. Put back the `.env` and `compose*.yaml` files kept before the upgrade (or
    `git checkout v0.4.0 -- compose.yaml compose.coolify.yaml compose.postgres.yaml`
-   and the 0.4 settings: `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`
-   and the Keycloak settings under their old names), with
+   and the 0.4 settings: `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`,
+   the Keycloak settings under their old names, and `MAILERSEND_API_TOKEN`,
+   `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS`, `MAIL_REPLY_TO_ADDRESS`,
+   `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`, which 0.4 reads), with
    `REIMBURSEMENTS_VERSION=0.4.0`.
 3. Run `docker compose up -d web worker` (their database, scanner and migration job
    start with them; the updater stays stopped). 0.4 runs on the database again;
@@ -310,6 +313,118 @@ To go back to 0.4:
    updates again. On the Preview channel, choose Stable under Admin > Updates right
    after: Preview installs 0.5 again within the hour, while Stable never installs a
    new series by itself.
+
+## Operator commands
+
+The image has a `cli` command for operators. On a server, run it in a one-off container
+of the migration job, in `/srv/reimbursements`:
+
+```sh
+docker compose run --rm -T migrate cli help
+```
+
+In a running container, `cli` is on the `PATH`: `docker compose exec web cli help`, or
+`cli help` in Coolify's terminal of the web container. [Operations](operations.md#recovery-commands)
+describes the commands for claims and storage.
+
+### Settings
+
+`cli settings` sets what Admin > Email, Admin > General and Admin > Appearance set,
+without a browser. It runs the same code as the pages: the same checks, the same
+encryption, and an entry in the audit log (`portal_operation`) with the actor
+`operator` and the command.
+
+| Command | What it does |
+| --- | --- |
+| `cli settings list [--json]` | Each setting: set, not set or incomplete, with hints; never a secret |
+| `cli settings show <name>` | What the page shows, as JSON |
+| `cli settings apply <name>` | Saves the JSON body on stdin that the page sends; then prints what `show` prints |
+| `cli settings test email --to <address>` | Sends the test email of Admin > Email |
+
+The names are `email`, `general` and `appearance`. None of them is a list, so there is
+no `--id` and no `cli settings remove`. The app issues no tokens to other apps, so there
+is no `cli tokens`. Exit codes: 0 done; 1 refused, with the page's message on stderr; 2
+a wrong command or a body that is not JSON.
+
+The body of `apply` is the whole form, as the page sends it. Start from the `settings`
+of `cli settings show <name>` and change what you need. Secrets go only into the body,
+never into arguments. An empty secret field keeps the saved secret; `true` in
+`deleteMailersendToken`, `deleteWebhookSecret` or `deleteSmtpPassword` deletes it.
+Nothing prints a saved secret, the pages do not either.
+
+`email` with MailerSend (`"confirmation": {}` uses the standard texts; to keep your own,
+copy them from `show`):
+
+```json
+{
+  "provider": "mailersend",
+  "fromAddress": "no-reply@your-org.example.invalid",
+  "replyToAddress": "finance@your-org.example.invalid",
+  "mailersendToken": "REPLACE_WITH_THE_API_TOKEN",
+  "webhookSecret": "REPLACE_WITH_THE_SIGNING_SECRET",
+  "smtpHost": "",
+  "smtpPort": 587,
+  "smtpSecurity": "starttls",
+  "smtpUsername": "",
+  "confirmationEnabled": true,
+  "confirmation": {}
+}
+```
+
+With an SMTP server, set `"provider": "smtp"`, `smtpHost`, `smtpPort`, `smtpSecurity`
+(`starttls`, `tls` or `none`), and `smtpUsername` and `smtpPassword` if it needs a login.
+
+`general`; `operator` and `legalUrl` left out keep their saved values:
+
+```json
+{
+  "language": "de",
+  "timezone": "Europe/Berlin",
+  "dateFormat": "d.m.Y",
+  "numberFormat": "european",
+  "operator": "Your organization",
+  "legalUrl": "https://your-org.example.invalid/imprint"
+}
+```
+
+`appearance`; `"removeFavicon": true` restores the standard favicon. A favicon is
+uploaded on the page only:
+
+```json
+{ "accentColor": "#0f766e" }
+```
+
+For example, with the body in `email.json`:
+
+```sh
+docker compose run --rm -T migrate cli settings apply email < email.json
+docker compose run --rm -T migrate cli settings test email --to finance@your-org.example.invalid
+rm email.json
+```
+
+AI with access to the server sets a key the same way: the key arrives as a file, AI
+writes the body with it, pipes the body into `cli settings apply`, runs
+`cli settings test` and deletes both files.
+
+### Settings from earlier versions
+
+Up to 0.5.0, `.env` could set `MAILERSEND_API_TOKEN` (which chose MailerSend),
+`MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS` and `MAIL_REPLY_TO_ADDRESS`,
+which won over Admin > Email, and `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL` for the
+footer. Later versions keep these settings in the database. Nothing needs doing on
+upgrade: each process copies each variable it sees into Admin > Email or Admin > General
+once, when the page has no value for it yet, and writes an audit entry with the actor
+`environment`. A value the page would refuse, such as a legal page that is no web
+address, is not copied; the log names the variable. From then on the pages win, and the
+app ignores the variables, also after a field is cleared.
+
+Admin > Email, Admin > General, `cli settings list` and a warning at each start name the
+variables that are still set. Keep them in `.env` while you may go back to 0.5.0 or
+0.4: both read them (0.5.0 shows the operator and the legal page only from there), and
+0.4's `compose.yaml` requires the MailerSend ones and the addresses. The
+same holds while the server still starts this version with 0.4's `compose.yaml` (the
+updater installs images, not files): take this version's file first
+([upgrade from 0.4](#upgrade-from-04), step 2). Then delete them.
 
 ## Upgrades
 

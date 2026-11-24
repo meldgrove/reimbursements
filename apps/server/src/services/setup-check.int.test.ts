@@ -19,9 +19,8 @@ import {
 } from "../db/schema";
 import { providerFetch } from "../auth/oidc";
 import { freshState, localSettings } from "../test/back-office";
-import { request } from "../test/helpers";
+import { request, useEmailSettings } from "../test/helpers";
 import { mockProvider } from "../test/mailersend";
-import { defaultEmailSettings, saveEmailSettings } from "./email-connection";
 import { runOne } from "./jobs";
 import * as outbound from "./outbound";
 import { EICAR, FORM_NAME, SetupCheck, seams } from "./setup-check";
@@ -195,9 +194,7 @@ async function signedWebhook(
       tags: [],
     },
   });
-  const signature = createHmac("sha256", config().MAILERSEND_WEBHOOK_SIGNING_SECRET)
-    .update(body)
-    .digest("hex");
+  const signature = createHmac("sha256", SIGNING_SECRET).update(body).digest("hex");
   const response = await request("POST", "/webhooks/mailersend/", {
     body,
     headers: { "content-type": "application/json", signature },
@@ -205,12 +202,11 @@ async function signedWebhook(
   expect(response.status).toBe(200);
 }
 
-function useMailerSend() {
-  localSettings({
-    MAIL_DELIVERY_MODE: "mailersend",
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: "synthetic-test-secret",
-    APP_URL: "https://reimbursements.example.invalid",
-  });
+const SIGNING_SECRET = "synthetic-test-secret";
+
+async function useMailerSend() {
+  localSettings({ MAIL_DELIVERY_MODE: "mailersend", APP_URL: "https://reimbursements.example.invalid" });
+  await useEmailSettings({ webhookSecret: SIGNING_SECRET });
   let number = 0;
   mockProvider(() => {
     number += 1;
@@ -225,7 +221,7 @@ async function acceptedAttempts() {
 describe("the setup check with MailerSend", () => {
   it("needs the signed webhook to arrive", async () => {
     const worker = new Worker();
-    useMailerSend();
+    await useMailerSend();
     worker.afterJob = async () => {
       for (const attempt of await acceptedAttempts()) await signedWebhook(attempt, "delivered");
     };
@@ -245,7 +241,7 @@ describe("the setup check with MailerSend", () => {
 
   it("names the URL to configure when the webhook is missing", async () => {
     new Worker();
-    useMailerSend();
+    await useMailerSend();
     const [output, error] = await verify(["--to", "finance@example.invalid", "--timeout", "30"]);
     expect(error).toBe("Setup check failed: 1 problem.");
     expect(output).toContain("FAIL  MailerSend webhook\n        No signed delivery event within 30 s.");
@@ -256,8 +252,8 @@ describe("the setup check with MailerSend", () => {
 
   it("skips the webhook without a signing secret", async () => {
     new Worker();
-    useMailerSend();
-    localSettings({ MAIL_DELIVERY_MODE: "mailersend", MAILERSEND_WEBHOOK_SIGNING_SECRET: "" });
+    await useMailerSend();
+    await useEmailSettings({ webhookSecret: "" });
     const [output, error] = await verify(["--to", "finance@example.invalid", "--timeout", "30"]);
     expect(error, output).toBeNull();
     expect(output).toContain("skip  MailerSend webhook\n        No signing secret is set");
@@ -266,7 +262,7 @@ describe("the setup check with MailerSend", () => {
 
   it("fails on a bounce the webhook reports", async () => {
     const worker = new Worker();
-    useMailerSend();
+    await useMailerSend();
     const sent = new Set<string>();
     worker.afterJob = async () => {
       for (const attempt of await acceptedAttempts()) {
@@ -284,7 +280,8 @@ describe("the setup check with MailerSend", () => {
 describe("the setup check and Admin > Email", () => {
   it("submits no claim without email", async () => {
     new Worker();
-    localSettings({ MAIL_DELIVERY_MODE: "send", MAILERSEND_API_TOKEN: "" });
+    localSettings({ MAIL_DELIVERY_MODE: "send" });
+    await useEmailSettings({ provider: "", mailersendToken: "" });
     const [output, error] = await verify(["--to", "finance@example.invalid"]);
     expect(error).toBe("Setup check failed: 1 problem.");
     expect(output).toContain(
@@ -296,12 +293,8 @@ describe("the setup check and Admin > Email", () => {
 
   it("has both emails accepted by an SMTP server", async () => {
     new Worker();
-    localSettings({ MAIL_DELIVERY_MODE: "send", MAILERSEND_API_TOKEN: "" });
-    await saveEmailSettings({
-      ...defaultEmailSettings(),
-      provider: "smtp",
-      smtpHost: "smtp.example.invalid",
-    });
+    localSettings({ MAIL_DELIVERY_MODE: "send" });
+    await useEmailSettings({ provider: "smtp", smtpHost: "smtp.example.invalid", mailersendToken: "" });
     const sent: Message[] = [];
     vi.spyOn(SmtpTransport.prototype, "send").mockImplementation(async (message) => {
       sent.push(message);
@@ -330,7 +323,7 @@ describe("the setup check and Admin > Email", () => {
   it("skips a turned-off confirmation", async () => {
     new Worker();
     const sent = recordSent();
-    await saveEmailSettings({ ...defaultEmailSettings(), confirmationEnabled: false });
+    await useEmailSettings({ confirmationEnabled: false });
     const [output, error] = await verify(["--to", "finance@example.invalid"]);
     expect(error, output).toBeNull();
     expect(output).toContain("skip  Participant confirmation\n        Turned off under Admin > Email.");

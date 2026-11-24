@@ -8,6 +8,8 @@ import { flushErrorReports } from "./error-reporting";
 import { startWorker, type Stop } from "./worker";
 import { productionChecks } from "./checks";
 import { OperatorError } from "./operator-error";
+import { importEnvironment, logImport } from "./services/environment-import";
+import { warnAboutLeftovers } from "./services/moved-variables";
 
 /**
  * One entry point for every process. APP_ROLE selects what runs:
@@ -15,6 +17,8 @@ import { OperatorError } from "./operator-error";
  *   web      web app and API
  *   worker   jobs: upload checks, claim PDFs, email, retention (the Django version's run_jobs)
  *   migrate  apply database migrations (taking over a Django database), then exit
+ * Each copies the settings that earlier versions read from the environment into the
+ * database once (services/environment-import.ts), after the migrations.
  */
 async function main() {
   const settings = config();
@@ -23,10 +27,14 @@ async function main() {
   if (problems.length > 0) throw new OperatorError(problems.join(" "));
   if (role === "migrate") {
     await runMigrations();
+    logImport(await importEnvironment());
+    warnAboutLeftovers();
     await closeDb();
     return;
   }
   if (settings.RUN_MIGRATIONS) await runMigrations();
+  logImport(await importEnvironment());
+  warnAboutLeftovers();
   if (settings.DEV_LOGIN) logger.warn("DEV_LOGIN is on: anyone can sign in as any user. Development only.");
   let server: ReturnType<typeof serve> | undefined;
   const stops: Stop[] = [];

@@ -24,11 +24,13 @@ and the public HTTPS origin in `CSRF_TRUSTED_ORIGINS` (or `APP_URL`; see
 [application settings](deployment.md#application-settings)). `TRUST_PROXY_HEADERS=1`, which `compose.yaml`
 sets, requires `TRUSTED_PROXY_CIDRS`. Configure:
 
-- Email under Admin > Email: MailerSend or an SMTP server, the sender address on a
-  verified sender domain, and the reply address for Finance emails. Optionally set
-  `MAILERSEND_API_TOKEN`, `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS` and
-  `MAIL_REPLY_TO_ADDRESS` in the environment instead; those win. `MAIL_DELIVERY_MODE`
-  is `send` (the default) outside development, where `local` keeps emails as files.
+- Email under Admin > Email, or with `cli settings apply email`
+  ([operator commands](deployment.md#operator-commands)): MailerSend or an SMTP server,
+  the sender address on a verified sender domain, and the reply address for Finance
+  emails. Up to 0.5.0, `.env` could set them; later versions copy those variables there
+  once ([settings from earlier versions](deployment.md#settings-from-earlier-versions)).
+  `MAIL_DELIVERY_MODE` is `send` (the default) outside development, where `local` keeps
+  emails as files.
 - `APPROVED_DELIVERY_RECIPIENTS`, comma-separated approved Buchhaltung inboxes.
   Admins choose a form's recipient from this list.
 - `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM` (or `OIDC_ISSUER`), `OIDC_CLIENT_ID` and
@@ -154,11 +156,11 @@ After the first launch, each upgrade and any change of credentials, run it with 
 worker running:
 
 ```bash
-docker compose run --rm web cli verify-setup --to finance@your-org.example.invalid
+docker compose run --rm -T migrate cli verify-setup --to finance@your-org.example.invalid
 ```
 
 In a running container, such as Coolify's terminal of `web`, the same command is
-`docker-entrypoint.sh cli verify-setup --to …`.
+`cli verify-setup --to …`.
 
 It checks the database, private storage, the worker's heartbeat, the document sandbox,
 ClamAV (including that it detects the EICAR test file), that email is set up, and the
@@ -214,9 +216,10 @@ deletes forms. A template admin can delete an archived form without claims.
 
 The commands below run through authorized host access and record the host actor.
 Use operational reasons without participant names, account details, or receipt text.
-On a server, run each as `docker compose run --rm web cli <command>` in
-`/srv/reimbursements`; `cli help` lists them. On Coolify, run
-`docker-entrypoint.sh cli <command>` in the web container's terminal. They replace the
+On a server, run each as `docker compose run --rm -T migrate cli <command>` in
+`/srv/reimbursements`; `cli help` lists them. In a running container, such as Coolify's
+terminal of the web container, run `cli <command>`. `cli settings` sets the admin
+settings ([operator commands](deployment.md#operator-commands)). They replace the
 `python manage.py` commands of 0.4 (`claim_status` became `claim-status`, and so on,
 with the same options); the old form of `claim_status`, `purge_expired`,
 `reconcile_deliveries`, `retry_claim`, `verify_setup` and `verify_storage` still runs
@@ -360,7 +363,7 @@ before restarting processing. Never automatically resend every restored job.
 Test a restore using dummy data and verify database/file consistency, unknown-send
 handling, and deletion. Keep exceptional deletion evidence outside the rollback
 scope so an old backup cannot silently reactivate deleted financial data.
-Run `docker compose run --rm web cli verify-storage` before restarting the restored
+Run `docker compose run --rm -T migrate cli verify-storage` before restarting the restored
 application; it checks recorded source/final PDF hashes, sizes and normalized-file
 presence without printing participant content. With Meldgrove Backups, the
 [deployment guide](deployment.md#backups) has the restore steps;

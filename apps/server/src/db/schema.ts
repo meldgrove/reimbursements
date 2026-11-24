@@ -139,6 +139,13 @@ export const appSettings = pgTable("portal_appsettings", {
   updatedAt: timestamptz("updated_at").notNull().$defaultFn(now).$onUpdateFn(now),
   accentColor: varchar("accent_color", { length: 7 }).notNull(),
   numberFormat: varchar("number_format", { length: 8 }).notNull(),
+  /**
+   * Who runs the app, and the address of their legal page: the footer of public pages.
+   * Versions up to 0.5.0 read them from PORTAL_OPERATOR and PORTAL_LEGAL_URL. Defaults in
+   * the database, so 0.4 still writes the row after a rollback.
+   */
+  operator: varchar("operator", { length: 200 }).notNull().default(""),
+  legalUrl: varchar("legal_url", { length: 500 }).notNull().default(""),
 });
 
 /**
@@ -173,6 +180,18 @@ export const emailSettings = pgTable(
   },
   (table) => [check("portal_emailsettings_smtp_port_check", sql`${table.smtpPort} >= 0`)],
 );
+
+/**
+ * The variables of earlier versions' environment that each process copies into the
+ * settings once (services/environment-import.ts), one row per variable: a variable with
+ * a row is never read again, so the settings win from then on.
+ */
+export const environmentImports = pgTable("portal_environmentimport", {
+  variable: varchar("variable", { length: 64 }).primaryKey(),
+  /** Whether the value went into the settings; false when they had one already or it was refused. */
+  copied: boolean("copied").notNull(),
+  importedAt: timestamptz("imported_at").notNull().defaultNow(),
+});
 
 /** Admins' own confirmation texts per language code. */
 export type ConfirmationTexts = Partial<Record<string, { subject?: string; body?: string }>>;

@@ -24,7 +24,7 @@ import {
   localSettings,
   readyDelivery,
 } from "../test/back-office";
-import { request } from "../test/helpers";
+import { request, useEmailSettings } from "../test/helpers";
 import { json, mockProvider, refused, timedOut } from "../test/mailersend";
 import { CLAIM_STATES } from "./claim-status";
 import * as deliveries from "./delivery";
@@ -174,7 +174,7 @@ describe("Finance delivery", () => {
 
   it("checks webhook signatures and answers the setup ping", async () => {
     const { delivery } = await readyDelivery();
-    localSettings({ MAILERSEND_WEBHOOK_SIGNING_SECRET: "synthetic-test-secret" });
+    await useEmailSettings({ webhookSecret: "synthetic-test-secret" });
     await attempt(delivery, { state: "provider_accepted", messageId: "message-1" });
     const data = JSON.stringify(eventPayload(delivery));
     const post = (body: string, signature?: string) =>

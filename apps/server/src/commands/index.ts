@@ -3,5 +3,6 @@
  */
 import "./basics";
 import "./back-office";
+import "./settings";
 
-export { CommandError, COMMANDS, option, registerCommand, type Command } from "./registry";
+export { CommandError, COMMANDS, option, registerCommand, UsageError, type Command } from "./registry";

@@ -15,6 +15,10 @@ export type GeneralSettings = {
   /** Names the favicon in its link (/favicon/<digest>/); "" for the standard one. */
   faviconDigest: string;
   faviconType: string;
+  /** Who runs the app, for the footer of public pages (Admin > General); "" while unset. */
+  operator: string;
+  /** The operator's legal page, an http(s) address; "" while unset. */
+  legalUrl: string;
 };
 
 /** The signed-in person of the admin area. */
@@ -33,7 +37,7 @@ export type Meta = {
   /** The release version; "" for images built from source. */
   version: string;
   settings: GeneralSettings;
-  /** PORTAL_OPERATOR and PORTAL_LEGAL_URL: the footer of public pages. */
+  /** The operator and legal page of Admin > General: the footer of public pages. */
   operator: string;
   legalUrl: string;
   /** The signed-in person, or null. */

@@ -16,7 +16,6 @@ const TEST_URL = "/api/v1/admin/settings/email/test";
 const NOTHING: EmailSecretState = {
   saved: false,
   unreadable: false,
-  environment: false,
   deletable: false,
   placeholder: "",
 };
@@ -44,7 +43,7 @@ function emailPage(overrides: Partial<EmailSettingsPage> = {}): EmailSettingsPag
       },
     },
     secrets: { mailersendToken: NOTHING, webhookSecret: NOTHING, smtpPassword: NOTHING },
-    locked: {},
+    environmentNote: "",
     status: {
       state: "not_set_up",
       label: "Not set up",
@@ -246,39 +245,25 @@ describe("Admin › Email", () => {
     expect(await screen.findByText("Delete it or enter a new one, not both.")).toBeInTheDocument();
   });
 
-  it("shows settings from the environment without letting them change", async () => {
+  it("names variables of earlier versions still set, and leaves every field open", async () => {
+    const note =
+      "MAILERSEND_API_TOKEN and MAIL_FROM_ADDRESS are still set in the environment. The app no longer reads them: this page holds the setting. Delete them from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.";
     mockApi({
       ...meta,
       [`GET ${URL}`]: {
         body: emailPage({
-          settings: { ...emailPage().settings, provider: "mailersend", fromAddress: "env@example.invalid" },
-          secrets: {
-            mailersendToken: { ...NOTHING, environment: true, placeholder: "Set in the environment" },
-            webhookSecret: NOTHING,
-            smtpPassword: NOTHING,
-          },
-          locked: {
-            provider: "MAILERSEND_API_TOKEN in the environment chooses MailerSend.",
-            fromAddress: "Set by MAIL_FROM_ADDRESS in the environment.",
-            mailersendToken: "Set by MAILERSEND_API_TOKEN in the environment.",
-          },
+          settings: { ...emailPage().settings, provider: "mailersend", fromAddress: "kim@example.invalid" },
+          secrets: { mailersendToken: SAVED, webhookSecret: NOTHING, smtpPassword: NOTHING },
+          environmentNote: note,
         }),
       },
     });
     await openPage();
-    expect(screen.getByLabelText("Send email with")).toBeDisabled();
-    expect(screen.getByLabelText("Send email with")).toHaveValue("mailersend");
-    expect(
-      screen.getByText("MAILERSEND_API_TOKEN in the environment chooses MailerSend."),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Sender address")).toBeDisabled();
-    expect(screen.getByLabelText("Sender address")).toHaveValue("env@example.invalid");
-    expect(screen.getByText("Set by MAIL_FROM_ADDRESS in the environment.")).toBeInTheDocument();
-    const token = screen.getByLabelText("API token");
-    expect(token).toBeDisabled();
-    expect(token).toHaveAttribute("placeholder", "Set in the environment");
-    expect(screen.queryByLabelText("Delete the saved API token")).toBeNull();
-    expect(screen.getByLabelText("Reply address for Finance")).toBeEnabled();
+    expect(screen.getByTestId("environment-note")).toHaveTextContent(note);
+    expect(screen.getByLabelText("Send email with")).toBeEnabled();
+    expect(screen.getByLabelText("Sender address")).toBeEnabled();
+    expect(screen.getByLabelText("API token")).toBeEnabled();
+    expect(screen.getByLabelText("Delete the saved API token")).toBeInTheDocument();
   });
 
   it("says what MailerSend misses without a signing secret, and that a secret no longer opens", async () => {

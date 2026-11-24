@@ -2,17 +2,18 @@
  * The email connection: which provider sends the app's email, and as whom
  * (portal/services/email_connection.py and the EmailSettings model of the Django version).
  *
- * Admins set it up under Admin > Email (the `portal_emailsettings` row): MailerSend with
- * an API token, or an SMTP server. A value set in the environment wins over its field
- * there: MAILERSEND_API_TOKEN chooses MailerSend, and MAIL_FROM_ADDRESS,
- * MAIL_REPLY_TO_ADDRESS and MAILERSEND_WEBHOOK_SIGNING_SECRET each replace one field.
+ * Admins set it up under Admin > Email (the `portal_emailsettings` row), or the operator
+ * with `cli settings apply email`: MailerSend with an API token, or an SMTP server. Up to
+ * 0.5.0, MAILERSEND_API_TOKEN, MAILERSEND_WEBHOOK_SIGNING_SECRET, MAIL_FROM_ADDRESS and
+ * MAIL_REPLY_TO_ADDRESS in the environment won over the fields; each process now copies
+ * them into the row once (services/environment-import.ts) and never reads them again.
  * With MAIL_DELIVERY_MODE=local, in development, every email stays in a private outbox
- * instead.
+ * instead, from placeholder addresses while none are saved.
  *
  * Forms take no claims until the connection is ready (`terms.refusal`).
  */
 import { eq, sql } from "drizzle-orm";
-import { config, type Config } from "../config";
+import { config } from "../config";
 import { emailSettings, type EmailSettingsRow } from "../db/schema";
 import { q } from "../db/tx";
 import { seal, unseal } from "../encryption";
@@ -37,14 +38,10 @@ export const PROVIDER_NAMES: Record<Provider, string> = {
 /** The secrets admins enter, by the name of their field. */
 export const SECRETS = ["mailersendToken", "webhookSecret", "smtpPassword"] as const;
 export type SecretName = (typeof SECRETS)[number];
-/** The admin's fields that an environment variable can replace. */
-export type EnvironmentField = "fromAddress" | "replyToAddress" | "mailersendToken" | "webhookSecret";
-export const ENVIRONMENT: Record<EnvironmentField, keyof Config & string> = {
-  fromAddress: "MAIL_FROM_ADDRESS",
-  replyToAddress: "MAIL_REPLY_TO_ADDRESS",
-  mailersendToken: "MAILERSEND_API_TOKEN",
-  webhookSecret: "MAILERSEND_WEBHOOK_SIGNING_SECRET",
-};
+
+/** The addresses of the local outbox while none are saved (development only). */
+export const LOCAL_SENDER = "no-reply@example.invalid";
+export const LOCAL_REPLY_TO = "finance@example.invalid";
 
 const SEALED: Record<SecretName, "mailersendTokenSealed" | "webhookSecretSealed" | "smtpPasswordSealed"> = {
   mailersendToken: "mailersendTokenSealed",
@@ -86,14 +83,6 @@ const REJECTED: Readonly<Record<string, string>> = {
 export function problem(errorCode: string, provider: string): string {
   if (errorCode === "provider_rejected" && provider in REJECTED) return REJECTED[provider]!;
   return PROBLEMS[errorCode] ?? `Sending failed (${errorCode}).`;
-}
-
-/** The environment's value for the admin field `name`, or "" when it sets none. */
-export function environment(name: string): string {
-  const variable = ENVIRONMENT[name as EnvironmentField];
-  if (!variable) return "";
-  const value = config()[variable];
-  return typeof value === "string" ? value : "";
 }
 
 /** Development keeps every email in a private outbox. */
@@ -237,18 +226,15 @@ export async function current(saved?: EmailSettingsRow): Promise<Connection> {
   const secrets = {} as Record<SecretName, string>;
   const unreadable: SecretName[] = [];
   for (const name of SECRETS) {
-    const value = environment(name) || secretOf(row, name);
+    const value = secretOf(row, name);
     if (value === null) unreadable.push(name);
     secrets[name] = value ?? "";
   }
-  let provider: Provider;
-  if (local()) provider = LOCAL;
-  else if (environment("mailersendToken")) provider = MAILERSEND;
-  else provider = savedProvider(row.provider);
+  const isLocal = local();
   return new Connection(
-    provider,
-    environment("fromAddress") || row.fromAddress,
-    environment("replyToAddress") || row.replyToAddress,
+    isLocal ? LOCAL : savedProvider(row.provider),
+    row.fromAddress || (isLocal ? LOCAL_SENDER : ""),
+    row.replyToAddress || (isLocal ? LOCAL_REPLY_TO : ""),
     secrets.mailersendToken,
     secrets.webhookSecret,
     {

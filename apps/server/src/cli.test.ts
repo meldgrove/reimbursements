@@ -46,7 +46,9 @@ describe("cli", () => {
   it("logs an unexpected failure without its message", async () => {
     const result = await cli("fail-privately");
     expect(result.code).toBe(1);
-    expect(result.stdout).toContain("command_failed");
+    // The log goes to stderr: stdout is the answer.
+    expect(result.stderr).toContain("command_failed");
+    expect(result.stdout).toBe("");
     expect(result.stdout + result.stderr).not.toContain("SYNTHETIC_PRIVATE");
   }, 60_000);
 

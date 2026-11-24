@@ -42,11 +42,20 @@ differences:
 - For automatic updates, add `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN`
   ([automatic updates](#automatic-updates)).
 
+Email, the operator's name and the legal page are not environment variables: set them
+in the app (Admin > Email, Admin > General) or with `cli settings` in the terminal
+([operator commands](#operator-commands)). A resource of 0.5.0 or older may still have
+`MAILERSEND_API_TOKEN`, `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS`,
+`MAIL_REPLY_TO_ADDRESS`, `PORTAL_OPERATOR` and `PORTAL_LEGAL_URL`. The app copies them
+into its settings once and then ignores them
+([settings from earlier versions](deployment.md#settings-from-earlier-versions)). Keep
+them while you may go back to 0.5.0 or 0.4, which read them, then delete them.
+
 ## First launch and upgrades
 
 Deploy, then sign in at `/admin/` and continue as
 [first launch](deployment.md#first-launch) describes, with the setup check run in the
-terminal of the web container: `docker-entrypoint.sh cli verify-setup --to …`. The migration job must complete before web and worker start. For
+terminal of the web container: `cli verify-setup --to …`. The migration job must complete before web and worker start. For
 upgrades, stop old workers before migrations and preserve database, private files and
 scanner volumes. Back up the database and private files together before a manual
 upgrade; automatic updates rely on scheduled backups instead.
@@ -66,11 +75,11 @@ reads `compose.coolify.yaml` from `stable`, which is at the newest release.
    work. When `CSRF_TRUSTED_ORIGINS` lists several `https` origins, add `APP_URL` with
    the one registered as the redirect URI. Keep `ALLOWED_HOSTS` while you may go back.
 3. Scheduled tasks that run `python manage.py <command>` keep working; their new form
-   is `docker-entrypoint.sh cli <command>`, such as `cli reconcile-deliveries`.
+   is `cli <command>`, such as `cli reconcile-deliveries`.
 4. Set `REIMBURSEMENTS_VERSION` to `0.5` and redeploy. The deploy reads 0.5's
    `compose.coolify.yaml` from `stable`.
 5. Sign in at `/admin/` and run the setup check in the web container's terminal:
-   `docker-entrypoint.sh cli verify-setup --to …`.
+   `cli verify-setup --to …`.
 
 To go back to 0.4, the resource must read 0.4's `compose.coolify.yaml` again: a redeploy
 from `stable` reads 0.5's file, whose commands and health checks 0.4's image does not
@@ -85,6 +94,23 @@ have.
    `REIMBURSEMENTS_VERSION=0.4.0`, and deploy. Change scheduled tasks back to
    `python manage.py`. Everyone signs in again, and open drafts are lost again.
 4. Before updating again, set the source back to `stable` and the latest commit.
+
+## Operator commands
+
+In the resource's terminal, choose the web container and run `cli <command>`, such as
+`cli settings list`. `cli settings apply <name>` reads the JSON body of the admin page
+on stdin, so a secret never becomes an argument. In the terminal it asks for the body
+and does not show what is pasted: paste it, then press Ctrl-D. Do not type the
+body into the shell itself (for example as a heredoc): the shell's history would keep
+the secret.
+
+```sh
+cli settings apply email
+cli settings test email --to finance@your-org.example.invalid
+```
+
+[Operator commands](deployment.md#operator-commands) lists the settings, a whole body
+for each, and the exit codes.
 
 ## Backups
 

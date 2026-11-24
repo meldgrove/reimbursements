@@ -1,4 +1,4 @@
-import { pino } from "pino";
+import { pino, type LoggerOptions } from "pino";
 import { OperatorError } from "./operator-error";
 
 type FailedQuery = Error & { query: string; params: unknown[] };
@@ -42,11 +42,19 @@ export function serializeError(error: unknown) {
   };
 }
 
+/** Where log lines go: stdout, or stderr for the operator command, whose stdout is its answer. */
+let stream: NodeJS.WriteStream = process.stdout;
+
+/** Sends the log to stderr from now on (src/cli.ts). */
+export function logToStderr(): void {
+  stream = process.stderr;
+}
+
 /**
  * Structured JSON logs. Never log message texts, answers, tokens or other
  * personal data; log identifiers instead.
  */
-export const logger = pino({
+const options: LoggerOptions = {
   level: process.env.LOG_LEVEL?.trim() || (process.env.NODE_ENV === "test" ? "silent" : "info"),
   base: { role: process.env.APP_ROLE?.trim() || "all" },
   serializers: { err: serializeError },
@@ -62,10 +70,23 @@ export const logger = pino({
       "*.apiKey",
       "authorization",
       "cookie",
+      // The secret fields of Admin > Email's form (`cli settings apply email`).
+      "*.mailersendToken",
+      "*.webhookSecret",
+      "*.smtpPassword",
     ],
     censor: "[redacted]",
   },
-  ...(process.env.NODE_ENV === "development" && process.stdout.isTTY
-    ? { transport: { target: "pino-pretty", options: { colorize: true, ignore: "pid,hostname" } } }
-    : {}),
-});
+};
+
+export const logger =
+  process.env.NODE_ENV === "development" && process.stdout.isTTY
+    ? pino({
+        ...options,
+        // On stderr as the JSON log of the operator command, whose stdout is its answer.
+        transport: {
+          target: "pino-pretty",
+          options: { colorize: true, ignore: "pid,hostname", destination: 2 },
+        },
+      })
+    : pino(options, { write: (line: string) => stream.write(line) });

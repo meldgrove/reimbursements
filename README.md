@@ -39,23 +39,22 @@ document sandbox, the database and the checks.
 Each operator supplies their own identity and infrastructure settings. No credentials,
 production data, or external account identifiers are included. Configure:
 
-- `PORTAL_OPERATOR`, `PORTAL_LEGAL_URL` for the footer of public pages.
 - `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM` (or `OIDC_ISSUER` for another OpenID Connect
   provider), client credentials and role groups for admin sign-in.
 - `APPROVED_DELIVERY_RECIPIENTS`, the Finance inboxes forms may send to.
 - PostgreSQL, private storage, malware scanner, TLS proxy and health check settings.
 - Optionally `SENTRY_DSN` for error reports without claim content.
 
-In the admin area under Admin > General, choose the app language (German or
-English), timezone, date format and number format (European 12,50 by default, or US
-12.50). The app language applies to public pages, emails to participants and Finance,
-and the claim PDF. Under Admin > Email, choose how the app sends email: MailerSend with
-an API token, or an SMTP server. Set the sender address there, and turn the
-participant confirmation off or write its subject and text; a test email checks the
-connection. Forms take no claims until email is set up. The environment can supply the
-MailerSend token, its webhook signing secret and the addresses instead
-(`MAILERSEND_API_TOKEN`, `MAILERSEND_WEBHOOK_SIGNING_SECRET`, `MAIL_FROM_ADDRESS`,
-`MAIL_REPLY_TO_ADDRESS`); a value set there wins. Under Admin > Appearance, optionally
+In the admin area under Admin > General, enter the operator's name and legal page for
+the footer of public pages, and choose the app language (German or English), timezone,
+date format and number format (European 12,50 by default, or US 12.50). The app
+language applies to public pages, emails to participants and Finance, and the claim
+PDF. Under Admin > Email, choose how the app sends email: MailerSend with an API token,
+or an SMTP server. Set the sender address there, and turn the participant confirmation
+off or write its subject and text; a test email checks the connection. Forms take no
+claims until email is set up. Operators, and AI with access to the server, set the same
+settings with `cli settings` ([operator commands](docs/deployment.md#operator-commands));
+the environment no longer holds them. Under Admin > Appearance, optionally
 set an accent color as a hex code and upload a favicon; both apply to public pages
 and the admin area. Without an accent color, the app uses the colors every Meldgrove
 app shares.

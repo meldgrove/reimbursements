@@ -2,7 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 import sharp from "sharp";
 import { darkAccent } from "@reimbursements/shared/theme";
-import type { User } from "../../db/schema";
+import { getDb } from "../../db/client";
+import { operations, type User } from "../../db/schema";
 import { FORM_EDITOR, TEMPLATE_ADMIN } from "../../auth/roles";
 import { loadFavicon, loadSettings, saveSettings } from "../../services/app-settings";
 import { TEST_DATABASE_URL } from "../../test/env";
@@ -55,7 +56,8 @@ function upload(content: Uint8Array, fields: Record<string, string> = {}) {
 describe("general settings", () => {
   it("are changed by template admins", async () => {
     const page = await request("GET", GENERAL, { user: admin });
-    expect(page.body.settings).toEqual(general());
+    expect(page.body.settings).toEqual(general({ operator: "", legalUrl: "" }));
+    expect(page.body.environmentNote).toBe("");
     expect(page.body.choices.numberFormats).toEqual([
       { value: "european", label: "1.234,56 (European)" },
       { value: "us", label: "1,234.56 (US)" },
@@ -89,6 +91,65 @@ describe("general settings", () => {
     });
     expect(refused.status).toBe(422);
     expect((await loadSettings()).timezone).toBe("America/New_York");
+  });
+
+  it("hold the operator and legal page of the public pages' footer", async () => {
+    const body = general({ operator: "  Example e.V. ", legalUrl: "https://example.invalid/imprint" });
+    const response = await request("PUT", GENERAL, { user: admin, body });
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect([response.body.settings.operator, response.body.settings.legalUrl]).toEqual([
+      "Example e.V.",
+      "https://example.invalid/imprint",
+    ]);
+    const meta = (await request("GET", "/api/v1/meta")).body;
+    expect([meta.operator, meta.legalUrl]).toEqual(["Example e.V.", "https://example.invalid/imprint"]);
+    // A form without the two fields (a page loaded before the update) keeps them.
+    expect((await request("PUT", GENERAL, { user: admin, body: general({ language: "en" }) })).status).toBe(
+      200,
+    );
+    expect((await loadSettings()).operator).toBe("Example e.V.");
+    const refusals: [string, string][] = [
+      ["javascript:alert(1)", "Enter a full address such as https://example.invalid/imprint."],
+      ["example.invalid/imprint", "Enter a full address such as https://example.invalid/imprint."],
+      [
+        `https://example.invalid/${"x".repeat(500)}`,
+        "Ensure this value has at most 500 characters (it has 524).",
+      ],
+    ];
+    for (const [legalUrl, error] of refusals) {
+      const refused = await request("PUT", GENERAL, { user: admin, body: general({ legalUrl }) });
+      expect(refused.status).toBe(422);
+      expect(refused.body.error.fields).toEqual({ legalUrl: error });
+    }
+    const twoLines = await request("PUT", GENERAL, { user: admin, body: general({ operator: "A\nB" }) });
+    expect(twoLines.body.error.fields).toEqual({ operator: "Write the name on one line." });
+    expect((await loadSettings()).legalUrl).toBe("https://example.invalid/imprint");
+    // Cleared: the footer shows neither.
+    await request("PUT", GENERAL, { user: admin, body: general({ operator: "", legalUrl: "" }) });
+    expect([(await loadSettings()).operator, (await loadSettings()).legalUrl]).toEqual(["", ""]);
+  });
+
+  it("log each save with the admin who made it", async () => {
+    await request("PUT", GENERAL, { user: admin, body: general() });
+    await request("POST", APPEARANCE, { user: admin, body: { accentColor: "#0f766e" } });
+    const logged = await getDb().select().from(operations).orderBy(operations.id);
+    expect(logged.map((row) => [row.action, row.actor, row.reason, row.claimId])).toEqual([
+      ["settings_general", "admin@example.invalid", "Admin > General", null],
+      ["settings_appearance", "admin@example.invalid", "Admin > Appearance", null],
+    ]);
+  });
+
+  it("name the variables of earlier versions that are still set", async () => {
+    const restoreConfig = overrideConfigForTests({ PORTAL_OPERATOR: "Example e.V." });
+    try {
+      expect((await request("GET", GENERAL, { user: admin })).body.environmentNote).toBe(
+        "PORTAL_OPERATOR is still set in the environment. The app no longer reads it: this page holds the setting. Delete it from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.",
+      );
+      // The footer shows the saved operator only.
+      expect((await request("GET", "/api/v1/meta")).body.operator).toBe("");
+    } finally {
+      restoreConfig();
+    }
   });
 
   it("show the running version", async () => {
