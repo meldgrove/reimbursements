@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeSmtpServer, parseMessage } from "../test/smtp-server";
 import type { SmtpAccount } from "./email-connection";
-import { quotedPrintable, SmtpTransport } from "./smtp";
+import { quotedPrintable, smtpReply, SmtpTransport } from "./smtp";
 import { DELIVERED, FAILED, PENDING, UNKNOWN, type Message } from "./transport";
 
 let server: FakeSmtpServer;
@@ -129,6 +129,60 @@ describe("an SMTP server", () => {
       expect([result.state, result.errorCode]).toEqual([state, code]);
     },
   );
+});
+
+describe("the mail server's answer", () => {
+  const login = { username: "kim@example.invalid", password: "pass word+1" };
+  const base64 = (text: string) => Buffer.from(text).toString("base64");
+
+  it.each([
+    [
+      "550-5.7.1 Sender address rejected\r\n550 5.7.1\tsee the docs\u0007",
+      "550-5.7.1 Sender address rejected 550 5.7.1 see the docs",
+    ],
+    // The login, as written and as AUTH sends it.
+    [`535 ${login.username} ${login.password}`, "535 *** ***"],
+    [`535 ${base64(login.username)} ${base64(login.password)}`, "535 *** ***"],
+    [`535 AUTH PLAIN ${base64(`\0${login.username}\0${login.password}`)}`, "535 AUTH PLAIN ***"],
+    // Hidden before the line is cut.
+    [`535 ${"x".repeat(190)}${login.password}`, `535 ${"x".repeat(190)}***`],
+    [`535 ${"x".repeat(500)}`, `535 ${"x".repeat(196)}`],
+    ["550", "550"],
+    // No refusal, or no mail server.
+    ["", null],
+    ["250 OK", null],
+    ["HTTP/1.1 400 Bad Request", null],
+    ["4501", null],
+  ])("is one line without the login: %j", (reply, expected) => {
+    expect(smtpReply(reply, login)).toBe(expected);
+  });
+
+  it("works without a login", () => {
+    expect(smtpReply("550 No such user", { username: "", password: "" })).toBe("550 No such user");
+  });
+
+  it.each([
+    [{ greeting: "554 Not from your address" }, "554 Not from your address"],
+    [{ authRefusal: "535-Wrong login:\r\n535 not s3cret " }, "535-Wrong login: 535 not ***"],
+    [{ rcptReply: "550 No such user" }, "550 No such user"],
+    [{ rcptReply: "550" }, "550"],
+    [{ dataReply: "452 Mailbox full" }, "452 Mailbox full"],
+    [{ greeting: "HTTP/1.1 400 Bad Request" }, null],
+    // FTP greets with 220 and refuses EHLO, then MAIL.
+    [{ ehloReply: "500 Unknown command", rcptReply: "530 Please login" }, null],
+    // The connection ends without an answer.
+    [{ drop: "data" as const }, null],
+    [{}, null],
+  ])("is the one to the last command, and no part of the result (%j)", async (changes, expected) => {
+    // A password may end with a space.
+    server.credentials = ["kim", "authRefusal" in changes ? "other" : "s3cret "];
+    Object.assign(server, changes);
+    const username = "ehloReply" in changes ? "" : "kim";
+    const transport = new SmtpTransport(account({ username, password: "s3cret " }));
+    const result = await transport.send(message());
+    expect(smtpReply(transport.lastReply, transport.account)).toBe(expected);
+    expect(Object.keys(result).sort()).toEqual(["errorCode", "messageId", "retryAfter", "state"]);
+  });
 });
 
 describe("quoted-printable", () => {

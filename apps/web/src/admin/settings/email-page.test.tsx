@@ -43,7 +43,6 @@ function emailPage(overrides: Partial<EmailSettingsPage> = {}): EmailSettingsPag
       },
     },
     secrets: { mailersendToken: NOTHING, webhookSecret: NOTHING, smtpPassword: NOTHING },
-    environmentNote: "",
     status: {
       state: "not_set_up",
       label: "Not set up",
@@ -243,27 +242,6 @@ describe("Admin › Email", () => {
     await user.click(screen.getByLabelText("Delete the saved password"));
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Delete it or enter a new one, not both.")).toBeInTheDocument();
-  });
-
-  it("names variables of earlier versions still set, and leaves every field open", async () => {
-    const note =
-      "MAILERSEND_API_TOKEN and MAIL_FROM_ADDRESS are still set in the environment. The app no longer reads them: this page holds the setting. Delete them from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.";
-    mockApi({
-      ...meta,
-      [`GET ${URL}`]: {
-        body: emailPage({
-          settings: { ...emailPage().settings, provider: "mailersend", fromAddress: "kim@example.invalid" },
-          secrets: { mailersendToken: SAVED, webhookSecret: NOTHING, smtpPassword: NOTHING },
-          environmentNote: note,
-        }),
-      },
-    });
-    await openPage();
-    expect(screen.getByTestId("environment-note")).toHaveTextContent(note);
-    expect(screen.getByLabelText("Send email with")).toBeEnabled();
-    expect(screen.getByLabelText("Sender address")).toBeEnabled();
-    expect(screen.getByLabelText("API token")).toBeEnabled();
-    expect(screen.getByLabelText("Delete the saved API token")).toBeInTheDocument();
   });
 
   it("says what MailerSend misses without a signing secret, and that a secret no longer opens", async () => {

@@ -41,7 +41,6 @@ const TABLES = [
   "portal_privacynotice",
   "portal_appsettings",
   "portal_emailsettings",
-  "portal_environmentimport",
   "auth_user_groups",
   "auth_group",
   "auth_user",
@@ -233,9 +232,9 @@ export const TEST_EMAIL = {
 };
 
 /**
- * Saves the tests' email settings: MailerSend with TEST_EMAIL, as 0.5.0's tests set
- * them in the environment, with `changes` (secrets in plain text, sealed here).
- * MAIL_DELIVERY_MODE=local still keeps every email in the outbox.
+ * Saves the tests' email settings: MailerSend with TEST_EMAIL, with `changes` (secrets
+ * in plain text, sealed here). MAIL_DELIVERY_MODE=local still keeps every email in the
+ * outbox.
  */
 export async function useEmailSettings(
   changes: Partial<Omit<EmailSettingsValues, `${SecretName}Sealed`>> &

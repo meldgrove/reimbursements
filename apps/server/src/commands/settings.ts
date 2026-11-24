@@ -8,8 +8,6 @@
  * as the operator: an actor that only this module creates, with a template admin's
  * rights, logged as `operator` with the command. Secrets come only on stdin, in the
  * JSON body the page sends; nothing prints or logs them (the pages show none either).
- * Like every process, the command first copies the variables of earlier versions into
- * the settings (services/environment-import.ts), once its arguments and body are read.
  */
 import type { ReadStream } from "node:tty";
 import { parseArgs } from "node:util";
@@ -25,8 +23,6 @@ import {
   saveAppearance,
   saveGeneral,
 } from "../services/general-settings";
-import { importForCommand } from "../services/environment-import";
-import { DELETE_WHEN, leftoverVariables } from "../services/moved-variables";
 import { SETTING_NAMES, type SettingName, type SettingsActor } from "../services/settings-audit";
 import { CommandError, registerCommand, UsageError } from "./registry";
 
@@ -143,22 +139,14 @@ async function summary(name: SettingName): Promise<Summary> {
 async function list(args: string[]) {
   const { values, positionals } = parse(args, ["json"]);
   if (positionals.length || values.id !== undefined) throw new UsageError(USAGE);
-  await importForCommand();
   const rows = [];
-  for (const name of SETTING_NAMES)
-    rows.push({ ...(await summary(name)), environment: leftoverVariables(name) });
+  for (const name of SETTING_NAMES) rows.push(await summary(name));
   if (values.json) {
     out(JSON.stringify(rows, null, 2));
     return;
   }
   for (const row of rows) {
     out(`${row.name.padEnd(11)} ${row.state.padEnd(11)} ${row.hints.join(", ")}`);
-    if (row.environment.length) {
-      out(`${" ".repeat(24)}also still in the environment, no longer read: ${row.environment.join(", ")}`);
-    }
-  }
-  if (rows.some((row) => row.environment.length)) {
-    out(`Delete the variables still in the environment from .env ${DELETE_WHEN}.`);
   }
 }
 
@@ -246,7 +234,6 @@ async function apply(args: string[]) {
   const name = settingOf(positionals, values.id);
   // The whole body first: nothing is read or locked while stdin is open.
   const body = await readBody();
-  await importForCommand();
   const actor = operator(`apply ${name}`);
   await asOperator(async () => {
     if (name === "email") await saveEmail(body, actor);
@@ -266,7 +253,6 @@ async function test(args: string[]) {
   if (name !== "email") throw new UsageError(`${name} has no test; only email has one.`);
   if (!values.to) throw new UsageError("Name the recipient: cli settings test email --to <address>.");
   const to = values.to;
-  await importForCommand();
   const answer = await asOperator(() => testEmail(to));
   if (!answer.reached) throw new CommandError(answer.message);
   out(answer.message);
@@ -282,7 +268,6 @@ registerCommand("settings", {
       case "show": {
         const { values, positionals } = parse(rest);
         const name = settingOf(positionals, values.id);
-        await importForCommand();
         out(JSON.stringify(await shown(name), null, 2));
         return;
       }
