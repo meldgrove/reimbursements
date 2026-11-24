@@ -356,13 +356,18 @@ export function config(): Config {
     problems.push("APP_URL: Must be an https:// URL in production (http only for localhost)");
   }
 
-  const secret = value.AUTH_SECRET ?? value.DJANGO_SECRET_KEY ?? (isDevelopment ? DEV_SECRET : "");
+  // compose.yaml passes AUTH_SECRET empty when .env names neither secret: such a
+  // deployment needs one in development mode too, not the built-in key.
+  const devSecret = isDevelopment && process.env.AUTH_SECRET === undefined ? DEV_SECRET : "";
+  const secret = value.AUTH_SECRET ?? value.DJANGO_SECRET_KEY ?? devSecret;
   if (!isDevelopment) {
     // The rule of the Django version: long, not trivially repetitive, not an example.
     if (!secret) problems.push("AUTH_SECRET: Set a random secret of at least 50 characters");
     else if (secret.startsWith("development-") || secret.length < 50 || new Set(secret).size < 5) {
       problems.push("AUTH_SECRET: Must be a random secret of at least 50 characters");
     }
+  } else if (!secret) {
+    problems.push("AUTH_SECRET: Set a random secret of at least 32 characters");
   } else if (secret.length < 32) {
     problems.push("AUTH_SECRET: Must have at least 32 characters");
   }
