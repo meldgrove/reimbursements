@@ -1,0 +1,41 @@
+# A ClamAV that answers PING and finds nothing, for the compose-compat job
+# (meldgrove/.github compose-compat.yml): the real one needs minutes and the
+# internet to load its signatures. Served by Node.js of the image under test.
+services:
+  scanner:
+    image: ghcr.io/meldgrove/reimbursements:${REIMBURSEMENTS_VERSION}
+    entrypoint: ["node", "-e"]
+    command:
+      - |
+        require("node:net")
+          .createServer((socket) => {
+            let buffer = Buffer.alloc(0);
+            let streaming = false;
+            socket.on("data", (data) => {
+              buffer = Buffer.concat([buffer, data]);
+              if (!streaming) {
+                if (buffer.toString().startsWith("zPING\0")) return socket.end("PONG\0");
+                if (!buffer.toString().startsWith("zINSTREAM\0")) return;
+                streaming = true;
+                buffer = buffer.subarray(10);
+              }
+              while (buffer.length >= 4) {
+                const size = buffer.readUInt32BE(0);
+                if (size === 0) return socket.end("stream: OK\0");
+                if (buffer.length < 4 + size) return;
+                buffer = buffer.subarray(4 + size);
+              }
+            });
+          })
+          .listen(3310);
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const s=require('node:net').connect(3310,'127.0.0.1',()=>s.write('zPING\\0'));s.on('data',(d)=>process.exit(d.toString().startsWith('PONG')?0:1));s.on('error',()=>process.exit(1))",
+        ]
+      interval: 2s
+      start_period: 5s
+      retries: 10
