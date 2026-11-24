@@ -3,11 +3,8 @@
  * (portal/services/email_connection.py and the EmailSettings model of the Django version).
  *
  * Admins set it up under Admin > Email (the `portal_emailsettings` row), or the operator
- * with `cli settings apply email`: MailerSend with an API token, or an SMTP server. Up to
- * 0.5.0, MAILERSEND_API_TOKEN, MAILERSEND_WEBHOOK_SIGNING_SECRET, MAIL_FROM_ADDRESS and
- * MAIL_REPLY_TO_ADDRESS in the environment won over the fields; each process now copies
- * them into the row once (services/environment-import.ts) and never reads them again.
- * With MAIL_DELIVERY_MODE=local, in development, every email stays in a private outbox
+ * with `cli settings apply email`: MailerSend with an API token, or an SMTP server. With
+ * MAIL_DELIVERY_MODE=local, in development, every email stays in a private outbox
  * instead, from placeholder addresses while none are saved.
  *
  * Forms take no claims until the connection is ready (`terms.refusal`).

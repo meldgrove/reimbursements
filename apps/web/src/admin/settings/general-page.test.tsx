@@ -19,7 +19,6 @@ function generalPage(overrides: Partial<GeneralSettingsPage> = {}): GeneralSetti
       operator: "",
       legalUrl: "",
     },
-    environmentNote: "",
     choices: {
       languages: [
         { value: "de", label: "Deutsch" },
@@ -70,14 +69,5 @@ describe("Admin › General", () => {
       operator: "Example e.V.",
       legalUrl: "https://example.invalid/imprint",
     });
-  });
-
-  it("names variables of earlier versions that are still set", async () => {
-    const note =
-      "PORTAL_OPERATOR is still set in the environment. The app no longer reads it: this page holds the setting. Delete it from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.";
-    mockApi({ ...meta, [`GET ${URL}`]: { body: generalPage({ environmentNote: note }) } });
-    renderApp("/admin/general");
-    await screen.findByRole("heading", { name: "General", level: 1 });
-    expect(screen.getByTestId("environment-note")).toHaveTextContent(note);
   });
 });

@@ -27,7 +27,7 @@ cp "$root/tests/upgrade/compose.fakes.yaml" "$work/compose.fakes.yaml"
 random() { node -e "process.stdout.write(require('crypto').randomBytes($1).toString('hex'))"; }
 password=$(random 24)
 token=$(random 24)
-# MailerSend's token and signing secret of 0.4's .env, which the import seals.
+# MailerSend's token and signing secret of 0.4's .env, which this version ignores.
 secret=$(random 24)
 # A .env of 0.4 (.env.production.example of 0.4.0), with the bundled PostgreSQL.
 cat > "$work/.env" << ENV
@@ -143,20 +143,13 @@ old_commands_run() {
   test "$status" = 127
 }
 
-# The email settings 0.4 read from .env are in the database, copied once with an audit
-# entry, and the operator command shows them without a secret, in a one-off container
-# of the compose file and in the running web container (`cli` on the PATH).
-settings_imported() {
-  test "$(sql "select provider || ' ' || from_address || ' ' || reply_to_address from portal_emailsettings")" = \
-    "mailersend no-reply@example.invalid finance@example.invalid"
-  test "$(sql "select count(*) from portal_environmentimport where copied")" = 4
-  test "$(sql "select count(*) from portal_operation where actor = 'environment'")" = 1
-  test "$(sql "select count(*) from portal_emailsettings where mailersend_token_sealed like '%$secret%'")" = 0
+# The operator command runs in a one-off container of the compose file and in the running
+# web container (`cli` on the PATH). The email variables of 0.4's .env are ignored.
+operator_command_runs() {
   listed=$(compose run --rm -T migrate cli settings list 2> /dev/null)
-  grep -q '^email  *set  *MailerSend, sender set, reply address set' <<< "$listed"
-  grep -q 'no longer read: MAILERSEND_API_TOKEN, MAILERSEND_WEBHOOK_SIGNING_SECRET' <<< "$listed"
+  grep -q '^email  *not set' <<< "$listed"
   shown=$(compose exec -T web cli settings show email)
-  grep -q '"provider": "mailersend"' <<< "$shown"
+  grep -q '"provider": ""' <<< "$shown"
   if grep -q "$secret" <<< "$listed$shown"; then
     echo "cli settings printed a secret" >&2
     return 1
@@ -242,9 +235,9 @@ install "${target#*:}"
 checked
 work_taken_over
 old_commands_run
-settings_imported
+operator_command_runs
 write_with_new_version
-echo "The image runs with the compose file of 0.4, took over its queued work and copied its email settings."
+echo "The image runs with the compose file of 0.4 and took over its queued work."
 
 # The deploy script's rollback, after a later failure.
 install 0.4.0
@@ -261,5 +254,5 @@ echo "Installed again after the rollback."
 cp "$root/compose.yaml" "$work/compose.yaml"
 compose up --detach --wait --wait-timeout 300 --quiet-pull
 checked
-settings_imported
+operator_command_runs
 echo "Runs with its own compose.yaml and the .env of 0.4."

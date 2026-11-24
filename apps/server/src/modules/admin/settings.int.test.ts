@@ -57,7 +57,6 @@ describe("general settings", () => {
   it("are changed by template admins", async () => {
     const page = await request("GET", GENERAL, { user: admin });
     expect(page.body.settings).toEqual(general({ operator: "", legalUrl: "" }));
-    expect(page.body.environmentNote).toBe("");
     expect(page.body.choices.numberFormats).toEqual([
       { value: "european", label: "1.234,56 (European)" },
       { value: "us", label: "1,234.56 (US)" },
@@ -137,19 +136,6 @@ describe("general settings", () => {
       ["settings_general", "admin@example.invalid", "Admin > General", null],
       ["settings_appearance", "admin@example.invalid", "Admin > Appearance", null],
     ]);
-  });
-
-  it("name the variables of earlier versions that are still set", async () => {
-    const restoreConfig = overrideConfigForTests({ PORTAL_OPERATOR: "Example e.V." });
-    try {
-      expect((await request("GET", GENERAL, { user: admin })).body.environmentNote).toBe(
-        "PORTAL_OPERATOR is still set in the environment. The app no longer reads it: this page holds the setting. Delete it from .env once a rollback to 0.5.0 or older is no longer planned and compose.yaml is no longer 0.4's, which requires the email variables.",
-      );
-      // The footer shows the saved operator only.
-      expect((await request("GET", "/api/v1/meta")).body.operator).toBe("");
-    } finally {
-      restoreConfig();
-    }
   });
 
   it("show the running version", async () => {

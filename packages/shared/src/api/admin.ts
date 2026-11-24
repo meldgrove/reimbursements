@@ -220,11 +220,6 @@ export type GeneralSettingsForm = {
 
 export type GeneralSettingsPage = {
   settings: Required<GeneralSettingsForm>;
-  /**
-   * Variables of earlier versions' environment that are still set although the app no
-   * longer reads them (PORTAL_OPERATOR, PORTAL_LEGAL_URL), with what to do; "" for none.
-   */
-  environmentNote: string;
   choices: {
     languages: FilterOption[];
     timezones: FilterOption[];
@@ -316,11 +311,6 @@ export type EmailSettingsPage = {
     confirmation: Record<string, { subject: string; body: string }>;
   };
   secrets: Record<EmailSecretName, EmailSecretState>;
-  /**
-   * Variables of earlier versions' environment that are still set although the app no
-   * longer reads them (MAILERSEND_API_TOKEN …), with what to do; "" for none.
-   */
-  environmentNote: string;
   /** The Status block. */
   status: {
     state: "local" | "ready" | "not_set_up";

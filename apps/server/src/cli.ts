@@ -3,7 +3,6 @@ import { CommandError, COMMANDS, UsageError } from "./commands";
 import { flushErrorReports, tagRole } from "./error-reporting";
 import { logger, logToStderr } from "./logger";
 import { OperatorError } from "./operator-error";
-import { importForCommand } from "./services/environment-import";
 import { SETTING_NAMES } from "./services/settings-audit";
 
 /** Runs an operator command (commands/): `cli <command> [arguments]`, `cli help` lists them. */
@@ -19,9 +18,6 @@ export async function runCli(argv: string[]): Promise<number> {
     );
     return name && name !== "help" ? 2 : 0;
   }
-  // As every process does at start; `migrate` does it after migrating, `settings` after
-  // checking its arguments and reading its body.
-  if (name !== "migrate" && name !== "settings") await importForCommand();
   return (await command.run(args)) ?? 0;
 }
 

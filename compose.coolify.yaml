@@ -50,17 +50,8 @@ x-application: &application
     KEYCLOAK_ADMIN_GROUP: ${KEYCLOAK_ADMIN_GROUP:-/reimbursements/admins}
     KEYCLOAK_EDITOR_GROUP: ${KEYCLOAK_EDITOR_GROUP:-/reimbursements/editors}
     # Email, the operator and the legal page are set under Admin > Email and General, or
-    # with `cli settings` (docs/deployment.md). Versions up to 0.5.0 read these six from
-    # .env: each process copies them there once and ignores them afterwards. They stay
-    # here for servers that start this file before the copy; delete them from .env once
-    # a rollback to 0.5.0 or older, which reads them, is no longer planned.
+    # with `cli settings` (docs/deployment.md).
     MAIL_DELIVERY_MODE: send
-    MAILERSEND_API_TOKEN: ${MAILERSEND_API_TOKEN:-}
-    MAILERSEND_WEBHOOK_SIGNING_SECRET: ${MAILERSEND_WEBHOOK_SIGNING_SECRET:-}
-    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
-    MAIL_REPLY_TO_ADDRESS: ${MAIL_REPLY_TO_ADDRESS:-}
-    PORTAL_OPERATOR: ${PORTAL_OPERATOR:-}
-    PORTAL_LEGAL_URL: ${PORTAL_LEGAL_URL:-}
     APPROVED_DELIVERY_RECIPIENTS: ${APPROVED_DELIVERY_RECIPIENTS:?Set the approved accounting inboxes}
     TEST_RECIPIENT_ALLOWLIST: ${TEST_RECIPIENT_ALLOWLIST:-}
     UPLOAD_SCANNER: clamav

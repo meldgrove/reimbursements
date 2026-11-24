@@ -12,6 +12,11 @@ export class FakeSmtpServer {
   credentials: [string, string] | null = null;
   /** "data": close on DATA; "content": close after reading the content, before the answer. */
   drop: "" | "data" | "content" = "";
+  greeting = "220 fake.example.invalid ESMTP";
+  /** Instead of the usual answer to EHLO. */
+  ehloReply = "";
+  /** The answer to a wrong login. */
+  authRefusal = "535 Authentication failed";
   rcptReply = "250 OK";
   dataReply = "250 Queued";
   /** Written as is after the content instead of `dataReply`, then the server closes. */
@@ -40,7 +45,7 @@ export class FakeSmtpServer {
     const reply = (line: string) => socket.write(`${line}\r\n`);
     let buffer = Buffer.alloc(0);
     let content: Buffer | null = null;
-    reply("220 fake.example.invalid ESMTP");
+    reply(this.greeting);
     socket.on("data", (chunk: Buffer) => {
       buffer = Buffer.concat([buffer, chunk]);
       for (;;) {
@@ -70,7 +75,8 @@ export class FakeSmtpServer {
         const verb = command.split(" ", 1)[0]!.toUpperCase();
         this.commands.push(verb);
         if (verb === "EHLO") {
-          if (this.credentials) {
+          if (this.ehloReply) reply(this.ehloReply);
+          else if (this.credentials) {
             reply("250-fake.example.invalid");
             reply("250 AUTH PLAIN");
           } else reply("250 fake.example.invalid");
@@ -79,7 +85,7 @@ export class FakeSmtpServer {
             .toString("utf8")
             .split("\0");
           const ok = this.credentials && user === this.credentials[0] && password === this.credentials[1];
-          reply(ok ? "235 Authenticated" : "535 Authentication failed");
+          reply(ok ? "235 Authenticated" : this.authRefusal);
         } else if (verb === "MAIL") {
           this.envelope.from = command;
           reply("250 OK");

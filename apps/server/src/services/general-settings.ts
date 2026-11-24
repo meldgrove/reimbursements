@@ -33,7 +33,6 @@ import {
   operatorProblem,
   saveSettings,
 } from "./app-settings";
-import { environmentNote } from "./moved-variables";
 import { lockSettings, recordSettingsChange, type SettingsActor } from "./settings-audit";
 
 /** The timezones of the General page: Django's list, and the stored one also when the list lacks it. */
@@ -51,7 +50,6 @@ export function generalPage(settings: GeneralSettings): GeneralSettingsPage {
       operator: settings.operator,
       legalUrl: settings.legalUrl,
     },
-    environmentNote: environmentNote("general"),
     choices: {
       languages: LANGUAGES.map(([value, label]) => ({ value, label })),
       timezones: timezoneChoices(settings.timezone).map((name) => ({

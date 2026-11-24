@@ -36,6 +36,9 @@ const MAX_CHALLENGES = 5;
 
 /** The server refused before the message content was sent. Holds the error code. */
 export class Refused extends Error {
+  /** `Session.lastReply` at the refusal. */
+  lastReply = "";
+
   constructor(
     readonly code: string,
     readonly retryAfter = 60,
@@ -63,6 +66,10 @@ class Session {
   private notify: (() => void) | null = null;
   /** The extensions of the last EHLO answer, by lower-case keyword (smtplib's esmtp_features). */
   features = new Map<string, string>();
+  /** The server's reply to what was sent last, as it wrote it; "" without one. For `smtpReply`. */
+  lastReply = "";
+  /** A server that refuses EHLO is no mail server (FTP greets and refuses alike): never quoted. */
+  private ehloRefused = false;
 
   constructor(
     private socket: net.Socket,
@@ -125,6 +132,7 @@ class Session {
    */
   async reply({ complete = false } = {}): Promise<Reply> {
     const lines: string[] = [];
+    let raw = "";
     let first: string | undefined;
     for (;;) {
       const line = await this.line();
@@ -134,6 +142,7 @@ class Session {
         if (line.at(-1) !== 0x0a || !head || (first ?? head[1]) !== head[1]) throw new Error("Unclear reply");
         first = head[1];
       }
+      raw += line.toString("utf8");
       lines.push(
         line
           .subarray(4)
@@ -144,11 +153,15 @@ class Session {
         ? Number(line.subarray(0, 3).toString("latin1"))
         : Number.NaN;
       if (Number.isNaN(code)) return { code: -1, text: lines.join("\n") };
-      if (line.subarray(3, 4).toString("latin1") !== "-") return { code, text: lines.join("\n") };
+      if (line.subarray(3, 4).toString("latin1") !== "-") {
+        this.lastReply = this.ehloRefused ? "" : raw.replace(/\r?\n$/, "");
+        return { code, text: lines.join("\n") };
+      }
     }
   }
 
   send(content: Buffer | string) {
+    this.lastReply = "";
     if (this.ended) throw this.ended;
     this.socket.write(content);
   }
@@ -165,7 +178,11 @@ class Session {
     this.features = new Map();
     const reply = await this.command(`ehlo ${localHostname()}`);
     if (reply.code === -1 && !reply.text) throw new Error("Server not connected");
-    if (reply.code !== 250) return reply;
+    if (reply.code !== 250) {
+      this.ehloRefused = true;
+      this.lastReply = "";
+      return reply;
+    }
     for (const line of reply.text.split("\n").slice(1)) {
       const oldStyle = /^auth=(.*)/i.exec(line);
       if (oldStyle) {
@@ -323,11 +340,16 @@ async function connect(account: SmtpAccount, timeoutMs: number): Promise<Session
     }
     return session;
   } catch (error) {
-    if (session) await close(session);
-    if (error instanceof Refused) throw error;
-    if (error instanceof LoginRefused) throw new Refused("smtp_login_failed", 900);
-    if (error instanceof TlsFailed) throw new Refused("smtp_tls_failed", 900);
-    throw new Refused("smtp_connection");
+    let refused: Refused;
+    if (error instanceof Refused) refused = error;
+    else if (error instanceof LoginRefused) refused = new Refused("smtp_login_failed", 900);
+    else if (error instanceof TlsFailed) refused = new Refused("smtp_tls_failed", 900);
+    else refused = new Refused("smtp_connection");
+    if (session) {
+      refused.lastReply = session.lastReply;
+      await close(session);
+    }
+    throw refused;
   }
 }
 
@@ -339,6 +361,29 @@ async function close(session: Session) {
     // closed already
   }
   session.close();
+}
+
+/**
+ * The mail server's own answer to a failed test email, for the admin who sent it: one
+ * line, without the login, at most 200 characters. null when `reply` is no refusal, or
+ * what answered is no mail server (its text is never quoted). Never store or log it.
+ */
+export function smtpReply(
+  reply: string,
+  { username, password }: Pick<SmtpAccount, "username" | "password">,
+): string | null {
+  if (!/^[45]\d\d(?:[ -]|$)/.test(reply)) return null;
+  const base64 = (text: string) => Buffer.from(text).toString("base64");
+  const parts = [username, password].filter(Boolean);
+  const hidden = [...parts, ...parts.map(base64), base64(`\0${username}\0${password}`)].sort(
+    (a, b) => b.length - a.length,
+  );
+  let text = reply;
+  for (const secret of hidden) text = text.replaceAll(secret, "***");
+  return text
+    .replace(/[\p{C}\s]+/gu, " ")
+    .trim()
+    .slice(0, 200);
 }
 
 /** The result of a refusal with SMTP reply `code`: 5xx is permanent, 4xx temporary. */
@@ -471,6 +516,9 @@ export function smtpMessage(message: Message, now = new Date()): Buffer {
 
 /** Deployment transport: an SMTP server. */
 export class SmtpTransport implements Transport {
+  /** `Session.lastReply` when the last `send` ended. */
+  lastReply = "";
+
   constructor(
     readonly account: SmtpAccount,
     readonly timeoutSeconds = TIMEOUT_SECONDS,
@@ -483,6 +531,7 @@ export class SmtpTransport implements Transport {
       session = await connect(this.account, this.timeoutSeconds * 1000);
     } catch (error) {
       if (error instanceof Refused) {
+        this.lastReply = error.lastReply;
         return sendResult(PENDING, { errorCode: error.code, retryAfter: error.retryAfter });
       }
       throw error;
@@ -490,6 +539,7 @@ export class SmtpTransport implements Transport {
     try {
       return await transmit(session, message, content);
     } finally {
+      this.lastReply = session.lastReply;
       await close(session);
     }
   }

@@ -3,14 +3,12 @@ import { runMigrations } from "../db/migrate";
 import { users } from "../db/schema";
 import { atomic, q } from "../db/tx";
 import { config } from "../config";
-import { importForCommand } from "../services/environment-import";
 import { CommandError, option, registerCommand } from "./registry";
 
 registerCommand("migrate", {
   usage: "migrate                                 apply database migrations",
   run: async () => {
     await runMigrations();
-    await importForCommand();
   },
 });
 
