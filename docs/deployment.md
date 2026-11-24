@@ -4,7 +4,7 @@ Use `compose.yaml` for the web process, worker, scanner, migration job and updat
 Linux server with Debian 13 or later, or a similar system with systemd and apt such as
 Ubuntu 24.04. The document sandbox needs Linux 6.2 or later (Landlock ABI 3); Debian 12
 runs Linux 6.1. The file runs the published release image; `REIMBURSEMENTS_VERSION`
-names the release series, such as `0.5`, and automatic updates set it to the exact
+names the release series, such as `0.6`, and automatic updates set it to the exact
 version they install (see [automatic updates](updates.md)). The branch `stable` is at
 the newest release; `main` has changes that are not released yet. Caddy on the same
 server terminates HTTPS and routes the public hostname to the web service only. Keep
