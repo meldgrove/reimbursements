@@ -22,7 +22,9 @@ x-application: &application
     DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-production}
     # Signs sessions: a random secret of at least 50 characters. The Django
     # version's DJANGO_SECRET_KEY stands in; AUTH_SECRET wins when both are set.
-    AUTH_SECRET: ${AUTH_SECRET:-${DJANGO_SECRET_KEY:?Set AUTH_SECRET to a random secret of at least 50 characters}}
+    # Without either, the app does not start and names AUTH_SECRET. No :? inside:
+    # Docker Compose 2.x would then require the old name even next to the new.
+    AUTH_SECRET: ${AUTH_SECRET:-${DJANGO_SECRET_KEY:-}}
     # Still opens the secrets entered under Admin > Email that a version before sealed
     # with it, when AUTH_SECRET differs.
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}

@@ -84,6 +84,16 @@ describe("production settings", () => {
     expect(starts({ ...BASE, ...override })).toBe(accepted);
   });
 
+  it("names AUTH_SECRET when compose.yaml passes it empty: neither name is in .env", () => {
+    expect(starts({ ...BASE, AUTH_SECRET: "", DJANGO_SECRET_KEY: "" })).toBe(false);
+    expect(() => config()).toThrow(/AUTH_SECRET: Set a random secret of at least 50 characters/);
+    // Development mode too: only a run without the variable gets the built-in key.
+    const development = { PRIVATE_STORAGE_ROOT: "/tmp/private", DEPLOYMENT_ENV: "development" };
+    expect(starts({ ...development, AUTH_SECRET: "", DJANGO_SECRET_KEY: "" })).toBe(false);
+    expect(() => config()).toThrow(/AUTH_SECRET: Set a random secret of at least 32 characters/);
+    expect(starts(development)).toBe(true);
+  });
+
   it.each([
     ["local", "no-reply@example.invalid", "finance@example.invalid"],
     ["send", "", ""],

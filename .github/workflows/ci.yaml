@@ -52,6 +52,31 @@ jobs:
       - name: Check public repository contents
         run: node scripts/check-public-repository.mjs
 
+      # Docker Compose 2.x (this runner's) checks a :? inside a fallback even when
+      # the variable before it is set. A new server's .env has only the new names;
+      # one upgraded from the Django version may have only the old.
+      - name: The compose files take only the new or only the old names
+        run: |
+          docker compose version
+          shared=(REIMBURSEMENTS_VERSION=0.5 POSTGRES_PASSWORD=ci-only
+            DATABASE_URL=postgresql://reimbursements:ci-only@postgres:5432/reimbursements
+            TRUSTED_PROXY_CIDRS=172.16.0.0/12 HEALTHCHECK_TOKEN=ci-only
+            KEYCLOAK_BASE_URL=https://sso.example.invalid KEYCLOAK_REALM=reimbursements
+            OIDC_CLIENT_ID=reimbursements OIDC_CLIENT_SECRET=ci-only
+            APPROVED_DELIVERY_RECIPIENTS=finance@example.invalid)
+          printf '%s\n' "${shared[@]}" APP_URL=https://reimbursements.example.invalid AUTH_SECRET=ci-only \
+            >"$RUNNER_TEMP/new.env"
+          printf '%s\n' "${shared[@]}" CSRF_TRUSTED_ORIGINS=https://reimbursements.example.invalid \
+            DJANGO_SECRET_KEY=ci-only >"$RUNNER_TEMP/old.env"
+          for names in new old; do
+            echo "Only the $names names"
+            for files in "-f compose.yaml -f compose.postgres.yaml" "-f compose.coolify.yaml"; do
+              # shellcheck disable=SC2086 # the -f options
+              docker compose --env-file "$RUNNER_TEMP/$names.env" $files config --format json |
+                jq -e '.services.web.environment.AUTH_SECRET == "ci-only"'
+            done
+          done
+
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run format:check
@@ -257,7 +282,7 @@ jobs:
     name: Compose files of the newest release
     permissions:
       contents: read
-    uses: meldgrove/.github/.github/workflows/compose-compat.yml@401e2112820727724d7143307850eaeceac6d5f0 # v1.2.0
+    uses: meldgrove/.github/.github/workflows/compose-compat.yml@be24d5a706d2e266492e3e910a23cde3d04aef36 # v1.2.1
     with:
       version_variable: REIMBURSEMENTS_VERSION
       env_file: .github/compose-compat.env
