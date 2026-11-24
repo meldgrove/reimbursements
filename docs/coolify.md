@@ -41,6 +41,8 @@ differences:
   `0.0.0.0/0`.
 - For automatic updates, add `UPDATE_DEPLOY_HOOK_URL` and `UPDATE_DEPLOY_HOOK_TOKEN`
   ([automatic updates](#automatic-updates)).
+- Set `UPDATER_TOKEN` to a random value (`openssl rand -hex 32`, recommended): the app
+  sends it, and the updater then takes requests only with it.
 
 Email, the operator's name and the legal page are not environment variables: set them
 in the app (Admin > Email, Admin > General) or with `cli settings` in the terminal
@@ -150,6 +152,20 @@ new image. The `updater` container's log says which tag it watches, and later ea
 deployment it starts or that Coolify refused. To switch it off, clear
 `UPDATE_DEPLOY_HOOK_URL` and redeploy; setting `REIMBURSEMENTS_VERSION` to an exact
 version also stops updates once it is deployed.
+
+### Protect the update service
+
+Recommended, not required: without `UPDATER_TOKEN`, everything works as before. Do it
+once the resource runs the release that brings `UPDATER_TOKEN` or a newer one, and the
+tag in `REIMBURSEMENTS_VERSION` gives that release or a newer one: each deploy pulls the
+tag again, and an older app sends no token, so its update button would be refused.
+
+1. In the resource's environment variables, add `UPDATER_TOKEN` with a value from
+   `openssl rand -hex 32`.
+2. Redeploy. Coolify reads `compose.coolify.yaml` from `stable`, which passes the token
+   to the app and the updater, and pulls the newest updater 0.2.x.
+
+Admin > Updates warns until it is done (updater 0.2.4 and later).
 
 ## Moving an existing resource
 

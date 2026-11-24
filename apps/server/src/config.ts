@@ -115,6 +115,16 @@ const schema = z
         error: "Must be empty or a URL such as http://updater:8080",
       }),
     ),
+    /**
+     * Sent to the updater as `Authorization: Bearer <token>`. compose.yaml gives
+     * the updater the same value (API_TOKEN), and it then refuses requests
+     * without it. Unset: no token.
+     */
+    UPDATER_TOKEN: optional(
+      z
+        .string()
+        .regex(/^[\x21-\x7e]+$/, "Only visible ASCII characters, without spaces (openssl rand -hex 32)"),
+    ),
     // Limits (docs/operations.md).
     MAX_FINAL_PDF_BYTES: integer(10_000_000, 1),
     MAX_UPLOADS_PER_NETWORK: integer(5000),

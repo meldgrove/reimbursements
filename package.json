@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@meldgrove/ui": "^0.1.9",
     "@types/node": "26.6.6",
     "eslint": "10.15.0",
     "eslint-plugin-react-hooks": "7.1.1",

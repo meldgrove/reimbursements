@@ -249,3 +249,16 @@ jobs:
         run: |
           docker logs web || true
           docker logs worker || true
+
+  # The updater installs images, not files: each new image must start with the
+  # compose files of the newest release (branch stable), as servers have them.
+  # ClamAV gets a stand-in; the real one loads its signatures for minutes.
+  compose-compat:
+    name: Compose files of the newest release
+    permissions:
+      contents: read
+    uses: meldgrove/.github/.github/workflows/compose-compat.yml@401e2112820727724d7143307850eaeceac6d5f0 # v1.2.0
+    with:
+      version_variable: REIMBURSEMENTS_VERSION
+      env_file: .github/compose-compat.env
+      extra_compose_files: .github/compose-compat.fakes.yaml

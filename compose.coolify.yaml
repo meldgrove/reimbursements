@@ -83,6 +83,9 @@ x-application: &application
     # The updater's API for the admins' update button. An empty value falls back to the
     # default here, so it cannot switch the button off.
     UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
+    # Sent with every request to the updater, which then requires it (API_TOKEN below).
+    # Recommended: a random value such as `openssl rand -hex 32`. Empty: no token.
+    UPDATER_TOKEN: ${UPDATER_TOKEN:-}
   volumes:
     - private_data:/app/var/private
   tmpfs:
@@ -162,7 +165,7 @@ services:
   # Automatic updates and the admins' update button (docs/coolify.md). It checks for new
   # versions always, and with UPDATE_DEPLOY_HOOK_URL set, calls Coolify's deploy link
   # when the tag in REIMBURSEMENTS_VERSION points to a new image: the tag decides what
-  # installs. Its API on port 8080 has no authentication: never publish the port.
+  # installs. Only the app reaches its API on port 8080: never publish the port.
   updater:
     image: ghcr.io/meldgrove/updater:0.2
     pull_policy: always
@@ -171,6 +174,8 @@ services:
     environment:
       IMAGE: *image
       VERSION_VARIABLE: REIMBURSEMENTS_VERSION
+      # With UPDATER_TOKEN, the API takes only requests that carry it (updater 0.2.1 and later).
+      API_TOKEN: ${UPDATER_TOKEN:-}
       DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
       DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
       # A release installs once it has been out this long, and only inside the window,
